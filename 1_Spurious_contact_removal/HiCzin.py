@@ -1,3 +1,4 @@
+
 import numpy as np
 import pandas as pd
 import scipy.sparse as scisp
@@ -10,11 +11,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class HiCzin:
-    def __init__(self, contact_matrix_path, contig_info_path, output_path, min_signal, thres):
+    def __init__(self, contact_matrix_path, contig_info_path, output_path, thres):
         self.contact_matrix_path = contact_matrix_path
         self.contig_info_path = contig_info_path
         self.output_path = output_path
-        self.min_signal = min_signal
         self.thres = thres
         self.contig_info = None
         self.contact_matrix = None
@@ -29,7 +29,6 @@ class HiCzin:
         })
         self.contig_info = contig_info[['contig_name', 'site', 'length', 'coverage']]
 
-        # Load contact matrix
         npzfile = np.load(self.contact_matrix_path)
         sparse_matrix = scisp.csr_matrix((npzfile['data'], npzfile['indices'], npzfile['indptr']), shape=npzfile['shape'])
         self.contact_matrix = sparse_matrix.tocoo()
@@ -39,7 +38,6 @@ class HiCzin:
         valid_contact = np.vstack((coo.row, coo.col, coo.data)).T
         valid_contact_df = pd.DataFrame(valid_contact, columns=['index1', 'index2', 'contacts'])
 
-        # Prepare sample data
         valid_contact_df['index1'] = valid_contact_df['index1'].astype(int)
         valid_contact_df['index2'] = valid_contact_df['index2'].astype(int)
         return valid_contact_df
@@ -85,6 +83,7 @@ class HiCzin:
         perc = np.percentile(res_sample_nonzero, thres * 100)
 
         result = np.concatenate([coeff[:4], [perc, mean_site, sd_site, mean_len, sd_len, mean_cov, sd_cov]])
+        print(result)
         return result
     
     def norm_contact_matrix(self, norm_result):
@@ -139,8 +138,7 @@ if __name__ == '__main__':
     contact_matrix_path = '../0_Documents/raw_contact_matrix.npz'
     contig_info_path = '../0_Documents/contig_information.csv'
     output_path = '../0_Documents/HiCzin_contact_matrix.npz'
-    min_signal=2 
     thres=0.95
 
-    hiczin = HiCzin(contact_matrix_path, contig_info_path, output_path, min_signal, thres)
+    hiczin = HiCzin(contact_matrix_path, contig_info_path, output_path, thres)
     hiczin.main()
