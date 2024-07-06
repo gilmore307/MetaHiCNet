@@ -16,7 +16,9 @@ class Phage_Host:
         return contig_info, contact_matrix
 
     def calculate_connectivity_density(self, id1, id2):
-        return self.contact_matrix[id1, id2] / (len(self.contact_matrix) ** 2)
+        contig_length_id1 = self.contig_info.loc[id1, 'Contig length']
+        contig_length_id2 = self.contig_info.loc[id2, 'Contig length']
+        return self.contact_matrix[id1, id2] / (contig_length_id1 * contig_length_id2)
 
     def first_round_filter(self, min_links, connectivity_ratio, intra_mag_links):
         filtered_pairs = []
@@ -24,7 +26,9 @@ class Phage_Host:
         contig_coverage = self.contig_info['Contig coverage'].tolist()
         
         for phage_id in range(self.contact_matrix.shape[0]):
-            for host_id in range(phage_id + 1, self.contact_matrix.shape[1]):
+            for host_id in range(self.contact_matrix.shape[1]):
+                if phage_id == host_id:
+                    continue
                 if self.contact_matrix[phage_id, host_id] == 0:
                     continue
                 
@@ -111,37 +115,44 @@ class Phage_Host:
             phage_id = contig_names.index(phage_name)
             host_id = contig_names.index(host_name)
             
-            avg_counts = np.mean(self.contact_matrix[phage_id, host_id])
-            max_counts = np.max(self.contact_matrix[phage_id])
+            hi_c_links = self.contact_matrix[phage_id, host_id]
+            max_counts = np.max(np.delete(self.contact_matrix[phage_id], phage_id))
             
-            if avg_counts >= avg_count_ratio * max_counts and avg_counts >= optimal_threshold:
+            if hi_c_links >= avg_count_ratio * max_counts and hi_c_links >= optimal_threshold:
                 refined_pairs.append((phage_name, host_name))
             else:
-                self.contact_matrix[phage_id, host_id] = 0.01
+                self.contact_matrix[phage_id, host_id] = 0
         return refined_pairs
 
     def save_filtered_results(self, output_npz):
         sparse_filtered_matrix = csr_matrix(self.contact_matrix)
         np.savez(output_npz, data=sparse_filtered_matrix.data, indices=sparse_filtered_matrix.indices, indptr=sparse_filtered_matrix.indptr, shape=sparse_filtered_matrix.shape)
 
-    def main(self, min_links=2, connectivity_ratio=0.1, intra_mag_links=10, avg_count_ratio=0.8, min_value=0.0001, max_value=100, increment=1.5, output_npz='../0_Documents/PH_contact_matrix.npz'):
+    def main(self, min_links, connectivity_ratio, intra_mag_links, avg_count_ratio, min_value, max_value, increment, output_npz):
         filtered_pairs = self.first_round_filter(min_links, connectivity_ratio, intra_mag_links)
-
+        print(len(filtered_pairs))
+        
         roc_data, threshold_values = self.categorize_data_for_roc_analysis(min_value, max_value, increment)
         true_positives, false_positives = self.generate_roc_curve_values(roc_data, threshold_values, min_value)
         optimal_threshold, fp_rate, tp_rate = self.get_optimal_threshold(threshold_values, true_positives, false_positives)
-
         print("Optimal Threshold:", optimal_threshold)
 
         refined_pairs = self.second_round_filter(filtered_pairs, optimal_threshold, avg_count_ratio)
-
-        print(refined_pairs)
+        print(len(refined_pairs))
 
         self.save_filtered_results(output_npz)
 
 if __name__ == "__main__":
     contig_info_path = '../0_Documents/contig_information.csv'
     contact_matrix_path = '../0_Documents/raw_contact_matrix.npz'
+    min_links=2
+    connectivity_ratio=0.1
+    intra_mag_links=10
+    avg_count_ratio=0.8
+    min_value=0.0001
+    max_value=100
+    increment=1.5
+    output_npz='../0_Documents/PH_contact_matrix.npz'
 
     phage_host = Phage_Host(contig_info_path, contact_matrix_path)
-    phage_host.main()
+    phage_host.main(min_links, connectivity_ratio, intra_mag_links, avg_count_ratio, min_value, max_value, increment, output_npz)
