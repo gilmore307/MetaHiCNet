@@ -103,8 +103,8 @@ class MetaCC:
             x = _map_row[j]
             y = _map_col[j]
             if _norm_contact[j] < cutoffs:
-                self.seq_map[x, y] = 0.01
-                self.seq_map[y, x] = 0.01
+                self.seq_map[x, y] = 0
+                self.seq_map[y, x] = 0
                 count += 1
         
         del _map_row, _map_col, _map_data, _map_coor, _norm_contact, count

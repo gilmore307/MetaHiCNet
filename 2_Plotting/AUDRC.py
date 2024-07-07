@@ -22,8 +22,7 @@ def plot_audrc(contact_matrix, label):
     total_intra_species = intra_species_matrix.count_nonzero()
     total_spurious = spurious_matrix.count_nonzero()
 
-    unique_data = np.unique(contact_matrix.data)
-    percentiles = np.percentile(unique_data, np.linspace(0, 100, 1000))
+    percentiles = np.percentile(contact_matrix, np.linspace(0, 100, 1000))
 
     proportion_discarded_spurious = []
     proportion_retained_intra_species = []
