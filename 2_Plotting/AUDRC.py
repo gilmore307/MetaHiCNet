@@ -25,14 +25,16 @@ def prep_matrix(contact_matrix, annotations):
         intra_species_mask[np.ix_(indices, indices)] = True
 
     intra_species_matrix = csr_matrix(contact_matrix.multiply(intra_species_mask))
+    intra_species_array = intra_species_matrix.data[intra_species_matrix.data != 0]
 
     spurious_matrix = csr_matrix(contact_matrix.multiply(~intra_species_mask))
+    spurious_array = spurious_matrix.data[spurious_matrix.data !=0]
 
-    return intra_species_matrix, spurious_matrix
+    return intra_species_array, spurious_array
 
-def calculate_audrc(contact_matrix, intra_species_matrix, spurious_matrix):
-    total_intra_species = intra_species_matrix.count_nonzero()
-    total_spurious = spurious_matrix.count_nonzero()
+def calculate_audrc(contact_matrix, intra_species_array, spurious_array):
+    total_intra_species = len(intra_species_array)
+    total_spurious = len(spurious_array)
 
     percentiles = np.percentile(contact_matrix.data, np.linspace(0, 100, 1000))
 
@@ -40,13 +42,12 @@ def calculate_audrc(contact_matrix, intra_species_matrix, spurious_matrix):
     proportion_retained_intra_species = []
 
     for threshold in percentiles:
-        retained_intra_species = (intra_species_matrix.data >= threshold).sum()
+        retained_intra_species = (intra_species_array >= threshold).sum()
 
-        discarded_spurious = (spurious_matrix.data > 0) & (spurious_matrix.data < threshold)
-        discarded_spurious_count = discarded_spurious.sum()
+        discarded_spurious = (spurious_array < threshold).sum()
 
         prop_retained_intra_species = retained_intra_species / total_intra_species
-        prop_discarded_spurious = discarded_spurious_count / total_spurious
+        prop_discarded_spurious = discarded_spurious / total_spurious
 
         proportion_discarded_spurious.append(prop_discarded_spurious)
         proportion_retained_intra_species.append(prop_retained_intra_species)
