@@ -41,7 +41,6 @@ class MetaCC:
         df['length'] = pd.to_numeric(df['length'])
         df['coverage'] = pd.to_numeric(df['coverage'])
         df['signal'] = pd.to_numeric(df['signal'])
-        df.dropna(inplace=True)
         
         df['sites'] = np.log(df['sites'])
         df['length'] = np.log(df['length'])
@@ -123,6 +122,6 @@ class MetaCC:
 if __name__ == "__main__":
     contig_info_path = '../0_Documents/contig_information.csv'
     raw_contact_matrix_path = '../0_Documents/raw_contact_matrix.npz'
-    threshold = 0.1 
+    threshold = 0.05 
     output_path = '../0_Documents/MetaCC_contact_matrix.npz'
     MetaCC.main(contig_info_path, raw_contact_matrix_path, threshold, output_path)

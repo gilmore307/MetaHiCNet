@@ -1,10 +1,9 @@
-
 import numpy as np
 import pandas as pd
 import scipy.sparse as scisp
 from math import log, exp
 import statsmodels.api as sm
-from statsmodels.discrete.discrete_model import NegativeBinomial
+import statsmodels.formula.api as smf
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -67,13 +66,13 @@ class HiCzin:
 
         data_sample = pd.DataFrame({'sample_site': sample_site, 'sample_len': sample_len, 'sample_cov': sample_cov, 'sampleCon': sampleCon})
 
-        X = sm.add_constant(data_sample[['sample_site', 'sample_len', 'sample_cov']])
-        sampleCon = data_sample['sampleCon']
+        model = smf.glm(formula='sampleCon ~ sample_site + sample_len + sample_cov', 
+                data=data_sample, 
+                family=sm.families.NegativeBinomial())
+        
+        fit = model.fit(disp=0)
 
-        model = NegativeBinomial(sampleCon, X)
-        fit1 = model.fit(disp=0)
-
-        coeff = fit1.params.to_numpy()
+        coeff = fit.params.to_numpy()
 
         res_sample = sampleCon / np.exp(coeff[0] + coeff[1]*sample_site + coeff[2]*sample_len + coeff[3]*sample_cov)
 
