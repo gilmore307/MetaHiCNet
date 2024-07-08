@@ -71,6 +71,8 @@ class HiCzin:
                 family=sm.families.NegativeBinomial())
         
         fit = model.fit(disp=0)
+        
+        print(fit.summary())
 
         coeff = fit.params.to_numpy()
 
@@ -78,18 +80,18 @@ class HiCzin:
 
         index_nonzero = res_sample > 0
         res_sample_nonzero = res_sample[index_nonzero]
-
+        
         perc = np.percentile(res_sample_nonzero, thres * 100)
 
         result = np.concatenate([coeff[:4], [perc, mean_site, sd_site, mean_len, sd_len, mean_cov, sd_cov]])
-        print(result)
-        return result
+        print("coeff: ", coeff[:4], "perc: ", perc, "site: ", mean_site, sd_site, "len: ", mean_len, sd_len, "cov: ", mean_cov, sd_cov)
+        return result 
     
     def norm_contact_matrix(self, norm_result):
         seq_map = self.contact_matrix
+        seq_map = seq_map.tocoo()
         contig_info = self.contig_info
         
-        seq_map = seq_map.tocoo()
         _map_row = seq_map.row
         _map_col = seq_map.col
         _map_data = seq_map.data
@@ -116,7 +118,7 @@ class HiCzin:
             c = (log(c1 * c2) - norm_result[9]) / norm_result[10]
 
             d_norm = d / exp(coeff[0] + coeff[1] * s + coeff[2] * l + coeff[3] * c)
-
+            
             if d_norm > norm_result[4]:
                 seq_map[x, y] = d_norm
             else:
@@ -137,7 +139,7 @@ if __name__ == '__main__':
     contact_matrix_path = '../0_Documents/raw_contact_matrix.npz'
     contig_info_path = '../0_Documents/contig_information.csv'
     output_path = '../0_Documents/HiCzin_contact_matrix.npz'
-    thres=0.95
+    thres=0.05
 
     hiczin = HiCzin(contact_matrix_path, contig_info_path, output_path, thres)
     hiczin.main()
