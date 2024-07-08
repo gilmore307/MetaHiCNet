@@ -28,7 +28,7 @@ def prep_matrix(contact_matrix, annotations):
     intra_species_array = intra_species_matrix.data[intra_species_matrix.data != 0]
 
     spurious_matrix = csr_matrix(contact_matrix.multiply(~intra_species_mask))
-    spurious_array = spurious_matrix.data[spurious_matrix.data !=0]
+    spurious_array = spurious_matrix.data[spurious_matrix.data != 0]
 
     return intra_species_array, spurious_array
 
@@ -43,7 +43,6 @@ def calculate_audrc(contact_matrix, intra_species_array, spurious_array):
 
     for threshold in percentiles:
         retained_intra_species = (intra_species_array >= threshold).sum()
-
         discarded_spurious = (spurious_array < threshold).sum()
 
         prop_retained_intra_species = retained_intra_species / total_intra_species
@@ -73,16 +72,22 @@ datasets = [
 ]
 csv_file_path = '../0_Documents/contig_information.csv'
 
-plt.figure(figsize=(12, 8))
+results = []
 
 for dataset in datasets:
     label = extract_label(dataset)
     contact_matrix, annotations = load_data(dataset, csv_file_path)
-    intra_species_matrix, spurious_matrix = prep_matrix(contact_matrix, annotations)
-    proportion_discarded_spurious, proportion_retained_intra_species, audrc = calculate_audrc(contact_matrix, intra_species_matrix, spurious_matrix)
+    intra_species_array, spurious_array = prep_matrix(contact_matrix, annotations)
+    proportion_discarded_spurious, proportion_retained_intra_species, audrc = calculate_audrc(contact_matrix, intra_species_array, spurious_array)
     
+    results.append((label, proportion_discarded_spurious, proportion_retained_intra_species, audrc))
+
+results.sort(key=lambda x: x[3], reverse=True)
+
+plt.figure(figsize=(12, 8))
+
+for label, proportion_discarded_spurious, proportion_retained_intra_species, audrc in results:
     plt.plot(proportion_discarded_spurious, proportion_retained_intra_species, label=f'{label} (AUDRC: {audrc:.3f})')
-    #plt.scatter(proportion_discarded_spurious, proportion_retained_intra_species, s=10, label=f'{label} Data Points')
 
 plt.xlabel('Proportion of discarded spurious contacts')
 plt.ylabel('Proportion of retained intra-species contacts')

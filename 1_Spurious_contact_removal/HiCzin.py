@@ -68,9 +68,9 @@ class HiCzin:
 
         model = smf.glm(formula='sampleCon ~ sample_site + sample_len + sample_cov', 
                 data=data_sample, 
-                family=sm.families.NegativeBinomial())
+                family=sm.families.NegativeBinomial(alpha=1))
         
-        fit = model.fit(disp=0)
+        fit = model.fit(method="lbfgs")
         
         print(fit.summary())
 
