@@ -34,7 +34,7 @@ intra_species_contacts = contig_information.groupby('Contig annotation').apply(
 unique_annotations = contig_information['Contig annotation'].unique()
 inter_species_contacts = pd.DataFrame(0, index=unique_annotations, columns=unique_annotations)
 
-# Populate the inter_species_contacts DataFrame with the contacts
+# Form the inter_species_contacts DataFrame with the contacts
 for i, annotation_i in enumerate(unique_annotations):
     for j, annotation_j in enumerate(unique_annotations):
         if i != j:
@@ -85,7 +85,7 @@ for edge in G.edges(data=True):
     start_width = node1_size / 2
     end_width = node2_size / 2
     
-    # Create a gradient line by interpolating points between node1 and node2
+    # Create a gradient width between node1 and node2
     num_points = 15
     x_values = np.linspace(x0, x1, num_points)
     y_values = np.linspace(y0, y1, num_points)
@@ -209,7 +209,7 @@ def create_conditional_styles(matrix_df):
                     'row_index': i,
                     'column_id': numeric_df.columns[j]
                 },
-                'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'
+                'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})' # Set background color for the contact matrix.
             })
     return styles
 
@@ -235,12 +235,13 @@ def create_heatmap(species1, species2):
     species1_range = len(sorted_contig_subset[sorted_contig_subset['Contig annotation'] == species1])
     species2_range = len(sorted_contig_subset) - species1_range
     
+    # Add ticks to divided the axises into two parts
     fig.update_xaxes(tickvals=[0, species1_range - 1, species1_range + species2_range - 1],
                      ticktext=[species1, species2, ''])
     fig.update_yaxes(tickvals=[0, species1_range - 1, species1_range + species2_range - 1],
                      ticktext=[species1, species2, ''])
     
-    # Update layout to remove axis titles and add acolor bar
+    # Working on add indication bar
     fig.update_layout(
         title=f'Contact Matrix for {species1} and {species2}',
         xaxis_title=None,
@@ -305,7 +306,7 @@ common_style = {
     'vertical-align': 'middle'
 }
 
-# Help modal (empty for now)
+# Help page (empty for now)
 help_modal = html.Div([
     dbc.Modal([
         dbc.ModalHeader("Help"),
