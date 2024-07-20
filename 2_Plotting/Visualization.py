@@ -34,10 +34,9 @@ intra_species_contacts = contig_information.groupby('Contig annotation').apply(
 unique_annotations = contig_information['Contig annotation'].unique()
 inter_species_contacts = pd.DataFrame(0, index=unique_annotations, columns=unique_annotations)
 
-# Form the inter_species_contacts DataFrame with the contacts
-for i, annotation_i in enumerate(unique_annotations):
-    for j, annotation_j in enumerate(unique_annotations):
-        if i != j:
+for annotation_i in unique_annotations:
+    for annotation_j in unique_annotations:
+        if annotation_i != annotation_j:
             contacts = dense_matrix[
                 contig_information[contig_information['Contig annotation'] == annotation_i].index
             ][:, 
@@ -60,57 +59,36 @@ for annotation, contacts in intra_species_contacts.items():
     G.add_node(annotation, size=size, color=color, contacts=contacts)
 
 # Add edges with weight based on inter-species contacts
-max_inter_species_contacts = inter_species_contacts.values.max()
 for annotation_i in unique_annotations:
     for annotation_j in unique_annotations:
         if annotation_i != annotation_j:
-            weight = inter_species_contacts.at[annotation_i, annotation_j]
-            if weight > 0:
-                scaled_weight = (weight / max_inter_species_contacts) * 100  # Increase edge width
-                G.add_edge(annotation_i, annotation_j, weight=scaled_weight, contacts=weight)
+            if inter_species_contacts.at[annotation_i, annotation_j] > 0:
+                G.add_edge(annotation_i, annotation_j, contacts=inter_species_contacts.at[annotation_i, annotation_j])
 
 # Calculate node positions using a force-directed layout with increased dispersion
-pos = nx.spring_layout(G, dim=3, k=2, iterations=50)
+pos = nx.spring_layout(G, dim=2, k=2, iterations=50)
 
 # Create plotly figure
 edge_trace = []
 for edge in G.edges(data=True):
-    x0, y0, z0 = pos[edge[0]]
-    x1, y1, z1 = pos[edge[1]]
+    x0, y0 = pos[edge[0]]
+    x1, y1 = pos[edge[1]]
     
-    node1_size = G.nodes[edge[0]]['size']
-    node2_size = G.nodes[edge[1]]['size']
-    
-    # Calculate the gradient width
-    start_width = node1_size / 2
-    end_width = node2_size / 2
-    
-    # Create a gradient width between node1 and node2
-    num_points = 15
-    x_values = np.linspace(x0, x1, num_points)
-    y_values = np.linspace(y0, y1, num_points)
-    z_values = np.linspace(z0, z1, num_points)
-    widths = np.linspace(start_width, end_width, num_points)
-    
-    # Create individual segments for the gradient effect
-    for i in range(num_points - 1):
-        trace = go.Scatter3d(
-            x=[x_values[i], x_values[i + 1], None],
-            y=[y_values[i], y_values[i + 1], None],
-            z=[z_values[i], z_values[i + 1], None],
-            line=dict(width=widths[i], color='rgba(0,0,0,0.3)'),
-            hoverinfo='text',
-            text=f"{edge[0]} - {edge[1]}: {edge[2]['contacts']}",
-            mode='lines',
-            name=f"{edge[0]}-{edge[1]}"
-        )
-        edge_trace.append(trace)
+    trace = go.Scatter(
+        x=[x0, x1, None],
+        y=[y0, y1, None],
+        line=dict(width=5, color='rgba(0,0,0,0.3)'),  # Fixed width for the edges
+        hoverinfo='text',
+        text=f"{edge[0]} - {edge[1]}: {edge[2]['contacts']}",
+        mode='lines',
+        name=f"{edge[0]}-{edge[1]}"
+    )
+    edge_trace.append(trace)
 
 # Node trace
-node_trace = go.Scatter3d(
+node_trace = go.Scatter(
     x=[pos[node][0] for node in G.nodes],
     y=[pos[node][1] for node in G.nodes],
-    z=[pos[node][2] for node in G.nodes],
     text=[node for node in G.nodes],
     hovertext=[f"{node}: {G.nodes[node]['contacts']}" for node in G.nodes],
     mode='markers+text',
@@ -131,12 +109,15 @@ layout = go.Layout(
     showlegend=False,
     hovermode='closest',
     margin=dict(b=20, l=5, r=5, t=40),
-    scene=dict(
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-        zaxis=dict(visible=False)
-    )
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+    dragmode='pan',  # Enable panning
+    newshape=dict(line_color="cyan"),
+    modebar_add=['zoom', 'pan', 'resetScale2d'],
+    modebar_remove=['select2d', 'lasso2d']
 )
+
+
 
 fig = go.Figure(data=edge_trace + [node_trace], layout=layout)
 
@@ -162,7 +143,7 @@ def create_bar_chart(row_contig, col_contig=None):
     bar_fig = go.Figure(data=[bar_trace], layout=bar_layout)
     return bar_fig
 
-# Function to create annotations for the 3D plot
+# Function to create annotations for the 2D plot
 def create_annotations(G, pos, selected_node):
     annotations = []
     if '-' in selected_node:
@@ -235,13 +216,13 @@ def create_heatmap(species1, species2):
     species1_range = len(sorted_contig_subset[sorted_contig_subset['Contig annotation'] == species1])
     species2_range = len(sorted_contig_subset) - species1_range
     
-    # Add ticks to divided the axises into two parts
+    # Add ticks to divide the axes into two parts
     fig.update_xaxes(tickvals=[0, species1_range - 1, species1_range + species2_range - 1],
                      ticktext=[species1, species2, ''])
     fig.update_yaxes(tickvals=[0, species1_range - 1, species1_range + species2_range - 1],
                      ticktext=[species1, species2, ''])
     
-    # Working on add indication bar
+    # Add indication bars
     fig.update_layout(
         title=f'Contact Matrix for {species1} and {species2}',
         xaxis_title=None,
@@ -294,7 +275,6 @@ for annotation in unique_annotations:
     inter_intra_species_df.at[annotation, annotation] = intra_species_contacts.get(annotation, 0)
 
 inter_intra_species_df.insert(0, 'Species', inter_intra_species_df.index)
-inter_intra_species_df = inter_intra_species_df.rename(columns={'Contig annotation': 'Species'})
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -332,7 +312,7 @@ app.layout = html.Div([
             dcc.Graph(id='bar-chart', style={'height': '80vh', 'width': '30vw', 'display': 'inline-block'})
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
-            dcc.Graph(id='3d-graph', figure=fig, style={'height': '80vh', 'width': '60vw', 'display': 'inline-block'})
+            dcc.Graph(id='2d-graph', figure=fig, style={'height': '80vh', 'width': '60vw', 'display': 'inline-block'}, config={'scrollZoom': True})
         ], style={'display': 'inline-block', 'vertical-align': 'top'})
     ], style={'width': '100%', 'display': 'flex'}),
     html.Div([
@@ -353,22 +333,9 @@ app.layout = html.Div([
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
-# Update the layout object with the new title
-layout = go.Layout(
-    title={'text': 'MetaHi-C Visualization', 'x': 0.5},
-    showlegend=False,
-    hovermode='closest',
-    margin=dict(b=20, l=5, r=5, t=40),
-    scene=dict(
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-        zaxis=dict(visible=False)
-    )
-)
-
 # Updated reset button callback and layout update code
 @app.callback(
-    [Output('3d-graph', 'figure'),
+    [Output('2d-graph', 'figure'),
      Output('bar-chart', 'figure')],
     [Input('contact-table', 'active_cell'),
      Input('reset-btn', 'n_clicks')],
@@ -391,17 +358,12 @@ def update_figure(active_cell, reset_clicks, table_data):
     row_contig = table_data[active_cell['row']]['Species']
     col_contig = active_cell['column_id']
 
-    if row_contig in pos and col_contig in pos:
-        center_x, center_y, center_z = np.mean([pos[row_contig], pos[col_contig]], axis=0)
-    else:
-        center_x, center_y, center_z = 0, 0, 0
-
     annotations = create_annotations(G, pos, row_contig)
     visibility = []
     node_colors = [G.nodes[node]['color'] for node in G.nodes]
     for trace in fig.data:
         if 'name' in trace:
-            if trace['name'] == 'Nodes': #for node
+            if trace['name'] == 'Nodes':  # for node
                 for i, node in enumerate(trace.text):
                     if node == row_contig:
                         node_colors[i] = 'green'
@@ -409,7 +371,7 @@ def update_figure(active_cell, reset_clicks, table_data):
                         node_colors[i] = 'yellow'
                 trace.marker.color = node_colors
                 visibility.append(True)
-            else: #for edge
+            else:  # for edge
                 node1, node2 = trace['name'].split("-")
                 if node1 == row_contig or node2 == row_contig:
                     visibility.append(True)
@@ -429,11 +391,6 @@ def update_figure(active_cell, reset_clicks, table_data):
     new_fig.update_layout(annotations=annotations)
     for i, vis in enumerate(visibility):
         new_fig.data[i].visible = vis
-
-    new_fig.update_layout(scene_camera=dict(
-        center=dict(x=center_x, y=center_y, z=center_z),
-        eye=dict(x=center_x, y=center_y, z=center_z)
-    ))
 
     # Create bar chart
     bar_fig = create_bar_chart(row_contig, col_contig)
