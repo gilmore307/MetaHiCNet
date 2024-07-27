@@ -9,7 +9,7 @@ from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 from dash import callback_context
 
-# File paths
+# File paths for the current environment
 contig_info_path = '../0_Documents/contig_information.csv'
 raw_contact_matrix_path = '../0_Documents/raw_contact_matrix.npz'
 
@@ -38,7 +38,7 @@ for annotation_i in unique_annotations:
         if annotation_i != annotation_j:
             contacts = dense_matrix[
                 contig_information[contig_information['Contig annotation'] == annotation_i].index
-            ][:, 
+            ][:,
                 contig_information[contig_information['Contig annotation'] == annotation_j].index
             ].sum()
             inter_species_contacts.at[annotation_i, annotation_j] = contacts
@@ -64,7 +64,7 @@ for annotation_i in unique_annotations:
             if inter_species_contacts.at[annotation_i, annotation_j] > 0:
                 G.add_edge(annotation_i, annotation_j, contacts=inter_species_contacts.at[annotation_i, annotation_j])
 
-# Calculate node positions using a force-directed layout with increased dispersion
+# Initial node positions using a force-directed layout with increased dispersion
 pos = nx.spring_layout(G, dim=2, k=2, iterations=50)
 
 # Create plotly figure
@@ -261,6 +261,26 @@ app.layout = html.Div([
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
+def rearrange_nodes(selected_node):
+    num_nodes = len(G.nodes) - 1  # Exclude the selected node
+    angles = np.linspace(-np.pi/4, np.pi/4, num_nodes//2).tolist() + np.linspace(3*np.pi/4, 5*np.pi/4, num_nodes//2).tolist()
+    
+    new_pos = {selected_node: (0, 0)}
+    i = 0
+    radius = 1  # Radius for placing the nodes around the center
+    for node in G.nodes:
+        if node != selected_node:
+            angle = angles[i]
+            x = radius * np.cos(angle)
+            y = radius * np.sin(angle)
+            new_pos[node] = (x, y)
+            i += 1
+    return new_pos
+
+def get_contig_nodes(species):
+    contigs = contig_information[contig_information['Contig annotation'] == species]['Contig name']
+    return contigs
+
 # Updated reset button callback and layout update code
 @app.callback(
     [Output('2d-graph', 'figure'),
@@ -281,6 +301,9 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
             if 'name' in trace:
                 if trace['name'] == 'Nodes':
                     trace.marker.color = [G.nodes[node]['color'] for node in G.nodes]
+                    trace.marker.size = [G.nodes[node]['size'] for node in G.nodes]  # Reset node sizes
+                    trace.x = [pos[node][0] for node in G.nodes]  # Reset node positions
+                    trace.y = [pos[node][1] for node in G.nodes]  # Reset node positions
                 else:
                     trace['line']['color'] = 'rgba(0,0,0,0.3)'
         return fig, go.Figure(), None
@@ -288,39 +311,98 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
     row_contig = table_data[active_cell['row']]['Species'] if triggered_id != 'species-selector' else selected_species
     col_contig = active_cell['column_id'] if triggered_id != 'species-selector' else None
 
-    annotations = create_annotations(G, pos, row_contig)
+    # Copy the graph and its nodes
+    G_copy = G.copy()
+
+    # Recalculate node sizes based on the selected species' inter-species contacts
+    row_contacts = inter_species_contacts.loc[row_contig]
+    max_row_contacts = row_contacts.max()
+
+    # Set the size of the selected node to 100 and scale others proportionally
+    for node in G_copy.nodes:
+        if node == row_contig:
+            G_copy.nodes[node]['size'] = 5000
+        else:
+            G_copy.nodes[node]['size'] = (row_contacts[node] / max_row_contacts) * 100
+
+    # Rearrange node positions
+    new_pos = rearrange_nodes(row_contig)
+
+    # Update node sizes and positions in the trace
+    node_sizes = [G_copy.nodes[node]['size'] for node in G_copy.nodes]
+    node_x = [new_pos[node][0] for node in G_copy.nodes]
+    node_y = [new_pos[node][1] for node in G_copy.nodes]
+
+    # Add contig nodes for the selected species
+    contigs = get_contig_nodes(row_contig)
+    contig_x = np.random.uniform(-0.1, 0.1, len(contigs))  # Spread around the species node
+    contig_y = np.random.uniform(-0.1, 0.1, len(contigs))  # Spread around the species node
+
+    # Update edge traces
+    new_edge_trace = []
+    for edge in G_copy.edges(data=True):
+        x0, y0 = new_pos[edge[0]]
+        x1, y1 = new_pos[edge[1]]
+        trace = go.Scatter(
+            x=[x0, x1, None],
+            y=[y0, y1, None],
+            line=dict(width=5, color='rgba(0,0,0,0.3)'),  # Fixed width for the edges
+            hoverinfo='text',
+            text=f"{edge[0]} - {edge[1]}: {edge[2]['contacts']}",
+            mode='lines',
+            name=f"{edge[0]}-{edge[1]}"
+        )
+        new_edge_trace.append(trace)
+
+    annotations = create_annotations(G_copy, new_pos, row_contig)
     visibility = []
-    node_colors = [G.nodes[node]['color'] for node in G.nodes]
-    for trace in fig.data:
+    node_colors = [G_copy.nodes[node]['color'] for node in G_copy.nodes]
+    for trace in new_edge_trace + [node_trace]:
         if 'name' in trace:
             if trace['name'] == 'Nodes':  # for node
                 for i, node in enumerate(trace.text):
                     if node == row_contig:
                         node_colors[i] = 'green'
-                    elif node == col_contig:
-                        node_colors[i] = 'yellow'
                 trace.marker.color = node_colors
+                trace.marker.size = node_sizes  # Update node sizes
+                trace.x = node_x  # Update node positions
+                trace.y = node_y  # Update node positions
                 visibility.append(True)
             else:  # for edge
                 node1, node2 = trace['name'].split("-")
                 if node1 == row_contig or node2 == row_contig:
                     visibility.append(True)
                     trace['line']['color'] = 'rgba(0,128,0,0.8)' 
-                elif node1 == col_contig or node2 == col_contig:
-                    visibility.append(True)
-                    trace['line']['color'] = 'rgba(255,165,0,0.8)'
                 else:
                     visibility.append(False)
 
     # Highlight the selected edge with a different color
-    for trace in fig.data:
+    for trace in new_edge_trace:
         if trace.name == f"{row_contig}-{col_contig}" or trace.name == f"{col_contig}-{row_contig}":
             trace['line']['color'] = 'rgba(128,0,128,0.8)'  # Highlight color (purple)
 
-    new_fig = go.Figure(data=fig.data, layout=layout)
+    new_fig = go.Figure(data=new_edge_trace + [node_trace], layout=layout)
     new_fig.update_layout(annotations=annotations)
     for i, vis in enumerate(visibility):
         new_fig.data[i].visible = vis
+
+    # Add contig nodes for the selected species
+    for contig, x, y in zip(contigs, contig_x, contig_y):
+        new_fig.add_trace(go.Scatter(
+            x=[new_pos[row_contig][0] + x],
+            y=[new_pos[row_contig][1] + y],
+            hovertext=[f"{contig}: Contig"],
+            mode='markers',
+            hoverinfo='text',
+            marker=dict(
+                showscale=False,  # Hide the color scale bar
+                colorscale='Viridis',
+                size=10,  # Fixed size for contig nodes
+                color='grey',  # Fixed color for contig nodes
+                line_width=2
+            ),
+            name='Contigs'
+        ))
 
     # Create bar chart
     bar_fig = create_bar_chart(row_contig, col_contig)
