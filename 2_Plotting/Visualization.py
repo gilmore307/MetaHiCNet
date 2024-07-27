@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 import networkx as nx
 from scipy.sparse import csc_matrix
 import dash
@@ -98,6 +97,8 @@ node_trace = go.Scatter(
         colorscale='Viridis',
         size=[G.nodes[node]['size'] for node in G.nodes],
         color=[G.nodes[node]['color'] for node in G.nodes],
+        sizemode='area',  # Ensure the size changes with zoom
+        sizeref=2.*max([G.nodes[node]['size'] for node in G.nodes])/100**2,  # Set sizeref for scaling
         line_width=2
     ),
     name='Nodes'
@@ -116,8 +117,6 @@ layout = go.Layout(
     modebar_add=['zoom', 'pan', 'resetScale2d'],
     modebar_remove=['select2d', 'lasso2d']
 )
-
-
 
 fig = go.Figure(data=edge_trace + [node_trace], layout=layout)
 
@@ -194,81 +193,6 @@ def create_conditional_styles(matrix_df):
             })
     return styles
 
-def create_heatmap(species1, species2):
-    # Get the combined matrix for the selected species
-    matrix_df = get_combined_matrix(species1, species2)
-    
-    # Sort contigs based on annotation
-    contig_subset = contig_information[contig_information['Contig annotation'].isin([species1, species2])]
-    sorted_contig_subset = contig_subset.sort_values(by='Contig annotation')
-    sorted_contig_names = sorted_contig_subset['Contig name']
-    
-    # Reorder the matrix based on sorted contig names
-    sorted_matrix_df = matrix_df.loc[sorted_contig_names, sorted_contig_names]
-    
-    # Log transform the matrix values
-    log_matrix_df = np.log1p(sorted_matrix_df)
-    
-    # Create heatmap
-    fig = px.imshow(log_matrix_df, color_continuous_scale='Reds', labels=dict(color='Log(Contact Count)'))
-    
-    # Update x-axis and y-axis to indicate species ranges
-    species1_range = len(sorted_contig_subset[sorted_contig_subset['Contig annotation'] == species1])
-    species2_range = len(sorted_contig_subset) - species1_range
-    
-    # Add ticks to divide the axes into two parts
-    fig.update_xaxes(tickvals=[0, species1_range - 1, species1_range + species2_range - 1],
-                     ticktext=[species1, species2, ''])
-    fig.update_yaxes(tickvals=[0, species1_range - 1, species1_range + species2_range - 1],
-                     ticktext=[species1, species2, ''])
-    
-    # Add indication bars
-    fig.update_layout(
-        title=f'Contact Matrix for {species1} and {species2}',
-        xaxis_title=None,
-        yaxis_title=None,
-        autosize=True,
-        margin=dict(t=40, b=40, l=40, r=40),
-        annotations=[
-            dict(
-                x=species1_range / 2, y=1.1,
-                xref='x', yref='paper',
-                text=species1,
-                showarrow=False,
-                font=dict(size=12, color='black'),
-                align='center'
-            ),
-            dict(
-                x=species1_range + species2_range / 2, y=1.1,
-                xref='x', yref='paper',
-                text=species2,
-                showarrow=False,
-                font=dict(size=12, color='black'),
-                align='center'
-            ),
-            dict(
-                x=-0.1, y=species1_range / 2,
-                xref='paper', yref='y',
-                text=species1,
-                showarrow=False,
-                font=dict(size=12, color='black'),
-                align='center',
-                textangle=-90
-            ),
-            dict(
-                x=-0.1, y=species1_range + species2_range / 2,
-                xref='paper', yref='y',
-                text=species2,
-                showarrow=False,
-                font=dict(size=12, color='black'),
-                align='center',
-                textangle=-90
-            )
-        ]
-    )
-    
-    return fig
-
 # Convert inter_species_contacts and intra_species_contacts to a DataFrame
 inter_intra_species_df = inter_species_contacts.copy()
 for annotation in unique_annotations:
@@ -305,7 +229,14 @@ app.layout = html.Div([
         html.Button("Download Selected Item", id="download-btn", style={**common_style}),
         html.Button("Reset Selection", id="reset-btn", style={**common_style}),
         html.Button("Help", id="open-help", style={**common_style}),
-        dcc.Download(id="download-dataframe-csv")
+        dcc.Download(id="download-dataframe-csv"),
+        dcc.Dropdown(
+            id='species-selector',
+            options=[{'label': species, 'value': species} for species in unique_annotations],
+            value=None,
+            placeholder="Select a species",
+            style={'width': '300px', 'display': 'inline-block'}
+        )
     ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin': '20px'}),
     html.Div([
         html.Div([
@@ -327,21 +258,20 @@ app.layout = html.Div([
             fixed_columns={'headers': True, 'data': 1}  # Freeze the first column
         )
     ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
-    html.Div([
-        dcc.Graph(id='heatmap', style={'height': '80vh', 'width': '100vw'})
-    ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
 # Updated reset button callback and layout update code
 @app.callback(
     [Output('2d-graph', 'figure'),
-     Output('bar-chart', 'figure')],
+     Output('bar-chart', 'figure'),
+     Output('species-selector', 'value')],
     [Input('contact-table', 'active_cell'),
-     Input('reset-btn', 'n_clicks')],
+     Input('reset-btn', 'n_clicks'),
+     Input('species-selector', 'value')],
     [State('contact-table', 'data')]
 )
-def update_figure(active_cell, reset_clicks, table_data):
+def update_figure(active_cell, reset_clicks, selected_species, table_data):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
@@ -353,10 +283,10 @@ def update_figure(active_cell, reset_clicks, table_data):
                     trace.marker.color = [G.nodes[node]['color'] for node in G.nodes]
                 else:
                     trace['line']['color'] = 'rgba(0,0,0,0.3)'
-        return fig, go.Figure()
+        return fig, go.Figure(), None
 
-    row_contig = table_data[active_cell['row']]['Species']
-    col_contig = active_cell['column_id']
+    row_contig = table_data[active_cell['row']]['Species'] if triggered_id != 'species-selector' else selected_species
+    col_contig = active_cell['column_id'] if triggered_id != 'species-selector' else None
 
     annotations = create_annotations(G, pos, row_contig)
     visibility = []
@@ -395,23 +325,7 @@ def update_figure(active_cell, reset_clicks, table_data):
     # Create bar chart
     bar_fig = create_bar_chart(row_contig, col_contig)
 
-    return new_fig, bar_fig
-
-@app.callback(
-    Output("download-dataframe-csv", "data"),
-    [Input("download-btn", "n_clicks")],
-    [State('contact-table', 'active_cell'), State('contact-table', 'data')],
-    prevent_initial_call=True
-)
-def download_csv(n_clicks, active_cell, table_data):
-    if not active_cell:
-        return None
-    row_contig = table_data[active_cell['row']]['Species']
-    col_contig = active_cell['column_id']
-
-    matrix_df = get_combined_matrix(row_contig, col_contig)
-
-    return dcc.send_data_frame(matrix_df.to_csv, f"{row_contig}_{col_contig}_matrix.csv")
+    return new_fig, bar_fig, row_contig
 
 @app.callback(
     Output("modal", "is_open"),
@@ -422,24 +336,6 @@ def toggle_modal(n1, n2, is_open):
     if n1 or n2:
         return not is_open
     return is_open
-
-# Callback to generate heatmap when a cell in the matrix is selected
-@app.callback(
-    Output('heatmap', 'figure'),
-    [Input('contact-table', 'active_cell')],
-    [State('contact-table', 'data')]
-)
-def update_heatmap(active_cell, table_data):
-    if not active_cell:
-        return go.Figure()
-
-    row_contig = table_data[active_cell['row']]['Species']
-    col_contig = active_cell['column_id']
-
-    if row_contig and col_contig:
-        return create_heatmap(row_contig, col_contig)
-    else:
-        return go.Figure()
 
 if __name__ == '__main__':
     app.run_server(debug=True)
