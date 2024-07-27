@@ -262,24 +262,49 @@ app.layout = html.Div([
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
 def rearrange_nodes(selected_node):
-    num_nodes = len(G.nodes) - 1  # Exclude the selected node
+    nodes = [node for node in G.nodes if node != selected_node]
+    num_nodes = len(nodes)
     angles = np.linspace(-np.pi/4, np.pi/4, num_nodes//2).tolist() + np.linspace(3*np.pi/4, 5*np.pi/4, num_nodes//2).tolist()
     
     new_pos = {selected_node: (0, 0)}
-    i = 0
     radius = 1  # Radius for placing the nodes around the center
-    for node in G.nodes:
-        if node != selected_node:
-            angle = angles[i]
-            x = radius * np.cos(angle)
-            y = radius * np.sin(angle)
-            new_pos[node] = (x, y)
-            i += 1
+    for i, node in enumerate(nodes):
+        angle = angles[i]
+        x = radius * np.cos(angle)
+        y = radius * np.sin(angle)
+        new_pos[node] = (x, y)
     return new_pos
 
 def get_contig_nodes(species):
     contigs = contig_information[contig_information['Contig annotation'] == species]['Contig name']
     return contigs
+
+def arrange_contigs(contigs, inter_contig_edges, radius=0.5):
+    # Identify contigs that connect to other species
+    connecting_contigs = [contig for contig in contigs if contig in inter_contig_edges]
+    other_contigs = [contig for contig in contigs if contig not in connecting_contigs]
+
+    # Arrange connecting contigs in a circle
+    num_connecting = len(connecting_contigs)
+    circle_positions = {}
+    angle_step = 2 * np.pi / num_connecting if num_connecting > 0 else 0
+    for i, contig in enumerate(connecting_contigs):
+        angle = i * angle_step
+        x = radius * np.cos(angle)
+        y = radius * np.sin(angle)
+        circle_positions[contig] = (x, y)
+
+    # Arrange other contigs randomly inside the circle
+    inner_positions = {}
+    for contig in other_contigs:
+        r = radius * 0.9 * np.sqrt(np.random.random())
+        theta = 2 * np.pi * np.random.random()
+        x = r * np.cos(theta)
+        y = r * np.sin(theta)
+        inner_positions[contig] = (x, y)
+
+    return {**circle_positions, **inner_positions}
+
 
 # Updated reset button callback and layout update code
 @app.callback(
@@ -304,6 +329,7 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
                     trace.marker.size = [G.nodes[node]['size'] for node in G.nodes]  # Reset node sizes
                     trace.x = [pos[node][0] for node in G.nodes]  # Reset node positions
                     trace.y = [pos[node][1] for node in G.nodes]  # Reset node positions
+                    trace.text = ['' for _ in G.nodes]  # Remove node names
                 else:
                     trace['line']['color'] = 'rgba(0,0,0,0.3)'
         return fig, go.Figure(), None
@@ -318,14 +344,15 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
     row_contacts = inter_species_contacts.loc[row_contig]
     max_row_contacts = row_contacts.max()
 
-    # Set the size of the selected node to 100 and scale others proportionally
+    # Set the size of the selected node to 5000 and scale others proportionally
     for node in G_copy.nodes:
         if node == row_contig:
             G_copy.nodes[node]['size'] = 5000
+            G_copy.nodes[node]['color'] = 'gray'
         else:
             G_copy.nodes[node]['size'] = (row_contacts[node] / max_row_contacts) * 100
 
-    # Rearrange node positions
+    # Rearrange node positions without including the selected node
     new_pos = rearrange_nodes(row_contig)
 
     # Update node sizes and positions in the trace
@@ -335,8 +362,16 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
 
     # Add contig nodes for the selected species
     contigs = get_contig_nodes(row_contig)
-    contig_x = np.random.uniform(-0.1, 0.1, len(contigs))  # Spread around the species node
-    contig_y = np.random.uniform(-0.1, 0.1, len(contigs))  # Spread around the species node
+    indices = contig_information[contig_information['Contig annotation'] == row_contig].index
+    inter_contig_edges = set()
+
+    for i in indices:
+        for j in range(dense_matrix.shape[0]):
+            if dense_matrix[i, j] != 0 and contig_information.at[j, 'Contig annotation'] != row_contig:
+                inter_contig_edges.add(contig_information.at[i, 'Contig name'])
+                inter_contig_edges.add(contig_information.at[j, 'Contig name'])
+
+    contig_positions = arrange_contigs(contigs, inter_contig_edges)
 
     # Update edge traces
     new_edge_trace = []
@@ -362,12 +397,14 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
             if trace['name'] == 'Nodes':  # for node
                 for i, node in enumerate(trace.text):
                     if node == row_contig:
-                        node_colors[i] = 'green'
+                        node_colors[i] = 'gray'
                 trace.marker.color = node_colors
                 trace.marker.size = node_sizes  # Update node sizes
                 trace.x = node_x  # Update node positions
                 trace.y = node_y  # Update node positions
+                trace.text = ['' for _ in trace.text]  # Remove node names
                 visibility.append(True)
+                trace.marker.line = dict(width=[5 if node == row_contig else 2 for node in trace.text], color=['green' if node == row_contig else 'black' for node in trace.text])
             else:  # for edge
                 node1, node2 = trace['name'].split("-")
                 if node1 == row_contig or node2 == row_contig:
@@ -387,7 +424,8 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
         new_fig.data[i].visible = vis
 
     # Add contig nodes for the selected species
-    for contig, x, y in zip(contigs, contig_x, contig_y):
+    for contig, (x, y) in contig_positions.items():
+        marker_symbol = 'cross' if contig not in inter_contig_edges else 'circle'
         new_fig.add_trace(go.Scatter(
             x=[new_pos[row_contig][0] + x],
             y=[new_pos[row_contig][1] + y],
@@ -395,6 +433,7 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
             mode='markers',
             hoverinfo='text',
             marker=dict(
+                symbol=marker_symbol,
                 showscale=False,  # Hide the color scale bar
                 colorscale='Viridis',
                 size=10,  # Fixed size for contig nodes
