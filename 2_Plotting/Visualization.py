@@ -9,6 +9,7 @@ from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
 import plotly.graph_objects as go
 from dash import callback_context
+import plotly.colors as pcolors
 
 # File paths for the current environment
 contig_info_path = '../0_Documents/contig_information.csv'
@@ -81,7 +82,7 @@ def nx_to_cyto_elements(G, pos):
         data = {
             'id': node,
             'size': G.nodes[node]['size'],
-            'color': G.nodes[node]['color']
+            'color': G.nodes[node]['color'],
         }
         if 'parent' in G.nodes[node]:
             data['parent'] = G.nodes[node]['parent']
@@ -178,10 +179,10 @@ def create_conditional_styles(matrix_df):
     return styles
 
 # Function to arrange contigs
-def arrange_contigs(contigs, inter_contig_edges, radius=0.6, jitter=0.05):
+def arrange_contigs(contigs, inter_contig_edges, radius, jitter, selected_contig=None):
     # Identify contigs that connect to other species
-    connecting_contigs = [contig for contig in contigs if contig in inter_contig_edges]
-    other_contigs = [contig for contig in contigs if contig not in connecting_contigs]
+    connecting_contigs = [contig for contig in contigs if contig in inter_contig_edges and contig != selected_contig]
+    other_contigs = [contig for contig in contigs if contig not in inter_contig_edges and contig != selected_contig]
 
     # Arrange connecting contigs in a circle with jitter
     num_connecting = len(connecting_contigs)
@@ -201,6 +202,10 @@ def arrange_contigs(contigs, inter_contig_edges, radius=0.6, jitter=0.05):
         x = r * np.cos(theta)
         y = r * np.sin(theta)
         inner_positions[contig] = (x, y)
+
+    # Place selected contig in the center
+    if selected_contig:
+        inner_positions[selected_contig] = (0, 0)
 
     return {**circle_positions, **inner_positions}
 
@@ -380,7 +385,7 @@ def species_visualization(active_cell, selected_species, table_data):
                 inter_contig_edges.add(contig_information.at[i, 'Contig name'])
                 inter_contig_edges.add(contig_information.at[j, 'Contig name'])
 
-    contig_positions = arrange_contigs(contigs, inter_contig_edges)
+    contig_positions = arrange_contigs(contigs, inter_contig_edges, radius=0.6, jitter=0.05)
 
     cyto_elements = nx_to_cyto_elements(G_copy, new_pos)
     
@@ -435,24 +440,49 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
 
     for contig, (x, y) in contig_positions_row.items():
         G_copy.add_node(contig, size=20, color='#00FF00', parent=row_contig)  # Green for primary
-        new_pos[contig] = (new_pos[row_contig][0] + x*20, new_pos[row_contig][1] + y*20)
+        new_pos[contig] = (new_pos[row_contig][0] + x * 20, new_pos[row_contig][1] + y * 20)
 
     for contig, (x, y) in contig_positions_col.items():
-        G_copy.add_node(contig, size=20, color='#FFFF00', parent=col_contig)  # Yellow for secondary
-        new_pos[contig] = (new_pos[col_contig][0] + x*20, new_pos[col_contig][1] + y*20)
+        G_copy.add_node(contig, size=20, color='blue', parent=col_contig)  # Blue for secondary
+        new_pos[contig] = (new_pos[col_contig][0] + x * 20, new_pos[col_contig][1] + y * 20)
 
-    # Add edges between primary and secondary species contigs
-    for i in row_indices:
-        for j in col_indices:
-            if dense_matrix[i, j] != 0:
-                G_copy.add_edge(
-                    contig_information.at[i, 'Contig name'],
-                    contig_information.at[j, 'Contig name'],
-                    contacts=dense_matrix[i, j]
-                )
+    cyto_elements = []
+    for node, data in G_copy.nodes(data=True):
+        cyto_elements.append({
+            'data': {
+                'id': node,
+                'size': data['size'],
+                'color': data['color'],
+                'label': data['label'] if 'label' in data else '',
+                'parent': data['parent'] if 'parent' in data else ''
+            },
+            'position': {
+                'x': new_pos[node][0] * 500,
+                'y': new_pos[node][1] * 500
+            }
+        })
 
-    cyto_elements = nx_to_cyto_elements(G_copy, new_pos)
     cyto_stylesheet = base_stylesheet.copy()  # Use a unique stylesheet for this visualization
+
+    # Customize the stylesheet for parent nodes
+    cyto_stylesheet.append({
+        'selector': f'node[id="{row_contig}"]',
+        'style': {
+            'background-color': '#FFFFFF',
+            'border-color': '#A9D08E',
+            'border-width': 5,
+            'label': 'data(label)'
+        }
+    })
+    cyto_stylesheet.append({
+        'selector': f'node[id="{col_contig}"]',
+        'style': {
+            'background-color': '#FFFFFF',
+            'border-color': '#8EA9DB',
+            'border-width': 5,
+            'label': 'data(label)'
+        }
+    })
 
     bar_fig = create_bar_chart(row_contig, col_contig)
 
@@ -464,36 +494,76 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
 
     # Find the index of the selected contig
     selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
+    selected_species = contig_information.loc[selected_contig_index, 'Contig annotation']
 
     # Get all indices that have contact with the selected contig
     contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
+    
+    # Remove self-contact
+    contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
+    
     contacts_species = contig_information.loc[contacts_indices, 'Contig annotation']
     contacts_contigs = contig_information.loc[contacts_indices, 'Contig name']
 
     # Create the graph
     G_copy = nx.Graph()
 
-    # Add the selected contig node
-    G_copy.add_node(selected_contig, size=20, color='#FF0000')  # Red for selected contig
+    # Use a red-to-blue color scale
+    color_scale = pcolors.diverging.RdBu
+
+    # Rank species based on the number of contigs with contact to the selected contig
+    species_contact_counts = contacts_species.value_counts()
+    species_contact_ranks = species_contact_counts.rank(method='first').astype(int)
+    max_rank = species_contact_ranks.max()
 
     # Add species nodes and contig nodes
+    species_positions = {}
     for species in contacts_species.unique():
-        G_copy.add_node(species, size=50, color='#A9D08E')  # Green for species nodes
+        species_rank = species_contact_ranks[species]
+        gradient_color = color_scale[int((species_rank / max_rank) * (len(color_scale) - 1))]
+        G_copy.add_node(species, size=50, color=gradient_color)  # Gradient color for species nodes
         species_contigs = contacts_contigs[contacts_species == species]
-        for contig in species_contigs:
-            G_copy.add_node(contig, size=10, color='#00FF00', parent=species)  # Green for contigs
-            G_copy.add_edge(selected_contig, contig, contacts=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
+        
+        # Arrange contig nodes from the same species closer
+        contig_positions = arrange_contigs(species_contigs, [], 0.5, 0.05, selected_contig=selected_contig if species == selected_species else None)
+        for contig, (x, y) in contig_positions.items():
+            G_copy.add_node(contig, size=10 if contig != selected_contig else 50, color='red' if contig == selected_contig else gradient_color, parent=species)  # Same color as species, red for selected contig
+            if contig != selected_contig:
+                G_copy.add_edge(selected_contig, contig, contacts=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
+            species_positions[contig] = (x, y)
+
+    # Ensure the selected contig node is positioned above all other contigs
+    species_positions[selected_contig] = (0, 0)  # Place it at the center of its species node
 
     # Generate positions for the graph nodes
     pos = nx.spring_layout(G_copy, k=0.5, iterations=50)
+    
+    # Update positions for contig nodes to be closer to their species node
+    for contig, (x, y) in species_positions.items():
+        pos[contig] = (pos[selected_species][0] + x, pos[selected_species][1] + y)
+
+    # Explicitly set the position of the selected contig to ensure it is above all others
+    pos[selected_contig] = (pos[selected_species][0], pos[selected_species][1])
 
     cyto_elements = nx_to_cyto_elements(G_copy, pos)
     cyto_stylesheet = base_stylesheet.copy()
 
+    # Customize the stylesheet for species nodes
+    for species in contacts_species.unique():
+        cyto_stylesheet.append({
+            'selector': f'node[id="{species}"]',
+            'style': {
+                'background-color': '#FFFFFF',
+                'border-color': G_copy.nodes[species]['color'],
+                'border-width': 10,
+                'label': 'data(label)'
+            }
+        })
+
     # Create a bar chart to show contacts of the selected contig
     contact_counts = dense_matrix[selected_contig_index, contacts_indices]
     bar_data = pd.Series(contact_counts, index=contacts_contigs).sort_values()
-    bar_colors = ['rgba(0,128,0,0.8)' if contig != selected_contig else 'rgba(255,0,0,0.8)' for contig in bar_data.index]
+    bar_colors = ['rgba(0,0,255,0.8)' if contig != selected_contig else 'rgba(255,0,0,0.8)' for contig in bar_data.index]  # Blue for contigs, Red for selected contig
     bar_trace = go.Bar(x=bar_data.index, y=bar_data.values, marker_color=bar_colors)
     bar_layout = go.Layout(
         title=f"Contacts for {selected_contig}",
