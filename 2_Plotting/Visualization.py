@@ -78,13 +78,17 @@ def basic_visualization():
 def nx_to_cyto_elements(G, pos):
     elements = []
     for node in G.nodes:
+        data = {
+            'id': node,
+            'size': G.nodes[node]['size'],
+            'color': G.nodes[node]['color']
+        }
+        if 'parent' in G.nodes[node]:
+            data['parent'] = G.nodes[node]['parent']
+        else:
+            data['label'] = node  # Only add label for species nodes
         elements.append({
-            'data': {
-                'id': node,
-                'label': node,
-                'size': G.nodes[node]['size'],
-                'color': G.nodes[node]['color']
-            },
+            'data': data,
             'position': {
                 'x': pos[node][0] * 500,
                 'y': pos[node][1] * 500
@@ -270,7 +274,8 @@ app.layout = html.Div([
             value=None,
             placeholder="Select a contig",
             style={'width': '300px', 'display': 'none'}  # Hide by default
-        )
+        ),
+        html.Button("Confirm Selection", id="confirm-btn", style={**common_style}),
     ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin': '20px'}),
     html.Div([
         html.Div([
@@ -282,10 +287,7 @@ app.layout = html.Div([
                 elements=cyto_elements,
                 style={'height': '80vh', 'width': '60vw', 'display': 'inline-block'},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
-                stylesheet=cyto_stylesheet,
-                userZoomingEnabled=False,  # Disable zooming
-                userPanningEnabled=False,  # Disable panning
-                autolock=True  # Disable node movement
+                stylesheet=cyto_stylesheet
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'})
     ], style={'width': '100%', 'display': 'flex'}),
@@ -303,7 +305,6 @@ app.layout = html.Div([
     ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
-
 
 def get_contig_nodes(species):
     contigs = contig_information[contig_information['Contig annotation'] == species]['Contig name']
@@ -413,8 +414,8 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
     col_contig = secondary_species
 
     G_copy = nx.Graph()
-    G_copy.add_node(row_contig, size=2000, color='blue')
-    G_copy.add_node(col_contig, size=2000, color='red')
+    G_copy.add_node(row_contig, size=500, color='#A9D08E')  # Green for primary species
+    G_copy.add_node(col_contig, size=500, color='#FFD966')  # Yellow for secondary species
 
     new_pos = {row_contig: (-1, 0), col_contig: (1, 0)}
 
@@ -429,13 +430,26 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
                 inter_contigs_row.add(contig_information.at[i, 'Contig name'])
                 inter_contigs_col.add(contig_information.at[j, 'Contig name'])
 
-    all_contigs = inter_contigs_row.union(inter_contigs_col)
-    contig_positions = arrange_contigs(all_contigs, list(), radius=0.1, jitter=0.05)
+    contig_positions_row = arrange_contigs(inter_contigs_row, list(), radius=0.1, jitter=0.05)
+    contig_positions_col = arrange_contigs(inter_contigs_col, list(), radius=0.1, jitter=0.05)
 
-    for contig, (x, y) in contig_positions.items():
-        color = 'green' if contig in inter_contigs_row else 'yellow'
-        G_copy.add_node(contig, size=2, color=color)
-        new_pos[contig] = (new_pos[row_contig][0] + x, new_pos[row_contig][1] + y) if contig in inter_contigs_row else (new_pos[col_contig][0] + x, new_pos[col_contig][1] + y)
+    for contig, (x, y) in contig_positions_row.items():
+        G_copy.add_node(contig, size=20, color='#00FF00', parent=row_contig)  # Green for primary
+        new_pos[contig] = (new_pos[row_contig][0] + x*20, new_pos[row_contig][1] + y*20)
+
+    for contig, (x, y) in contig_positions_col.items():
+        G_copy.add_node(contig, size=20, color='#FFFF00', parent=col_contig)  # Yellow for secondary
+        new_pos[contig] = (new_pos[col_contig][0] + x*20, new_pos[col_contig][1] + y*20)
+
+    # Add edges between primary and secondary species contigs
+    for i in row_indices:
+        for j in col_indices:
+            if dense_matrix[i, j] != 0:
+                G_copy.add_edge(
+                    contig_information.at[i, 'Contig name'],
+                    contig_information.at[j, 'Contig name'],
+                    contacts=dense_matrix[i, j]
+                )
 
     cyto_elements = nx_to_cyto_elements(G_copy, new_pos)
     cyto_stylesheet = base_stylesheet.copy()  # Use a unique stylesheet for this visualization
@@ -445,77 +459,133 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
     return cyto_elements, cyto_stylesheet, bar_fig, row_contig
 
 def contig_visualization(active_cell, selected_species, selected_contig, table_data):
-    # Empty function for now
-    return basic_visualization()[0], basic_visualization()[1], go.Figure(), selected_species
+    if not selected_contig:
+        return basic_visualization()[0], basic_visualization()[1], go.Figure(), selected_species
+
+    # Find the index of the selected contig
+    selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
+
+    # Get all indices that have contact with the selected contig
+    contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
+    contacts_species = contig_information.loc[contacts_indices, 'Contig annotation']
+    contacts_contigs = contig_information.loc[contacts_indices, 'Contig name']
+
+    # Create the graph
+    G_copy = nx.Graph()
+
+    # Add the selected contig node
+    G_copy.add_node(selected_contig, size=20, color='#FF0000')  # Red for selected contig
+
+    # Add species nodes and contig nodes
+    for species in contacts_species.unique():
+        G_copy.add_node(species, size=50, color='#A9D08E')  # Green for species nodes
+        species_contigs = contacts_contigs[contacts_species == species]
+        for contig in species_contigs:
+            G_copy.add_node(contig, size=10, color='#00FF00', parent=species)  # Green for contigs
+            G_copy.add_edge(selected_contig, contig, contacts=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
+
+    # Generate positions for the graph nodes
+    pos = nx.spring_layout(G_copy, k=0.5, iterations=50)
+
+    cyto_elements = nx_to_cyto_elements(G_copy, pos)
+    cyto_stylesheet = base_stylesheet.copy()
+
+    # Create a bar chart to show contacts of the selected contig
+    contact_counts = dense_matrix[selected_contig_index, contacts_indices]
+    bar_data = pd.Series(contact_counts, index=contacts_contigs).sort_values()
+    bar_colors = ['rgba(0,128,0,0.8)' if contig != selected_contig else 'rgba(255,0,0,0.8)' for contig in bar_data.index]
+    bar_trace = go.Bar(x=bar_data.index, y=bar_data.values, marker_color=bar_colors)
+    bar_layout = go.Layout(
+        title=f"Contacts for {selected_contig}",
+        xaxis=dict(showticklabels=False),
+        yaxis=dict(title="Contact Count", showticklabels=False),
+        height=720,
+        margin=dict(t=30, b=0, l=0, r=0)
+    )
+    bar_fig = go.Figure(data=[bar_trace], layout=bar_layout)
+
+    return cyto_elements, cyto_stylesheet, bar_fig, selected_species
+
+@app.callback(
+    [Output('species-selector', 'value'),
+     Output('secondary-species-selector', 'value'),
+     Output('secondary-species-selector', 'style'),
+     Output('contig-selector', 'style'),
+     Output('visualization-selector', 'value')],
+    [Input('contact-table', 'active_cell'),
+     Input('visualization-selector', 'value')],
+    [State('contact-table', 'data')]
+)
+def sync_selectors(active_cell, visualization_type, table_data):
+    if not active_cell:
+        if visualization_type == 'species_contact':
+            return None, None, {'width': '300px', 'display': 'inline-block'}, {'display': 'none'}, 'species_contact'
+        elif visualization_type == 'contig':
+            return None, None, {'display': 'none'}, {'width': '300px', 'display': 'inline-block'}, 'contig'
+        else:
+            return None, None, {'display': 'none'}, {'display': 'none'}, 'species'
+    
+    row_contig = table_data[active_cell['row']]['Species']
+    col_contig = active_cell['column_id'] if active_cell['column_id'] != 'Species' else None
+
+    if active_cell['column_id'] == 'Species':
+        visualization_type = 'species'
+        secondary_species_style = {'display': 'none'}
+        contig_selector_style = {'display': 'none'}
+    else:
+        visualization_type = 'species_contact'
+        secondary_species_style = {'width': '300px', 'display': 'inline-block'}
+        contig_selector_style = {'display': 'none'}
+
+    return row_contig, col_contig, secondary_species_style, contig_selector_style, visualization_type
 
 @app.callback(
     [Output('cyto-graph', 'elements'),
      Output('cyto-graph', 'stylesheet'),
-     Output('bar-chart', 'figure'),
-     Output('species-selector', 'value'),
-     Output('visualization-selector', 'value'),
-     Output('secondary-species-selector', 'value'),
-     Output('secondary-species-selector', 'style'),
-     Output('contig-selector', 'style')],
-    [Input('contact-table', 'active_cell'),
-     Input('reset-btn', 'n_clicks'),
-     Input('species-selector', 'value'),
-     Input('secondary-species-selector', 'value'),
-     Input('contig-selector', 'value'),
-     Input('visualization-selector', 'value')],
-    [State('contact-table', 'data')]
+     Output('bar-chart', 'figure')],
+    [Input('reset-btn', 'n_clicks'),
+     Input('confirm-btn', 'n_clicks')],
+    [State('species-selector', 'value'),
+     State('secondary-species-selector', 'value'),
+     State('contig-selector', 'value'),
+     State('visualization-selector', 'value'),
+     State('contact-table', 'data')]
 )
-def update_figure(active_cell, reset_clicks, selected_species, secondary_species, selected_contig, visualization_type, table_data):
+def update_visualization(reset_clicks, confirm_clicks, selected_species, secondary_species, selected_contig, visualization_type, table_data):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     # Initialize default values for cyto_elements and bar_fig
     cyto_elements, cyto_stylesheet, _ = basic_visualization()
     bar_fig = go.Figure()
-    secondary_species_style = {'display': 'none'}
-    contig_selector_style = {'display': 'none'}
 
-    if triggered_id == 'reset-btn' or not active_cell:
+    if triggered_id == 'reset-btn' or not selected_species:
         # Reset all selections to show the original plot
-        return cyto_elements, cyto_stylesheet, bar_fig, None, 'species', None, secondary_species_style, contig_selector_style
+        return cyto_elements, cyto_stylesheet, bar_fig
 
-    row_contig = table_data[active_cell['row']]['Species']
-    col_contig = active_cell['column_id'] if active_cell['column_id'] is not None else None
+    if triggered_id == 'confirm-btn':
+        if visualization_type == 'species_contact':
+            if not selected_species or not secondary_species:
+                return basic_visualization()[0], basic_visualization()[1], go.Figure()
 
-    # Determine the visualization mode and selectors based on the selected cell
-    if col_contig and col_contig != 'Species' and row_contig != col_contig:
-        visualization_type = 'species_contact'
-        selected_species = row_contig
-        secondary_species = col_contig
-        secondary_species_style = {'width': '300px', 'display': 'inline-block'}
-    elif col_contig and col_contig == 'Species':
-        visualization_type = 'species'
-        selected_species = row_contig
-        secondary_species = None
-        secondary_species_style = {'display': 'none'}
-    else:
-        visualization_type = visualization_type
-        secondary_species_style = {'display': 'none'}
-        if visualization_type == 'contig':
-            contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+            cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_contact_visualization(None, selected_species, secondary_species, table_data)
+            return cyto_elements, cyto_stylesheet, bar_fig
+        elif visualization_type == 'species':
+            cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_visualization(None, selected_species, table_data)
+            return cyto_elements, cyto_stylesheet, bar_fig
+        elif visualization_type == 'contig':
+            cyto_elements, cyto_stylesheet, bar_fig, selected_species = contig_visualization(None, selected_species, selected_contig, table_data)
+            return cyto_elements, cyto_stylesheet, bar_fig
 
-    if visualization_type == 'species':
-        cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_visualization(active_cell, selected_species, table_data)
-        return cyto_elements, cyto_stylesheet, bar_fig, selected_species, visualization_type, None, secondary_species_style, contig_selector_style
-    elif visualization_type == 'species_contact':
-        cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_contact_visualization(active_cell, selected_species, secondary_species, table_data)
-        return cyto_elements, cyto_stylesheet, bar_fig, selected_species, visualization_type, secondary_species, secondary_species_style, contig_selector_style
-    elif visualization_type == 'contig':
-        cyto_elements, cyto_stylesheet, bar_fig, selected_species = contig_visualization(active_cell, selected_species, selected_contig, table_data)
-        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
-        return cyto_elements, cyto_stylesheet, bar_fig, selected_species, visualization_type, secondary_species, secondary_species_style, contig_selector_style
+    return cyto_elements, cyto_stylesheet, bar_fig
 
 @app.callback(
     Output('contig-selector', 'options'),
-    [Input('species-selector', 'value')]
+    [Input('species-selector', 'value')],
+    [State('visualization-selector', 'value')]
 )
-def update_contig_options(selected_species):
-    if selected_species:
+def populate_contig_selector(selected_species, visualization_type):
+    if visualization_type == 'contig' and selected_species:
         contigs = get_contig_nodes(selected_species)
         return [{'label': contig, 'value': contig} for contig in contigs]
     return []
