@@ -77,8 +77,7 @@ for edge in G.edges(data=True):
         x=[x0, x1, None],
         y=[y0, y1, None],
         line=dict(width=5, color='rgba(0,0,0,0.3)'),  # Fixed width for the edges
-        hoverinfo='text',
-        text=f"{edge[0]} - {edge[1]}: {edge[2]['contacts']}",
+        hoverinfo='none',  # Remove hover information
         mode='lines',
         name=f"{edge[0]}-{edge[1]}"
     )
@@ -88,10 +87,9 @@ for edge in G.edges(data=True):
 node_trace = go.Scatter(
     x=[pos[node][0] for node in G.nodes],
     y=[pos[node][1] for node in G.nodes],
-    text=[node for node in G.nodes],
-    hovertext=[f"{node}: {G.nodes[node]['contacts']}" for node in G.nodes],
-    mode='markers+text',
-    hoverinfo='text',
+    text=['' for node in G.nodes],  # Remove node names
+    hoverinfo='none',  # Remove hover information
+    mode='markers',
     marker=dict(
         showscale=False,  # Hide the color scale bar
         colorscale='Viridis',
@@ -134,8 +132,8 @@ def create_bar_chart(row_contig, col_contig=None):
     bar_trace = go.Bar(x=bar_data.index, y=bar_data.values, marker_color=bar_colors)
     bar_layout = go.Layout(
         title=f"Inter-species Contacts for {row_contig}",
-        xaxis=dict(showticklabels=True),
-        yaxis=dict(title="Contact Count"),
+        xaxis=dict(showticklabels=False),  # Remove x-axis tick labels
+        yaxis=dict(title="Contact Count", showticklabels=False),  # Remove y-axis tick labels
         height=720,  # Adjusted height
         margin=dict(t=30, b=0, l=0, r=0)  # Adjusted margin
     )
@@ -155,7 +153,7 @@ def create_annotations(G, pos, selected_node):
             annotations.append(
                 dict(
                     x=x, y=y,
-                    text=node,
+                    text='',  # Remove text
                     showarrow=False,
                     font=dict(color="lightgrey")
                 )
@@ -192,6 +190,33 @@ def create_conditional_styles(matrix_df):
                 'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})' # Set background color for the contact matrix.
             })
     return styles
+
+# Function to arrange contigs
+def arrange_contigs(contigs, inter_contig_edges, radius=0.6, jitter=0.05):
+    # Identify contigs that connect to other species
+    connecting_contigs = [contig for contig in contigs if contig in inter_contig_edges]
+    other_contigs = [contig for contig in contigs if contig not in connecting_contigs]
+
+    # Arrange connecting contigs in a circle with jitter
+    num_connecting = len(connecting_contigs)
+    circle_positions = {}
+    angle_step = 2 * np.pi / num_connecting if num_connecting > 0 else 0
+    for i, contig in enumerate(connecting_contigs):
+        angle = i * angle_step
+        x = radius * np.cos(angle) + np.random.uniform(-jitter, jitter)
+        y = radius * np.sin(angle) + np.random.uniform(-jitter, jitter)
+        circle_positions[contig] = (x, y)
+
+    # Arrange other contigs randomly inside the circle
+    inner_positions = {}
+    for contig in other_contigs:
+        r = radius * 0.8 * np.sqrt(np.random.random())
+        theta = 2 * np.pi * np.random.random()
+        x = r * np.cos(theta)
+        y = r * np.sin(theta)
+        inner_positions[contig] = (x, y)
+
+    return {**circle_positions, **inner_positions}
 
 # Convert inter_species_contacts and intra_species_contacts to a DataFrame
 inter_intra_species_df = inter_species_contacts.copy()
@@ -236,6 +261,30 @@ app.layout = html.Div([
             value=None,
             placeholder="Select a species",
             style={'width': '300px', 'display': 'inline-block'}
+        ),
+        dcc.Dropdown(
+            id='secondary-species-selector',
+            options=[{'label': species, 'value': species} for species in unique_annotations],
+            value=None,
+            placeholder="Select a secondary species",
+            style={'width': '300px', 'display': 'none'}  # Hide by default
+        ),
+        dcc.Dropdown(
+            id='contig-selector',
+            options=[],
+            value=None,
+            placeholder="Select a contig",
+            style={'width': '300px', 'display': 'none'}  # Hide by default
+        ),
+        dcc.Dropdown(
+            id='visualization-selector',
+            options=[
+                {'label': 'Species', 'value': 'species'},
+                {'label': 'Species Contact', 'value': 'species_contact'},
+                {'label': 'Contig', 'value': 'contig'}
+            ],
+            value='species',
+            style={'width': '300px', 'display': 'inline-block'}
         )
     ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin': '20px'}),
     html.Div([
@@ -262,105 +311,68 @@ app.layout = html.Div([
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
 def rearrange_nodes(selected_node):
-    nodes = [node for node in G.nodes if node != selected_node]
-    num_nodes = len(nodes)
+    num_nodes = len(G.nodes) - 1  # Exclude the selected node
     angles = np.linspace(-np.pi/4, np.pi/4, num_nodes//2).tolist() + np.linspace(3*np.pi/4, 5*np.pi/4, num_nodes//2).tolist()
     
     new_pos = {selected_node: (0, 0)}
+    i = 0
     radius = 1  # Radius for placing the nodes around the center
-    for i, node in enumerate(nodes):
-        angle = angles[i]
-        x = radius * np.cos(angle)
-        y = radius * np.sin(angle)
-        new_pos[node] = (x, y)
+    for node in G.nodes:
+        if node != selected_node:
+            angle = angles[i]
+            x = radius * np.cos(angle)
+            y = radius * np.sin(angle)
+            new_pos[node] = (x, y)
+            i += 1
     return new_pos
 
 def get_contig_nodes(species):
     contigs = contig_information[contig_information['Contig annotation'] == species]['Contig name']
     return contigs
 
-def arrange_contigs(contigs, inter_contig_edges, radius=0.5):
-    # Identify contigs that connect to other species
-    connecting_contigs = [contig for contig in contigs if contig in inter_contig_edges]
-    other_contigs = [contig for contig in contigs if contig not in connecting_contigs]
+# Visualization functions
+def species_visualization(active_cell, selected_species, table_data):
+    row_contig = table_data[active_cell['row']]['Species'] if active_cell else selected_species
+    col_contig = active_cell['column_id'] if active_cell else None
 
-    # Arrange connecting contigs in a circle
-    num_connecting = len(connecting_contigs)
-    circle_positions = {}
-    angle_step = 2 * np.pi / num_connecting if num_connecting > 0 else 0
-    for i, contig in enumerate(connecting_contigs):
-        angle = i * angle_step
-        x = radius * np.cos(angle)
-        y = radius * np.sin(angle)
-        circle_positions[contig] = (x, y)
-
-    # Arrange other contigs randomly inside the circle
-    inner_positions = {}
-    for contig in other_contigs:
-        r = radius * 0.9 * np.sqrt(np.random.random())
-        theta = 2 * np.pi * np.random.random()
-        x = r * np.cos(theta)
-        y = r * np.sin(theta)
-        inner_positions[contig] = (x, y)
-
-    return {**circle_positions, **inner_positions}
-
-
-# Updated reset button callback and layout update code
-@app.callback(
-    [Output('2d-graph', 'figure'),
-     Output('bar-chart', 'figure'),
-     Output('species-selector', 'value')],
-    [Input('contact-table', 'active_cell'),
-     Input('reset-btn', 'n_clicks'),
-     Input('species-selector', 'value')],
-    [State('contact-table', 'data')]
-)
-def update_figure(active_cell, reset_clicks, selected_species, table_data):
-    ctx = callback_context
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    if triggered_id == 'reset-btn' or not active_cell:
-        # Reset all selections
-        for trace in fig.data:
-            if 'name' in trace:
-                if trace['name'] == 'Nodes':
-                    trace.marker.color = [G.nodes[node]['color'] for node in G.nodes]
-                    trace.marker.size = [G.nodes[node]['size'] for node in G.nodes]  # Reset node sizes
-                    trace.x = [pos[node][0] for node in G.nodes]  # Reset node positions
-                    trace.y = [pos[node][1] for node in G.nodes]  # Reset node positions
-                    trace.text = ['' for _ in G.nodes]  # Remove node names
-                else:
-                    trace['line']['color'] = 'rgba(0,0,0,0.3)'
-        return fig, go.Figure(), None
-
-    row_contig = table_data[active_cell['row']]['Species'] if triggered_id != 'species-selector' else selected_species
-    col_contig = active_cell['column_id'] if triggered_id != 'species-selector' else None
-
-    # Copy the graph and its nodes
     G_copy = G.copy()
 
-    # Recalculate node sizes based on the selected species' inter-species contacts
     row_contacts = inter_species_contacts.loc[row_contig]
     max_row_contacts = row_contacts.max()
 
-    # Set the size of the selected node to 5000 and scale others proportionally
     for node in G_copy.nodes:
         if node == row_contig:
             G_copy.nodes[node]['size'] = 5000
-            G_copy.nodes[node]['color'] = 'gray'
+            G_copy.nodes[node]['color'] = 'rgba(0,255,0,0.1)'  # Green with high transparency
         else:
             G_copy.nodes[node]['size'] = (row_contacts[node] / max_row_contacts) * 100
 
-    # Rearrange node positions without including the selected node
     new_pos = rearrange_nodes(row_contig)
 
-    # Update node sizes and positions in the trace
     node_sizes = [G_copy.nodes[node]['size'] for node in G_copy.nodes]
     node_x = [new_pos[node][0] for node in G_copy.nodes]
     node_y = [new_pos[node][1] for node in G_copy.nodes]
 
-    # Add contig nodes for the selected species
+    annotations = create_annotations(G_copy, new_pos, row_contig)
+    visibility = []
+    node_colors = [G_copy.nodes[node]['color'] for node in G_copy.nodes]
+    for trace in [node_trace]:
+        if 'name' in trace:
+            if trace['name'] == 'Nodes':
+                trace.marker.color = node_colors
+                trace.marker.size = node_sizes
+                trace.x = node_x
+                trace.y = node_y
+                trace.text = ['' for _ in trace.text]  # Remove node names
+                trace.hoverinfo = 'none'  # Remove hover information
+                visibility.append(True)
+                trace.marker.line = dict(width=[5 if node == row_contig else 2 for node in trace.text], color=['green' if node == row_contig else 'black' for node in trace.text])
+
+    new_fig = go.Figure(data=[node_trace], layout=layout)
+    new_fig.update_layout(annotations=annotations)
+    for i, vis in enumerate(visibility):
+        new_fig.data[i].visible = vis
+
     contigs = get_contig_nodes(row_contig)
     indices = contig_information[contig_information['Contig annotation'] == row_contig].index
     inter_contig_edges = set()
@@ -373,90 +385,172 @@ def update_figure(active_cell, reset_clicks, selected_species, table_data):
 
     contig_positions = arrange_contigs(contigs, inter_contig_edges)
 
-    # Update edge traces
-    new_edge_trace = []
-    for edge in G_copy.edges(data=True):
-        x0, y0 = new_pos[edge[0]]
-        x1, y1 = new_pos[edge[1]]
-        trace = go.Scatter(
-            x=[x0, x1, None],
-            y=[y0, y1, None],
-            line=dict(width=5, color='rgba(0,0,0,0.3)'),  # Fixed width for the edges
-            hoverinfo='text',
-            text=f"{edge[0]} - {edge[1]}: {edge[2]['contacts']}",
-            mode='lines',
-            name=f"{edge[0]}-{edge[1]}"
-        )
-        new_edge_trace.append(trace)
-
-    annotations = create_annotations(G_copy, new_pos, row_contig)
-    visibility = []
-    node_colors = [G_copy.nodes[node]['color'] for node in G_copy.nodes]
-    for trace in new_edge_trace + [node_trace]:
-        if 'name' in trace:
-            if trace['name'] == 'Nodes':  # for node
-                for i, node in enumerate(trace.text):
-                    if node == row_contig:
-                        node_colors[i] = 'gray'
-                trace.marker.color = node_colors
-                trace.marker.size = node_sizes  # Update node sizes
-                trace.x = node_x  # Update node positions
-                trace.y = node_y  # Update node positions
-                trace.text = ['' for _ in trace.text]  # Remove node names
-                visibility.append(True)
-                trace.marker.line = dict(width=[5 if node == row_contig else 2 for node in trace.text], color=['green' if node == row_contig else 'black' for node in trace.text])
-            else:  # for edge
-                node1, node2 = trace['name'].split("-")
-                if node1 == row_contig or node2 == row_contig:
-                    visibility.append(True)
-                    trace['line']['color'] = 'rgba(0,128,0,0.8)' 
-                else:
-                    visibility.append(False)
-
-    # Highlight the selected edge with a different color
-    for trace in new_edge_trace:
-        if trace.name == f"{row_contig}-{col_contig}" or trace.name == f"{col_contig}-{row_contig}":
-            trace['line']['color'] = 'rgba(128,0,128,0.8)'  # Highlight color (purple)
-
-    new_fig = go.Figure(data=new_edge_trace + [node_trace], layout=layout)
-    new_fig.update_layout(annotations=annotations)
-    for i, vis in enumerate(visibility):
-        new_fig.data[i].visible = vis
-
-    # Add contig nodes for the selected species
     for contig, (x, y) in contig_positions.items():
-        marker_symbol = 'cross' if contig not in inter_contig_edges else 'circle'
+        color = 'green' if contig in inter_contig_edges else 'yellow'
         new_fig.add_trace(go.Scatter(
             x=[new_pos[row_contig][0] + x],
             y=[new_pos[row_contig][1] + y],
-            hovertext=[f"{contig}: Contig"],
+            hoverinfo='none',  # Remove hover information
             mode='markers',
-            hoverinfo='text',
             marker=dict(
-                symbol=marker_symbol,
-                showscale=False,  # Hide the color scale bar
+                symbol='circle',
+                showscale=False,
                 colorscale='Viridis',
-                size=10,  # Fixed size for contig nodes
-                color='grey',  # Fixed color for contig nodes
+                size=10,
+                color=color,
                 line_width=2
             ),
             name='Contigs'
         ))
 
-    # Create bar chart
     bar_fig = create_bar_chart(row_contig, col_contig)
 
     return new_fig, bar_fig, row_contig
 
+def species_contact_visualization(active_cell, selected_species, secondary_species, table_data):
+    if not selected_species or not secondary_species:
+        return fig, go.Figure(), selected_species
+
+    row_contig = selected_species
+    col_contig = secondary_species
+
+    G_copy = nx.Graph()
+    G_copy.add_node(row_contig, size=2000, color='blue')
+    G_copy.add_node(col_contig, size=2000, color='red')
+
+    new_pos = {row_contig: (-1, 0), col_contig: (1, 0)}
+
+    row_indices = contig_information[contig_information['Contig annotation'] == row_contig].index
+    col_indices = contig_information[contig_information['Contig annotation'] == col_contig].index
+    inter_contigs_row = set()
+    inter_contigs_col = set()
+
+    for i in row_indices:
+        for j in col_indices:
+            if dense_matrix[i, j] != 0:
+                inter_contigs_row.add(contig_information.at[i, 'Contig name'])
+                inter_contigs_col.add(contig_information.at[j, 'Contig name'])
+
+    all_contigs = inter_contigs_row.union(inter_contigs_col)
+    contig_positions = arrange_contigs(all_contigs, list(), radius=0.5, jitter=0.05)
+
+    for contig, (x, y) in contig_positions.items():
+        color = 'green' if contig in inter_contigs_row else 'yellow'
+        G_copy.add_node(contig, size=2, color=color)
+        new_pos[contig] = (new_pos[row_contig][0] + x, new_pos[row_contig][1] + y) if contig in inter_contigs_row else (new_pos[col_contig][0] + x, new_pos[col_contig][1] + y)
+
+    edge_trace = []
+    node_trace = go.Scatter(
+        x=[new_pos[node][0] for node in G_copy.nodes],
+        y=[new_pos[node][1] for node in G_copy.nodes],
+        hoverinfo='none',  # Remove hover information
+        mode='markers',
+        marker=dict(
+            showscale=False,
+            colorscale='Viridis',
+            size=[G_copy.nodes[node]['size'] for node in G_copy.nodes],
+            color=[G_copy.nodes[node]['color'] for node in G_copy.nodes],
+            sizemode='area',
+            sizeref=2.*max([G_copy.nodes[node]['size'] for node in G_copy.nodes])/450**2,
+            line_width=2
+        ),
+        name='Nodes'
+    )
+
+    new_fig = go.Figure(data=edge_trace + [node_trace], layout=layout)
+    annotations = create_annotations(G_copy, new_pos, row_contig)
+    new_fig.update_layout(annotations=annotations)
+
+    bar_fig = create_bar_chart(row_contig, col_contig)
+
+    return new_fig, bar_fig, row_contig
+
+
+def contig_visualization(active_cell, selected_species, selected_contig, table_data):
+    # Empty function for now
+    return go.Figure(), go.Figure(), selected_species
+
 @app.callback(
-    Output("modal", "is_open"),
-    [Input("open-help", "n_clicks"), Input("close-help", "n_clicks")],
-    [State("modal", "is_open")]
+    [Output('2d-graph', 'figure'),
+     Output('bar-chart', 'figure'),
+     Output('species-selector', 'value'),
+     Output('visualization-selector', 'value'),
+     Output('secondary-species-selector', 'value'),
+     Output('secondary-species-selector', 'style'),
+     Output('contig-selector', 'style')],
+    [Input('contact-table', 'active_cell'),
+     Input('reset-btn', 'n_clicks'),
+     Input('species-selector', 'value'),
+     Input('secondary-species-selector', 'value'),
+     Input('contig-selector', 'value'),
+     Input('visualization-selector', 'value')],
+    [State('contact-table', 'data')]
 )
-def toggle_modal(n1, n2, is_open):
-    if n1 or n2:
-        return not is_open
-    return is_open
+
+def update_figure(active_cell, reset_clicks, selected_species, secondary_species, selected_contig, visualization_type, table_data):
+    ctx = callback_context
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    # Initialize default values for fig and bar_fig
+    fig = go.Figure(data=edge_trace + [node_trace], layout=layout)
+    bar_fig = go.Figure()
+    secondary_species_style = {'display': 'none'}
+    contig_selector_style = {'display': 'none'}
+
+    if triggered_id == 'reset-btn' or not active_cell:
+        # Reset all selections to show the original plot
+        for trace in fig.data:
+            if 'name' in trace:
+                if trace['name'] == 'Nodes':
+                    trace.marker.color = [G.nodes[node]['color'] for node in G.nodes]
+                    trace.marker.size = [G.nodes[node]['size'] for node in G.nodes]  # Reset node sizes
+                    trace.x = [pos[node][0] for node in G.nodes]  # Reset node positions
+                    trace.y = [pos[node][1] for node in G.nodes]  # Reset node positions
+                    trace.text = ['' for _ in G.nodes]  # Remove node names
+                else:
+                    trace['line']['color'] = 'rgba(0,0,0,0.3)'
+        return fig, bar_fig, None, 'species', None, secondary_species_style, contig_selector_style
+
+    row_contig = table_data[active_cell['row']]['Species']
+    col_contig = active_cell['column_id'] if active_cell['column_id'] is not None else None
+
+    # Determine the visualization mode and selectors based on the selected cell
+    if col_contig and col_contig != 'Species' and row_contig != col_contig:
+        visualization_type = 'species_contact'
+        selected_species = row_contig
+        secondary_species = col_contig
+        secondary_species_style = {'width': '300px', 'display': 'inline-block'}
+    elif col_contig and col_contig == 'Species':
+        visualization_type = 'species'
+        selected_species = row_contig
+        secondary_species = None
+        secondary_species_style = {'display': 'none'}
+    else:
+        visualization_type = visualization_type
+        secondary_species_style = {'display': 'none'}
+        if visualization_type == 'contig':
+            contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+
+    if visualization_type == 'species':
+        fig, bar_fig, selected_species = species_visualization(active_cell, selected_species, table_data)
+        return fig, bar_fig, selected_species, visualization_type, None, secondary_species_style, contig_selector_style
+    elif visualization_type == 'species_contact':
+        fig, bar_fig, selected_species = species_contact_visualization(active_cell, selected_species, secondary_species, table_data)
+        return fig, bar_fig, selected_species, visualization_type, secondary_species, secondary_species_style, contig_selector_style
+    elif visualization_type == 'contig':
+        fig, bar_fig, selected_species = contig_visualization(active_cell, selected_species, selected_contig, table_data)
+        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+        return fig, bar_fig, selected_species, visualization_type, secondary_species, secondary_species_style, contig_selector_style
+
+@app.callback(
+    Output('contig-selector', 'options'),
+    [Input('species-selector', 'value')]
+)
+def update_contig_options(selected_species):
+    if selected_species:
+        contigs = get_contig_nodes(selected_species)
+        return [{'label': contig, 'value': contig} for contig in contigs]
+    return []
 
 if __name__ == '__main__':
     app.run_server(debug=True)
