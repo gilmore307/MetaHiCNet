@@ -166,9 +166,8 @@ base_stylesheet = [
 ]
 
 # Function to create a bar chart
-def create_bar_chart(data_dict):
-    trace_name = list(data_dict.keys())[0]  # Show the first trace by default
-    df = data_dict[trace_name]
+def create_bar_chart(data_dict, selected_trace):
+    df = data_dict[selected_trace]
 
     # Sort the DataFrame by the selected trace
     df = df.sort_values(by='Value', ascending=False)
@@ -179,7 +178,7 @@ def create_bar_chart(data_dict):
     trace = go.Bar(
         x=df['Species'],
         y=df['Value'],
-        name=trace_name,
+        name=selected_trace,
     )
 
     combined_bar_fig = go.Figure(data=[trace])
@@ -671,52 +670,54 @@ def sync_selectors(active_cell, visualization_type, table_data):
      Output('cyto-graph', 'stylesheet'),
      Output('bar-chart', 'figure')],
     [Input('reset-btn', 'n_clicks'),
-     Input('confirm-btn', 'n_clicks')],
+     Input('confirm-btn', 'n_clicks'),
+     Input('trace-selector', 'value')],
     [State('species-selector', 'value'),
      State('secondary-species-selector', 'value'),
      State('contig-selector', 'value'),
      State('visualization-selector', 'value'),
-     State('contact-table', 'data')]
+     State('contact-table', 'data'),
+     State('bar-slider', 'value')]
 )
-def update_visualization(reset_clicks, confirm_clicks, selected_species, secondary_species, selected_contig, visualization_type, table_data):
+def update_visualization(reset_clicks, confirm_clicks, selected_trace, selected_species, secondary_species, selected_contig, visualization_type, table_data, slider_value):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     # Initialize default values for cyto_elements and bar_fig
     cyto_elements, cyto_stylesheet, _, data_dict = basic_visualization()
-    bar_fig = go.Figure()
 
     if triggered_id == 'reset-btn' or not selected_species:
         # Reset all selections to show the original plot
-        return cyto_elements, cyto_stylesheet, bar_fig
+        return cyto_elements, cyto_stylesheet, create_bar_chart(data_dict, selected_trace)
 
     if triggered_id == 'confirm-btn':
         if visualization_type == 'species_contact':
             if not selected_species or not secondary_species:
                 return basic_visualization()[:3]  # Return the first three elements
             cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_contact_visualization(None, selected_species, secondary_species, table_data, trace=None, slider_value=None)
-            return cyto_elements, cyto_stylesheet, bar_fig
+            return cyto_elements, cyto_stylesheet, create_bar_chart(data_dict, selected_trace)
         elif visualization_type == 'species':
             cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_visualization(None, selected_species, table_data, trace=None, slider_value=None)
-            return cyto_elements, cyto_stylesheet, bar_fig
+            return cyto_elements, cyto_stylesheet, create_bar_chart(data_dict, selected_trace)
         elif visualization_type == 'contig':
             cyto_elements, cyto_stylesheet, bar_fig, selected_species = contig_visualization(None, selected_species, selected_contig, table_data)
-            return cyto_elements, cyto_stylesheet, bar_fig
+            return cyto_elements, cyto_stylesheet, create_bar_chart(data_dict, selected_trace)
 
-    return cyto_elements, cyto_stylesheet, bar_fig
+    if triggered_id == 'trace-selector':
+        return cyto_elements, cyto_stylesheet, create_bar_chart(data_dict, selected_trace)
+
+    return cyto_elements, cyto_stylesheet, create_bar_chart(data_dict, selected_trace)
 
 @app.callback(
     Output('contig-selector', 'options'),
     [Input('species-selector', 'value')],
     [State('visualization-selector', 'value')]
 )
-
 def populate_contig_selector(selected_species, visualization_type):
     if visualization_type == 'contig' and selected_species:
         contigs = get_contig_indexes(selected_species)
         return [{'label': contig_information.loc[index, 'Contig name'], 'value': contig_information.loc[index, 'Contig name']} for index in contigs]
     return []
-
 
 if __name__ == '__main__':
     app.run_server(debug=True)
