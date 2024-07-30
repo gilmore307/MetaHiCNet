@@ -174,12 +174,10 @@ base_stylesheet = [
 
 def create_bar_chart(data_dict):
     traces = []
-    max_bars = 0  # Keep track of the maximum number of bars across all traces
 
     for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
         # Sort the data in descending order by 'value'
         bar_data = data_frame.sort_values(by='value', ascending=False)
-        max_bars = max(max_bars, len(bar_data))
 
         bar_colors = bar_data['color']  # Use the color column for bar colors
         bar_trace = go.Bar(
@@ -192,7 +190,12 @@ def create_bar_chart(data_dict):
         traces.append(bar_trace)
 
     bar_layout = go.Layout(
-        xaxis=dict(title="", tickangle=-45, tickfont=dict(size=15)),  # Dynamically set tickvals and ticktext
+        xaxis=dict(
+            title="",
+            tickangle=-45,
+            tickfont=dict(size=15),
+            rangeslider=dict(visible=True)  # Make the range slider visible
+        ),
         yaxis=dict(title="Value", tickfont=dict(size=15)),
         height=400,  # Adjusted height
         margin=dict(t=40, b=100, l=40, r=40),  # Adjusted margin
@@ -200,29 +203,6 @@ def create_bar_chart(data_dict):
     )
 
     bar_fig = go.Figure(data=traces, layout=bar_layout)
-
-    # Add a slider to show at most 20 bars simultaneously
-    if max_bars > 20:
-        steps = []
-        for i in range(0, max_bars, 20):
-            end_index = min(i + 20, max_bars)
-            yaxis_range_max = max(bar_data['value'].iloc[i:end_index]) if not bar_data['value'].iloc[i:end_index].empty else 0
-            step = dict(
-                method='relayout',
-                args=[{'xaxis.range': [i, end_index], 'yaxis.range': [0, yaxis_range_max]}],
-                label=f'{i + 1}-{end_index}'
-            )
-            steps.append(step)
-
-        sliders = [dict(
-            active=0,
-            currentvalue={"prefix": "Showing: ", "font": {"size": 20}},
-            pad={"t": 70},
-            steps=steps
-        )]
-
-        bar_fig.update_layout(sliders=sliders)
-
     return bar_fig
 
 # Function to create conditional styles for the DataTable
@@ -495,7 +475,7 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
                 interspecies_contacts.append({
                     'name': f"{contig_information.at[i, 'Contig name']} - {contig_information.at[j, 'Contig name']}",
                     'value': contact_value,
-                    'color': '#FFD966'  # Set color for the bars
+                    'color': 'blue'  # Set blue color for the bars
                 })
 
     contig_positions_row = arrange_contigs(inter_contigs_row, list(), radius=0.1, jitter=0.05)
@@ -635,16 +615,20 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
     contig_data = pd.DataFrame({'name': contacts_contigs, 'value': contig_contact_values, 'color': [G_copy.nodes[contig]['color'] for contig in contacts_contigs]})
 
     species_contact_values = []
+    contig_contact_counts_per_species = []  # For the new trace
     for species in contacts_species.unique():
         species_indexes = get_contig_indexes(species)
         contact_value = dense_matrix[selected_contig_index, species_indexes].sum()
         species_contact_values.append(contact_value)
-    
+        contig_contact_counts_per_species.append(len(species_indexes))  # Count the number of contigs per species
+
     species_data = pd.DataFrame({'name': contacts_species.unique(), 'value': species_contact_values, 'color': [G_copy.nodes[species]['color'] for species in contacts_species.unique()]})
+    contig_contact_counts_data = pd.DataFrame({'name': contacts_species.unique(), 'value': contig_contact_counts_per_species, 'color': [G_copy.nodes[species]['color'] for species in contacts_species.unique()]})
 
     data_dict = {
         'Contig Contacts': contig_data,
-        'Species Contacts': species_data
+        'Species Contacts': species_data,
+        'Contig Contact Counts': contig_contact_counts_data  # New trace
     }
 
     bar_fig = create_bar_chart(data_dict)
