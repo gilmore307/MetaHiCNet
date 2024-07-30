@@ -31,6 +31,13 @@ def get_contig_indexes(species):
     contigs = contig_information[contig_information['Contig annotation'] == species].index
     return contigs
 
+# Function to generate gradient values in a range [A, B]
+def generate_gradient_values(input_array, range_A, range_B):
+    min_val = np.min(input_array)
+    max_val = np.max(input_array)
+    scaled_values = range_A + ((input_array - min_val) / (max_val - min_val)) * (range_B - range_A)
+    return scaled_values
+
 # Calculate the total intra-species contacts and inter-species contacts
 unique_annotations = contig_information['Contig annotation'].unique()
 species_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
@@ -67,23 +74,30 @@ def basic_visualization():
     G = nx.Graph()
 
     # Add nodes with size based on intra-species contacts
-    max_intra_species_contacts = species_contact_matrix.max().max()
     is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
-    for annotation in unique_annotations:
-        contacts = species_contact_matrix.at[annotation, annotation]
+    intra_species_contacts = [species_contact_matrix.at[annotation, annotation] for annotation in unique_annotations]
+    node_sizes = generate_gradient_values(np.array(intra_species_contacts), 10, 100)  # Example range from 10 to 100
+    for annotation, size in zip(unique_annotations, node_sizes):
         is_viral = contig_information.loc[
             contig_information['Contig annotation'] == annotation, 'Is Viral'
         ].values[0]
         color = is_viral_colors[str(is_viral)]
-        size = (contacts / max_intra_species_contacts) * 100  # Scale node size for plotly
-        G.add_node(annotation, size=size, color=color, contacts=contacts)
+        G.add_node(annotation, size=size, color=color)
 
     # Add edges with weight based on inter-species contacts
+    inter_species_contacts = [
+        species_contact_matrix.at[annotation_i, annotation_j]
+        for annotation_i in unique_annotations
+        for annotation_j in unique_annotations
+        if annotation_i != annotation_j
+    ]
+    edge_lengths = generate_gradient_values(np.array(inter_species_contacts), 10, 100)  # Example range from 10 to 100
+    edge_index = 0
     for annotation_i in unique_annotations:
         for annotation_j in unique_annotations:
-            if annotation_i != annotation_j:
-                if species_contact_matrix.at[annotation_i, annotation_j] > 0:
-                    G.add_edge(annotation_i, annotation_j, contacts=species_contact_matrix.at[annotation_i, annotation_j])
+            if annotation_i != annotation_j and species_contact_matrix.at[annotation_i, annotation_j] > 0:
+                G.add_edge(annotation_i, annotation_j, length=edge_lengths[edge_index])
+                edge_index += 1
 
     # Initial node positions using a force-directed layout with increased dispersion
     pos = nx.spring_layout(G, dim=2, k=2, iterations=50)
@@ -117,7 +131,7 @@ def nx_to_cyto_elements(G, pos):
             'data': {
                 'source': edge[0],
                 'target': edge[1],
-                'weight': edge[2]['contacts']
+                'weight': edge[2]['length']
             }
         })
     return elements
@@ -309,10 +323,6 @@ app.layout = html.Div([
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
-def get_contig_nodes(species):
-    contigs = contig_information[contig_information['Contig annotation'] == species]['Contig name']
-    return contigs
-
 # Visualization functions
 def species_visualization(active_cell, selected_species, table_data):
     row_contig = table_data[active_cell['row']]['Species'] if active_cell else selected_species
@@ -373,8 +383,8 @@ def species_visualization(active_cell, selected_species, table_data):
     new_pos = nx.spring_layout(G_copy, pos={row_contig: (0, 0)}, fixed=[row_contig], k=min_edge_length / (len(G_copy.nodes) ** 0.5), iterations=50)
 
     # Get and arrange contigs within the selected species node
-    contigs = get_contig_nodes(row_contig)
     indices = get_contig_indexes(row_contig)
+    contigs = contig_information.loc[indices, 'Contig name']
     inter_contig_edges = set()
 
     for i in indices:
@@ -527,7 +537,8 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
         for contig, (x, y) in contig_positions.items():
             G_copy.add_node(contig, size=10 if contig != selected_contig else 50, color='red' if contig == selected_contig else gradient_color, parent=species)  # Same color as species, red for selected contig
             if contig != selected_contig:
-                G_copy.add_edge(selected_contig, contig, contacts=dense_matrix[selected_contig_index, get_contig_indexes(contig_information[contig_information['Contig name'] == contig].index[0])])
+                contact_value = dense_matrix[selected_contig_index, get_contig_indexes(contig_information[contig_information['Contig name'] == contig].index[0])]
+                G_copy.add_edge(selected_contig, contig, contacts=contact_value, length=contact_value)
             species_positions[contig] = (x, y)
 
     # Ensure the selected contig node is positioned above all other contigs
@@ -654,7 +665,7 @@ def update_visualization(reset_clicks, confirm_clicks, selected_species, seconda
 )
 def populate_contig_selector(selected_species, visualization_type):
     if visualization_type == 'contig' and selected_species:
-        contigs = get_contig_nodes(selected_species)
+        contigs = contig_information.loc[get_contig_indexes(selected_species), 'Contig name']
         return [{'label': contig, 'value': contig} for contig in contigs]
     return []
 
