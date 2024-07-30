@@ -174,39 +174,50 @@ base_stylesheet = [
 
 def create_bar_chart(data_dict):
     traces = []
-    for trace_name, data_frame in data_dict.items():
+    max_bars = 0  # Keep track of the maximum number of bars across all traces
+
+    for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
         # Sort the data in descending order by 'value'
         bar_data = data_frame.sort_values(by='value', ascending=False)
-        
+        max_bars = max(max_bars, len(bar_data))
+
         bar_colors = bar_data['color']  # Use the color column for bar colors
-        bar_trace = go.Bar(x=bar_data['name'], y=bar_data['value'], name=trace_name, marker_color=bar_colors)
+        bar_trace = go.Bar(
+            x=bar_data['name'], 
+            y=bar_data['value'], 
+            name=trace_name, 
+            marker_color=bar_colors,
+            visible=True if idx == 0 else 'legendonly'
+        )
         traces.append(bar_trace)
 
     bar_layout = go.Layout(
         xaxis=dict(title="", tickangle=-45, tickfont=dict(size=15)),  # Dynamically set tickvals and ticktext
         yaxis=dict(title="Value", tickfont=dict(size=15)),
         height=400,  # Adjusted height
-        margin=dict(t=0, b=0, l=0, r=0),  # Adjusted margin, removed plot title
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)  # Move legend above plot and center align
+        margin=dict(t=40, b=100, l=40, r=40),  # Adjusted margin
+        legend=dict(orientation="h", yanchor="bottom", y=1.15, xanchor="center", x=0.5)  # Move legend above plot and center align
     )
 
     bar_fig = go.Figure(data=traces, layout=bar_layout)
 
     # Add a slider to show at most 20 bars simultaneously
-    if len(bar_data) > 20:
+    if max_bars > 20:
         steps = []
-        for i in range(0, len(bar_data), 20):
+        for i in range(0, max_bars, 20):
+            end_index = min(i + 20, max_bars)
+            yaxis_range_max = max(bar_data['value'].iloc[i:end_index]) if not bar_data['value'].iloc[i:end_index].empty else 0
             step = dict(
                 method='relayout',
-                args=['xaxis.range', [i, min(i + 20, len(bar_data))]],
-                label=f'{i + 1}-{min(i + 20, len(bar_data))}'
+                args=[{'xaxis.range': [i, end_index], 'yaxis.range': [0, yaxis_range_max]}],
+                label=f'{i + 1}-{end_index}'
             )
             steps.append(step)
 
         sliders = [dict(
             active=0,
             currentvalue={"prefix": "Showing: ", "font": {"size": 20}},
-            pad={"t": 50},
+            pad={"t": 70},
             steps=steps
         )]
 
@@ -332,7 +343,7 @@ app.layout = html.Div([
     ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin': '20px'}),
     html.Div([
         html.Div([
-            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '80vh', 'width': '30vw', 'display': 'inline-block'})
+            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '400px', 'width': '30vw', 'display': 'inline-block'})
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
             cyto.Cytoscape(
@@ -473,11 +484,19 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
     inter_contigs_row = set()
     inter_contigs_col = set()
 
+    interspecies_contacts = []
+
     for i in row_indices:
         for j in col_indices:
-            if dense_matrix[i, j] != 0:
+            contact_value = dense_matrix[i, j]
+            if contact_value != 0:
                 inter_contigs_row.add(contig_information.at[i, 'Contig name'])
                 inter_contigs_col.add(contig_information.at[j, 'Contig name'])
+                interspecies_contacts.append({
+                    'name': f"{contig_information.at[i, 'Contig name']} - {contig_information.at[j, 'Contig name']}",
+                    'value': contact_value,
+                    'color': '#FFD966'  # Set color for the bars
+                })
 
     contig_positions_row = arrange_contigs(inter_contigs_row, list(), radius=0.1, jitter=0.05)
     contig_positions_col = arrange_contigs(inter_contigs_col, list(), radius=0.1, jitter=0.05)
@@ -522,14 +541,18 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
         'selector': f'node[id="{col_contig}"]',
         'style': {
             'background-color': '#FFFFFF',
-            'border-color': '#8EA9DB',
+            'border-color': '#FFD966',
             'border-width': 5,
             'label': 'data(label)'
         }
     })
 
     # Prepare data for bar chart
-    data_dict = {row_contig: species_contact_matrix.loc[row_contig], col_contig: species_contact_matrix.loc[col_contig]}
+    interspecies_contacts_df = pd.DataFrame(interspecies_contacts)
+
+    data_dict = {
+        'Interspecies Contacts': interspecies_contacts_df
+    }
 
     bar_fig = create_bar_chart(data_dict)
 
@@ -576,8 +599,7 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
         for contig, (x, y) in contig_positions.items():
             G_copy.add_node(contig, size=10 if contig != selected_contig else 50, color='red' if contig == selected_contig else gradient_color, parent=species)  # Same color as species, red for selected contig
             if contig != selected_contig:
-                contact_value = dense_matrix[selected_contig_index, get_contig_indexes(contig_information[contig_information['Contig name'] == contig].index[0])]
-                G_copy.add_edge(selected_contig, contig, contacts=contact_value, length=contact_value)
+                G_copy.add_edge(selected_contig, contig, length=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
             species_positions[contig] = (x, y)
 
     # Ensure the selected contig node is positioned above all other contigs
@@ -609,9 +631,21 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
         })
 
     # Prepare data for bar chart
-    contact_counts = dense_matrix[selected_contig_index, contacts_indices]
-    bar_data = pd.Series(contact_counts, index=contacts_contigs)
-    data_dict = {selected_contig: bar_data}
+    contig_contact_values = dense_matrix[selected_contig_index, contacts_indices]
+    contig_data = pd.DataFrame({'name': contacts_contigs, 'value': contig_contact_values, 'color': [G_copy.nodes[contig]['color'] for contig in contacts_contigs]})
+
+    species_contact_values = []
+    for species in contacts_species.unique():
+        species_indexes = get_contig_indexes(species)
+        contact_value = dense_matrix[selected_contig_index, species_indexes].sum()
+        species_contact_values.append(contact_value)
+    
+    species_data = pd.DataFrame({'name': contacts_species.unique(), 'value': species_contact_values, 'color': [G_copy.nodes[species]['color'] for species in contacts_species.unique()]})
+
+    data_dict = {
+        'Contig Contacts': contig_data,
+        'Species Contacts': species_data
+    }
 
     bar_fig = create_bar_chart(data_dict)
 
