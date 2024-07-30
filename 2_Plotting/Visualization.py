@@ -74,7 +74,6 @@ def basic_visualization():
     G = nx.Graph()
 
     # Add nodes with size based on intra-species contacts
-    max_intra_species_contacts = species_contact_matrix.max().max()
     is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
     intra_species_contacts = [species_contact_matrix.at[annotation, annotation] for annotation in unique_annotations]
     node_sizes = generate_gradient_values(np.array(intra_species_contacts), 10, 100)  # Example range from 10 to 100
@@ -184,7 +183,7 @@ def create_bar_chart(data_dict):
         traces.append(bar_trace)
 
     bar_layout = go.Layout(
-        xaxis=dict(title="", tickangle=-45, tickfont=dict(size=10)),  # Dynamically set tickvals and ticktext
+        xaxis=dict(title="", tickangle=-45, tickfont=dict(size=15)),  # Dynamically set tickvals and ticktext
         yaxis=dict(title="Value", tickfont=dict(size=15)),
         height=400,  # Adjusted height
         margin=dict(t=0, b=0, l=0, r=0),  # Adjusted margin, removed plot title
@@ -363,36 +362,26 @@ app.layout = html.Div([
 # Visualization functions
 def species_visualization(active_cell, selected_species, table_data):
     row_contig = table_data[active_cell['row']]['Species'] if active_cell else selected_species
-    col_contig = active_cell['column_id'] if active_cell else None
 
     G_copy = G.copy()
 
-    row_contacts = species_contact_matrix.loc[row_contig]
-
-    min_node_size = 100
-    max_node_size = 500
-
-    # Calculate node sizes proportionally
-    max_contigs = max([len(contig_information[contig_information['Contig annotation'] == node]) for node in G_copy.nodes])
-    min_contigs = min([len(contig_information[contig_information['Contig annotation'] == node]) for node in G_copy.nodes])
+    # Generate node sizes using generate_gradient_values
+    contig_counts = [len(contig_information[contig_information['Contig annotation'] == node]) for node in G_copy.nodes]
+    node_sizes = generate_gradient_values(np.array(contig_counts), 100, 500)  # Example range from 100 to 500
 
     nodes_to_remove = []
     selected_node_size = None
-    for node in G_copy.nodes:
-        num_contigs = len(contig_information[contig_information['Contig annotation'] == node])
-        scaled_size = min_node_size + (max_node_size - min_node_size) * (num_contigs - min_contigs) / (max_contigs - min_contigs)
-        
+    for node, size in zip(G_copy.nodes, node_sizes):
         if node == row_contig:
-            G_copy.nodes[node]['size'] = scaled_size
-            selected_node_size = scaled_size
+            G_copy.nodes[node]['size'] = size
+            selected_node_size = size
             G_copy.nodes[node]['color'] = '#A9D08E'  # Green for selected node
         else:
             num_connected_contigs = len(contig_information[(contig_information['Contig annotation'] == node) & (dense_matrix[:, get_contig_indexes(row_contig)].sum(axis=1) > 0)])
             if num_connected_contigs == 0:
                 nodes_to_remove.append(node)
             else:
-                scaled_size = min_node_size + (max_node_size - min_node_size) * (num_connected_contigs - min_contigs) / (max_contigs - min_contigs)
-                G_copy.nodes[node]['size'] = scaled_size
+                G_copy.nodes[node]['size'] = size
                 is_viral = contig_information.loc[
                     contig_information['Contig annotation'] == node, 'Is Viral'
                 ].values[0]
@@ -404,7 +393,7 @@ def species_visualization(active_cell, selected_species, table_data):
     edges_to_remove = []
     for edge in G_copy.edges(data=True):
         if edge[0] == row_contig or edge[1] == row_contig:
-            G_copy.edges[edge[0], edge[1]]['weight'] = row_contacts[edge[1]] if edge[0] == row_contig else row_contacts[edge[0]]
+            G_copy.edges[edge[0], edge[1]]['weight'] = species_contact_matrix.at[row_contig, edge[1]] if edge[0] == row_contig else species_contact_matrix.at[edge[0], row_contig]
             G_copy.edges[edge[0], edge[1]]['width'] = 30  # Set edge width to 30
         else:
             edges_to_remove.append((edge[0], edge[1]))
@@ -453,11 +442,18 @@ def species_visualization(active_cell, selected_species, table_data):
     cyto_stylesheet = base_stylesheet.copy()
 
     # Prepare data for bar chart
-    data_dict = {row_contig: species_contact_matrix.loc[row_contig]}
+    contig_contact_counts = contig_information[contig_information['Contig annotation'] != row_contig]['Contig annotation'].value_counts()
+    inter_species_contacts = species_contact_matrix.loc[row_contig].drop(row_contig)
+    
+    data_dict = {
+        'Contig Number': pd.DataFrame({'name': contig_contact_counts.index, 'value': contig_contact_counts.values, 'color': [G.nodes[species]['color'] for species in contig_contact_counts.index]}),
+        'Inter-Species Contacts': pd.DataFrame({'name': inter_species_contacts.index, 'value': inter_species_contacts.values, 'color': [G.nodes[species]['color'] for species in inter_species_contacts.index]})
+    }
 
     bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, cyto_stylesheet, bar_fig, row_contig
+
 
 def species_contact_visualization(active_cell, selected_species, secondary_species, table_data):
     if not selected_species or not secondary_species:
