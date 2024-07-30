@@ -16,6 +16,7 @@ contig_info_path = '../0_Documents/contig_information.csv'
 raw_contact_matrix_path = '../0_Documents/raw_contact_matrix.npz'
 
 # Load the data
+contig_information = pd.read_csv(contig_info_path)
 contact_matrix_data = np.load(raw_contact_matrix_path)
 data = contact_matrix_data['data']
 indices = contact_matrix_data['indices']
@@ -23,8 +24,6 @@ indptr = contact_matrix_data['indptr']
 shape = contact_matrix_data['shape']
 sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
 dense_matrix = sparse_matrix.toarray()
-
-contig_information = pd.read_csv(contig_info_path)
 
 # Function to get contig indexes based on species
 def get_contig_indexes(species):
@@ -54,6 +53,21 @@ for annotation_i in unique_annotations:
 # Copy species_contact_matrix and add a column for species names for display
 species_contact_matrix_display = species_contact_matrix.copy()
 species_contact_matrix_display.insert(0, 'Species', species_contact_matrix_display.index)
+
+# Extract and rename the necessary columns for the new matrix
+matrix_columns = {
+    'Contig name': 'Contig name',
+    'Contig annotation': 'Species',
+    'Number of restriction sites': 'Restriction sites',
+    'Contig length': 'Contig length',
+    'Contig coverage': 'Contig coverage',
+    'Hi-C contacts mapped to the same contigs': 'Intra-contig contact'
+}
+
+contig_matrix_display = contig_information[list(matrix_columns.keys())].rename(columns=matrix_columns)
+
+# Column names to style in the contig matrix
+contig_columns_to_style = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
 
 # Function to calculate contacts
 def calculate_contacts(annotation, annotation_type='species'):
@@ -193,22 +207,22 @@ def create_bar_chart(data_dict):
         xaxis=dict(
             title="",
             tickangle=-45,
-            tickfont=dict(size=15),
+            tickfont=dict(size=12),
             rangeslider=dict(visible=True)  # Make the range slider visible
         ),
         yaxis=dict(title="Value", tickfont=dict(size=15)),
         height=400,  # Adjusted height
-        margin=dict(t=40, b=100, l=40, r=40),  # Adjusted margin
-        legend=dict(orientation="h", yanchor="bottom", y=1.15, xanchor="center", x=0.5)  # Move legend above plot and center align
+        margin=dict(t=0, b=0, l=0, r=0),  # Adjusted margin
+        legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="center", x=0.5)  # Move legend above plot and center align
     )
 
     bar_fig = go.Figure(data=traces, layout=bar_layout)
     return bar_fig
 
-# Function to create conditional styles for the DataTable
-def create_conditional_styles(matrix_df):
+# Update create_conditional_styles function to accept column names
+def create_conditional_styles(matrix_df, columns):
     styles = []
-    numeric_df = matrix_df.select_dtypes(include=[np.number])
+    numeric_df = matrix_df[columns].select_dtypes(include=[np.number])
     log_max_value = np.log1p(numeric_df.values.max())
     for i in range(len(numeric_df)):
         for j in range(len(numeric_df.columns)):
@@ -220,7 +234,7 @@ def create_conditional_styles(matrix_df):
                     'row_index': i,
                     'column_id': numeric_df.columns[j]
                 },
-                'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})' # Set background color for the contact matrix.
+                'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'  # Set background color for the contact matrix.
             })
     return styles
 
@@ -323,7 +337,17 @@ app.layout = html.Div([
     ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin': '20px'}),
     html.Div([
         html.Div([
-            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '400px', 'width': '30vw', 'display': 'inline-block'})
+            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '400px', 'width': '30vw', 'display': 'inline-block'}),
+            dash_table.DataTable(
+                id='contig-info-table',
+                columns=[{"name": col, "id": col} for col in contig_matrix_display.columns],
+                data=contig_matrix_display.to_dict('records'),
+                style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '30vw', 'minWidth': '100%'},
+                style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
+                style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
+                style_data_conditional=create_conditional_styles(contig_matrix_display, contig_columns_to_style),
+                fixed_rows={'headers': True}  # Freeze the first row
+            )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
             cyto.Cytoscape(
@@ -341,8 +365,9 @@ app.layout = html.Div([
             columns=[{"name": col, "id": col} for col in species_contact_matrix_display.columns],
             data=species_contact_matrix_display.to_dict('records'),
             style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
-            style_data_conditional=create_conditional_styles(species_contact_matrix_display),
+            style_data_conditional=create_conditional_styles(species_contact_matrix_display, species_contact_matrix_display.columns[1:]),
             style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
+            style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
             fixed_rows={'headers': True},  # Freeze the first row
             fixed_columns={'headers': True, 'data': 1}  # Freeze the first column
         )
