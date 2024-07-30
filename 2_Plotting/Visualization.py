@@ -74,14 +74,17 @@ def basic_visualization():
     G = nx.Graph()
 
     # Add nodes with size based on intra-species contacts
+    max_intra_species_contacts = species_contact_matrix.max().max()
     is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
     intra_species_contacts = [species_contact_matrix.at[annotation, annotation] for annotation in unique_annotations]
     node_sizes = generate_gradient_values(np.array(intra_species_contacts), 10, 100)  # Example range from 10 to 100
+    node_colors = {}
     for annotation, size in zip(unique_annotations, node_sizes):
         is_viral = contig_information.loc[
             contig_information['Contig annotation'] == annotation, 'Is Viral'
         ].values[0]
         color = is_viral_colors[str(is_viral)]
+        node_colors[annotation] = color
         G.add_node(annotation, size=size, color=color)
 
     # Add edges with weight based on inter-species contacts
@@ -104,7 +107,21 @@ def basic_visualization():
 
     cyto_elements = nx_to_cyto_elements(G, pos)
     cyto_stylesheet = base_stylesheet.copy()
-    return cyto_elements, cyto_stylesheet, G
+
+    # Prepare data for bar chart with 3 traces
+    inter_species_contact_sum = species_contact_matrix.sum(axis=1) - np.diag(species_contact_matrix.values)
+    intra_species_contact_sum = np.diag(species_contact_matrix.values)
+    contig_counts = contig_information['Contig annotation'].value_counts()
+
+    data_dict = {
+        'Total Inter-Species Contact': pd.DataFrame({'name': unique_annotations, 'value': inter_species_contact_sum, 'color': [node_colors.get(species, 'rgba(0,128,0,0.8)') for species in unique_annotations]}),
+        'Total Intra-Species Contact': pd.DataFrame({'name': unique_annotations, 'value': intra_species_contact_sum, 'color': [node_colors.get(species, 'rgba(0,128,0,0.8)') for species in unique_annotations]}),
+        'Contig Number': pd.DataFrame({'name': unique_annotations, 'value': contig_counts, 'color': [node_colors.get(species, 'rgba(0,128,0,0.8)') for species in unique_annotations]})
+    }
+
+    bar_fig = create_bar_chart(data_dict)
+
+    return cyto_elements, cyto_stylesheet, G, bar_fig
 
 # Function to convert NetworkX graph to Cytoscape elements
 def nx_to_cyto_elements(G, pos):
@@ -156,26 +173,46 @@ base_stylesheet = [
     }
 ]
 
-# Function to create a bar chart
-def create_bar_chart(row_contig, col_contig=None):
-    bar_data = species_contact_matrix.loc[row_contig].sort_values()  # Sort the data
-    bar_colors = []
-    for col in bar_data.index:
-        if col == col_contig:
-            bar_colors.append('rgba(128,0,128,0.8)')  # Highlight color (purple) for selected edge
-        elif col == row_contig:
-            bar_colors.append('rgba(255,165,0,0.8)')  # Row species color
-        else:
-            bar_colors.append('rgba(0,128,0,0.8)')  # Default edge color
-    bar_trace = go.Bar(x=bar_data.index, y=bar_data.values, marker_color=bar_colors)
+def create_bar_chart(data_dict):
+    traces = []
+    for trace_name, data_frame in data_dict.items():
+        # Sort the data in descending order by 'value'
+        bar_data = data_frame.sort_values(by='value', ascending=False)
+        
+        bar_colors = bar_data['color']  # Use the color column for bar colors
+        bar_trace = go.Bar(x=bar_data['name'], y=bar_data['value'], name=trace_name, marker_color=bar_colors)
+        traces.append(bar_trace)
+
     bar_layout = go.Layout(
-        title=f"Inter-species Contacts for {row_contig}",
-        xaxis=dict(showticklabels=False),  # Remove x-axis tick labels
-        yaxis=dict(title="Contact Count", showticklabels=False),  # Remove y-axis tick labels
-        height=720,  # Adjusted height
-        margin=dict(t=30, b=0, l=0, r=0)  # Adjusted margin
+        xaxis=dict(title="", tickangle=-45, tickfont=dict(size=10)),  # Dynamically set tickvals and ticktext
+        yaxis=dict(title="Value", tickfont=dict(size=15)),
+        height=400,  # Adjusted height
+        margin=dict(t=0, b=0, l=0, r=0),  # Adjusted margin, removed plot title
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)  # Move legend above plot and center align
     )
-    bar_fig = go.Figure(data=[bar_trace], layout=bar_layout)
+
+    bar_fig = go.Figure(data=traces, layout=bar_layout)
+
+    # Add a slider to show at most 20 bars simultaneously
+    if len(bar_data) > 20:
+        steps = []
+        for i in range(0, len(bar_data), 20):
+            step = dict(
+                method='relayout',
+                args=['xaxis.range', [i, min(i + 20, len(bar_data))]],
+                label=f'{i + 1}-{min(i + 20, len(bar_data))}'
+            )
+            steps.append(step)
+
+        sliders = [dict(
+            active=0,
+            currentvalue={"prefix": "Showing: ", "font": {"size": 20}},
+            pad={"t": 50},
+            steps=steps
+        )]
+
+        bar_fig.update_layout(sliders=sliders)
+
     return bar_fig
 
 # Function to create conditional styles for the DataTable
@@ -232,7 +269,7 @@ def arrange_contigs(contigs, inter_contig_edges, radius, jitter, selected_contig
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 # Set the global graph G
-cyto_elements, cyto_stylesheet, G = basic_visualization()
+cyto_elements, cyto_stylesheet, G, bar_fig = basic_visualization()
 
 common_style = {
     'height': '38px',  # Adjusted height to match both elements
@@ -296,7 +333,7 @@ app.layout = html.Div([
     ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin': '20px'}),
     html.Div([
         html.Div([
-            dcc.Graph(id='bar-chart', style={'height': '80vh', 'width': '30vw', 'display': 'inline-block'})
+            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '80vh', 'width': '30vw', 'display': 'inline-block'})
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
             cyto.Cytoscape(
@@ -415,13 +452,16 @@ def species_visualization(active_cell, selected_species, table_data):
     # Make a copy of the base stylesheet and customize it for this visualization
     cyto_stylesheet = base_stylesheet.copy()
 
-    bar_fig = create_bar_chart(row_contig, col_contig)
+    # Prepare data for bar chart
+    data_dict = {row_contig: species_contact_matrix.loc[row_contig]}
+
+    bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, cyto_stylesheet, bar_fig, row_contig
 
 def species_contact_visualization(active_cell, selected_species, secondary_species, table_data):
     if not selected_species or not secondary_species:
-        return basic_visualization()[0], basic_visualization()[1], go.Figure(), selected_species
+        return basic_visualization()[0], basic_visualization()[1], basic_visualization()[3], selected_species
 
     row_contig = selected_species
     col_contig = secondary_species
@@ -492,13 +532,16 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
         }
     })
 
-    bar_fig = create_bar_chart(row_contig, col_contig)
+    # Prepare data for bar chart
+    data_dict = {row_contig: species_contact_matrix.loc[row_contig], col_contig: species_contact_matrix.loc[col_contig]}
+
+    bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, cyto_stylesheet, bar_fig, row_contig
 
 def contig_visualization(active_cell, selected_species, selected_contig, table_data):
     if not selected_contig:
-        return basic_visualization()[0], basic_visualization()[1], go.Figure(), selected_species
+        return basic_visualization()[0], basic_visualization()[1], basic_visualization()[3], selected_species
 
     # Find the index of the selected contig
     selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
@@ -569,19 +612,12 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
             }
         })
 
-    # Create a bar chart to show contacts of the selected contig
+    # Prepare data for bar chart
     contact_counts = dense_matrix[selected_contig_index, contacts_indices]
-    bar_data = pd.Series(contact_counts, index=contacts_contigs).sort_values()
-    bar_colors = ['rgba(0,0,255,0.8)' if contig != selected_contig else 'rgba(255,0,0,0.8)' for contig in bar_data.index]  # Blue for contigs, Red for selected contig
-    bar_trace = go.Bar(x=bar_data.index, y=bar_data.values, marker_color=bar_colors)
-    bar_layout = go.Layout(
-        title=f"Contacts for {selected_contig}",
-        xaxis=dict(showticklabels=False),
-        yaxis=dict(title="Contact Count", showticklabels=False),
-        height=720,
-        margin=dict(t=30, b=0, l=0, r=0)
-    )
-    bar_fig = go.Figure(data=[bar_trace], layout=bar_layout)
+    bar_data = pd.Series(contact_counts, index=contacts_contigs)
+    data_dict = {selected_contig: bar_data}
+
+    bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, cyto_stylesheet, bar_fig, selected_species
 
@@ -635,8 +671,7 @@ def update_visualization(reset_clicks, confirm_clicks, selected_species, seconda
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     # Initialize default values for cyto_elements and bar_fig
-    cyto_elements, cyto_stylesheet, _ = basic_visualization()
-    bar_fig = go.Figure()
+    cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
 
     if triggered_id == 'reset-btn' or not selected_species:
         # Reset all selections to show the original plot
@@ -645,7 +680,8 @@ def update_visualization(reset_clicks, confirm_clicks, selected_species, seconda
     if triggered_id == 'confirm-btn':
         if visualization_type == 'species_contact':
             if not selected_species or not secondary_species:
-                return basic_visualization()[0], basic_visualization()[1], go.Figure()
+                cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
+                return cyto_elements, cyto_stylesheet, bar_fig
 
             cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_contact_visualization(None, selected_species, secondary_species, table_data)
             return cyto_elements, cyto_stylesheet, bar_fig
