@@ -10,6 +10,7 @@ import dash_cytoscape as cyto
 import plotly.graph_objects as go
 from dash import callback_context
 import plotly.colors as pcolors
+from math import sqrt, sin, cos, pi
 
 # File paths for the current environment
 contig_info_path = '../0_Documents/contig_information.csv'
@@ -24,6 +25,12 @@ indptr = contact_matrix_data['indptr']
 shape = contact_matrix_data['shape']
 sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
 dense_matrix = sparse_matrix.toarray()
+
+# Remove contigs with annotation "Unmapped"
+unmapped_contigs = contig_information[contig_information['Contig annotation'] == "Unmapped"].index
+contig_information = contig_information.drop(unmapped_contigs).reset_index(drop=True)
+dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=0)
+dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=1)
 
 # Function to get contig indexes based on species
 def get_contig_indexes(species):
@@ -82,17 +89,17 @@ def calculate_contacts(annotation, annotation_type='species'):
     
     return intra_contacts, inter_contacts
 
-# Function for basic visualization setup
 def basic_visualization():
     # Create a graph for the Arc Diagram
     G = nx.Graph()
 
-    # Add nodes with size based on intra-species contacts
+    # Add nodes with size based on total contig coverage
     is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
-    intra_species_contacts = [species_contact_matrix.at[annotation, annotation] for annotation in unique_annotations]
-    node_sizes = generate_gradient_values(np.array(intra_species_contacts), 10, 100)  # Example range from 10 to 100
+    total_contig_coverage = contig_information.groupby('Contig annotation')['Contig coverage'].sum().reindex(unique_annotations)
+    node_sizes = generate_gradient_values(total_contig_coverage.values, 50, 200)  # Example range from 50 to 150
+
     node_colors = {}
-    for annotation, size in zip(unique_annotations, node_sizes):
+    for annotation, size in zip(total_contig_coverage.index, node_sizes):
         is_viral = contig_information.loc[
             contig_information['Contig annotation'] == annotation, 'Is Viral'
         ].values[0]
@@ -123,12 +130,12 @@ def basic_visualization():
 
     # Prepare data for bar chart with 3 traces
     inter_species_contact_sum = species_contact_matrix.sum(axis=1) - np.diag(species_contact_matrix.values)
-    intra_species_contact_sum = np.diag(species_contact_matrix.values)
+    total_contig_coverage_sum = total_contig_coverage.values
     contig_counts = contig_information['Contig annotation'].value_counts()
 
     data_dict = {
         'Total Inter-Species Contact': pd.DataFrame({'name': unique_annotations, 'value': inter_species_contact_sum, 'color': [node_colors.get(species, 'rgba(0,128,0,0.8)') for species in unique_annotations]}),
-        'Total Intra-Species Contact': pd.DataFrame({'name': unique_annotations, 'value': intra_species_contact_sum, 'color': [node_colors.get(species, 'rgba(0,128,0,0.8)') for species in unique_annotations]}),
+        'Total Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_contig_coverage_sum, 'color': [node_colors.get(species, 'rgba(0,128,0,0.8)') for species in unique_annotations]}),
         'Contig Number': pd.DataFrame({'name': unique_annotations, 'value': contig_counts, 'color': [node_colors.get(species, 'rgba(0,128,0,0.8)') for species in unique_annotations]})
     }
 
@@ -208,7 +215,10 @@ def create_bar_chart(data_dict):
             title="",
             tickangle=-45,
             tickfont=dict(size=12),
-            rangeslider=dict(visible=True)  # Make the range slider visible
+            rangeslider=dict(
+               visible=True,
+               thickness=0.05  # 5% of the plot area height)
+           )
         ),
         yaxis=dict(title="Value", tickfont=dict(size=15)),
         height=400,  # Adjusted height
@@ -239,7 +249,11 @@ def create_conditional_styles(matrix_df, columns):
     return styles
 
 # Function to arrange contigs
+
+
 def arrange_contigs(contigs, inter_contig_edges, radius, jitter, selected_contig=None):
+    phi = (1 + sqrt(5)) / 2  # golden ratio
+
     # Identify contigs that connect to other species
     connecting_contigs = [contig for contig in contigs if contig in inter_contig_edges and contig != selected_contig]
     other_contigs = [contig for contig in contigs if contig not in inter_contig_edges and contig != selected_contig]
@@ -247,20 +261,26 @@ def arrange_contigs(contigs, inter_contig_edges, radius, jitter, selected_contig
     # Arrange connecting contigs in a circle with jitter
     num_connecting = len(connecting_contigs)
     circle_positions = {}
-    angle_step = 2 * np.pi / num_connecting if num_connecting > 0 else 0
+    angle_step = 2 * pi / num_connecting if num_connecting > 0 else 0
     for i, contig in enumerate(connecting_contigs):
         angle = i * angle_step
-        x = radius * np.cos(angle) + np.random.uniform(-jitter, jitter)
-        y = radius * np.sin(angle) + np.random.uniform(-jitter, jitter)
+        x = radius * cos(angle) + np.random.uniform(-jitter, jitter)
+        y = radius * sin(angle) + np.random.uniform(-jitter, jitter)
         circle_positions[contig] = (x, y)
 
-    # Arrange other contigs randomly inside the circle
+    # Arrange other contigs uniformly inside the circle using the sunflower pattern
     inner_positions = {}
-    for contig in other_contigs:
-        r = radius * 0.8 * np.sqrt(np.random.random())
-        theta = 2 * np.pi * np.random.random()
-        x = r * np.cos(theta)
-        y = r * np.sin(theta)
+    n = len(other_contigs)
+    angle_stride = 2 * pi / phi ** 2
+    b = round(2 * sqrt(n))
+    for k, contig in enumerate(other_contigs, start=1):
+        if k > n - b:
+            r = 1.0
+        else:
+            r = sqrt(k - 0.5) / sqrt(n - (b + 1) / 2)
+        theta = k * angle_stride
+        x = r * cos(theta) * radius * 0.7
+        y = r * sin(theta) * radius * 0.7
         inner_positions[contig] = (x, y)
 
     # Place selected contig in the center
@@ -334,10 +354,25 @@ app.layout = html.Div([
             style={'width': '300px', 'display': 'none'}  # Hide by default
         ),
         html.Button("Confirm Selection", id="confirm-btn", style={**common_style}),
-    ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin': '20px'}),
+    ], style={
+        'display': 'flex',
+        'justify-content': 'space-between',
+        'align-items': 'center',
+        'margin': '0px',
+        'position': 'fixed',
+        'top': '0',
+        'left': '0',
+        'width': '100%',
+        'z-index': '1000',
+        'background-color': 'white',
+        'padding': '10px',  # Add padding to ensure content does not overlap with page content
+        'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'  # Optional: Add a shadow for better visibility
+    }),
+    html.Div(style={'height': '60px'}),  # Add a placeholder div to account for the fixed header height
     html.Div([
         html.Div([
-            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '400px', 'width': '30vw', 'display': 'inline-block'}),
+            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
+            html.Div(id='row-count', style={'margin': '0px','height': '2vh'}),  # Show row number of contig matrix
             dash_table.DataTable(
                 id='contig-info-table',
                 columns=[{"name": col, "id": col} for col in contig_matrix_display.columns],
@@ -346,7 +381,8 @@ app.layout = html.Div([
                 style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
                 style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
                 style_data_conditional=create_conditional_styles(contig_matrix_display, contig_columns_to_style),
-                fixed_rows={'headers': True}  # Freeze the first row
+                fixed_rows={'headers': True},  # Freeze the first row
+                fixed_columns={'headers': True, 'data': 2}  # Freeze the first 2 columns
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
@@ -470,7 +506,6 @@ def species_visualization(active_cell, selected_species, table_data):
 
     return cyto_elements, cyto_stylesheet, bar_fig, row_contig
 
-
 def species_contact_visualization(active_cell, selected_species, secondary_species, table_data):
     if not selected_species or not secondary_species:
         return basic_visualization()[0], basic_visualization()[1], basic_visualization()[3], selected_species
@@ -561,7 +596,10 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
 
     bar_fig = create_bar_chart(data_dict)
 
-    return cyto_elements, cyto_stylesheet, bar_fig, row_contig
+    # Filter contigs involved in interspecies contacts and retain all columns
+    involved_contigs = contig_information[contig_information['Contig name'].isin(inter_contigs_row | inter_contigs_col)]
+
+    return cyto_elements, cyto_stylesheet, bar_fig, involved_contigs
 
 def contig_visualization(active_cell, selected_species, selected_contig, table_data):
     if not selected_contig:
@@ -696,7 +734,8 @@ def sync_selectors(active_cell, visualization_type, table_data):
 @app.callback(
     [Output('cyto-graph', 'elements'),
      Output('cyto-graph', 'stylesheet'),
-     Output('bar-chart', 'figure')],
+     Output('bar-chart', 'figure'),
+     Output('contig-info-table', 'data')],
     [Input('reset-btn', 'n_clicks'),
      Input('confirm-btn', 'n_clicks')],
     [State('species-selector', 'value'),
@@ -709,29 +748,51 @@ def update_visualization(reset_clicks, confirm_clicks, selected_species, seconda
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-    # Initialize default values for cyto_elements and bar_fig
+    # Initialize default values for cyto_elements, bar_fig, and filtered_data
     cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
+    filtered_data = contig_matrix_display
 
     if triggered_id == 'reset-btn' or not selected_species:
-        # Reset all selections to show the original plot
-        return cyto_elements, cyto_stylesheet, bar_fig
+        # Reset all selections to show the original plot and all contigs
+        return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
     if triggered_id == 'confirm-btn':
         if visualization_type == 'species_contact':
             if not selected_species or not secondary_species:
                 cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
-                return cyto_elements, cyto_stylesheet, bar_fig
+                filtered_data = contig_matrix_display
+                return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
-            cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_contact_visualization(None, selected_species, secondary_species, table_data)
-            return cyto_elements, cyto_stylesheet, bar_fig
+            # Ensure selected_species and secondary_species are strings
+            if not isinstance(selected_species, str) or not isinstance(secondary_species, str):
+                raise ValueError("Both selected_species and secondary_species must be string values.")
+
+            cyto_elements, cyto_stylesheet, bar_fig, involved_contigs = species_contact_visualization(None, selected_species, secondary_species, table_data)
+            filtered_data = involved_contigs
+            return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+
         elif visualization_type == 'species':
             cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_visualization(None, selected_species, table_data)
-            return cyto_elements, cyto_stylesheet, bar_fig
+            species_indexes = get_contig_indexes(selected_species)
+            filtered_data = contig_matrix_display.loc[species_indexes]
+            return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+
         elif visualization_type == 'contig':
             cyto_elements, cyto_stylesheet, bar_fig, selected_species = contig_visualization(None, selected_species, selected_contig, table_data)
-            return cyto_elements, cyto_stylesheet, bar_fig
+            selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
+            contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
+            contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
+            filtered_data = contig_matrix_display.loc[contacts_indices]
+            return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
-    return cyto_elements, cyto_stylesheet, bar_fig
+    return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+
+@app.callback(
+    Output('row-count', 'children'),
+    [Input('contig-info-table', 'data')]
+)
+def update_row_count(data):
+    return f"Total Number of Rows: {len(data)}"
 
 @app.callback(
     Output('contig-selector', 'options'),
