@@ -73,9 +73,6 @@ matrix_columns = {
 
 contig_matrix_display = contig_information[list(matrix_columns.keys())].rename(columns=matrix_columns)
 
-# Column names to style in the contig matrix
-contig_columns_to_style = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
-
 # Function to calculate contacts
 def calculate_contacts(annotation, annotation_type='species'):
     if annotation_type == 'species':
@@ -236,22 +233,50 @@ def create_bar_chart(data_dict):
     bar_fig = go.Figure(data=traces, layout=bar_layout)
     return bar_fig
 
-# Update create_conditional_styles function to accept column names
-def create_conditional_styles(matrix_df, columns):
+# Function to style species contact table using Blugrn color scheme
+def styling_species_table(matrix_df):
+    columns = species_contact_matrix_display.columns[1:]
     styles = []
     numeric_df = matrix_df[columns].select_dtypes(include=[np.number])
     log_max_value = np.log1p(numeric_df.values.max())
+    blugrn_colors = pcolors.sequential.Blugrn
+
     for i in range(len(numeric_df)):
         for j in range(len(numeric_df.columns)):
             value = numeric_df.iloc[i, j]
             log_value = np.log1p(value)
-            opacity = 0.6  # Set a fixed opacity for transparency
+            color_index = int((log_value / log_max_value) * (len(blugrn_colors) - 1))
+            background_color = blugrn_colors[color_index]
+            rgba_color = f"rgba({background_color[0]*255}, {background_color[1]*255}, {background_color[2]*255}, 0.6)"  # Adjust alpha for transparency
             styles.append({
                 'if': {
                     'row_index': i,
                     'column_id': numeric_df.columns[j]
                 },
-                'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'  # Set background color for the contact matrix.
+                'backgroundColor': rgba_color
+            })
+    return styles
+
+# Function to style contig info table using Blugrn color scheme
+def styling_contig_table(matrix_df):
+    styles = []
+    columns = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
+    blugrn_colors = pcolors.sequential.Blugrn
+
+    for column in columns:
+        numeric_series = matrix_df[column]
+        log_max_value = np.log1p(numeric_series.max())
+        for i, value in enumerate(numeric_series):
+            log_value = np.log1p(value)
+            color_index = int((log_value / log_max_value) * (len(blugrn_colors) - 1))
+            background_color = blugrn_colors[color_index]
+            rgba_color = f"rgba({background_color[0]*255}, {background_color[1]*255}, {background_color[2]*255}, 0.6)"  # Adjust alpha for transparency
+            styles.append({
+                'if': {
+                    'row_index': i,
+                    'column_id': column
+                },
+                'backgroundColor': rgba_color
             })
     return styles
 
@@ -330,7 +355,7 @@ help_modal = html.Div([
     ], id="modal", size="lg", is_open=False)
 ])
 
-# Layout for the Dash app
+# Use the styling functions in the Dash layout
 app.layout = html.Div([
     html.Div([
         html.Button("Download Selected Item", id="download-btn", style={**common_style}),
@@ -395,7 +420,7 @@ app.layout = html.Div([
                 style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '30vw', 'minWidth': '100%'},
                 style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
                 style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
-                style_data_conditional=create_conditional_styles(contig_matrix_display, contig_columns_to_style),
+                style_data_conditional=styling_contig_table(contig_matrix_display),
                 fixed_rows={'headers': True},  # Freeze the first row
                 fixed_columns={'headers': True, 'data': 2},  # Freeze the first 2 columns
                 sort_action='native'
@@ -420,7 +445,7 @@ app.layout = html.Div([
             columns=[{"name": col, "id": col} for col in species_contact_matrix_display.columns],
             data=species_contact_matrix_display.to_dict('records'),
             style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
-            style_data_conditional=create_conditional_styles(species_contact_matrix_display, species_contact_matrix_display.columns[1:]),
+            style_data_conditional=styling_species_table(species_contact_matrix_display),
             style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
             style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
             fixed_rows={'headers': True},  # Freeze the first row
@@ -429,7 +454,7 @@ app.layout = html.Div([
     ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
-
+        
 # Visualization functions
 def species_visualization(active_cell, selected_species, table_data):
     row_contig = table_data[active_cell['row']]['Species'] if active_cell else selected_species
