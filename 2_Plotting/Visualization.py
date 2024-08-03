@@ -758,33 +758,64 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
      Output('secondary-species-selector', 'value'),
      Output('secondary-species-selector', 'style'),
      Output('contig-selector', 'style'),
-     Output('visualization-selector', 'value')],
+     Output('visualization-selector', 'value'),
+     Output('contig-selector', 'value')],
     [Input('contact-table', 'active_cell'),
-     Input('visualization-selector', 'value')],
-    [State('contact-table', 'data')]
+     Input('visualization-selector', 'value'),
+     Input('contig-info-table', 'active_cell')],
+    [State('contact-table', 'data'),
+     State('contig-info-table', 'data')]
 )
-def sync_selectors(active_cell, visualization_type, table_data):
-    if not active_cell:
-        if visualization_type == 'species_contact':
-            return None, None, {'width': '300px', 'display': 'inline-block'}, {'display': 'none'}, 'species_contact'
-        elif visualization_type == 'contig':
-            return None, None, {'display': 'none'}, {'width': '300px', 'display': 'inline-block'}, 'contig'
-        else:
-            return None, None, {'display': 'none'}, {'display': 'none'}, 'species'
+def sync_selectors(contact_table_active_cell, visualization_type, contig_info_active_cell, contact_table_data, contig_info_table_data):
+    ctx = callback_context
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    if triggered_id == 'contig-info-table' and contig_info_active_cell:
+        row_contig_info = contig_info_table_data[contig_info_active_cell['row']]
+        selected_species = row_contig_info['Species']
+        selected_contig = row_contig_info['Contig']
+        return selected_species, None, {'display': 'none'}, {'width': '300px', 'display': 'inline-block'}, 'contig', selected_contig
     
-    row_contig = table_data[active_cell['row']]['Species']
-    col_contig = active_cell['column_id'] if active_cell['column_id'] != 'Species' else None
+    if triggered_id == 'contact-table' and contact_table_active_cell:
+        row_contig = contact_table_data[contact_table_active_cell['row']]['Species']
+        col_contig = contact_table_active_cell['column_id'] if contact_table_active_cell['column_id'] != 'Species' else None
 
-    if active_cell['column_id'] == 'Species':
-        visualization_type = 'species'
-        secondary_species_style = {'display': 'none'}
-        contig_selector_style = {'display': 'none'}
+        if contact_table_active_cell['column_id'] == 'Species':
+            visualization_type = 'species'
+            secondary_species_style = {'display': 'none'}
+            contig_selector_style = {'display': 'none'}
+        else:
+            visualization_type = 'species_contact'
+            secondary_species_style = {'width': '300px', 'display': 'inline-block'}
+            contig_selector_style = {'display': 'none'}
+
+        return row_contig, col_contig, secondary_species_style, contig_selector_style, visualization_type, None
+
+    # If no selection or triggered by visualization selector, reset
+    if visualization_type == 'species_contact':
+        return None, None, {'width': '300px', 'display': 'inline-block'}, {'display': 'none'}, 'species_contact', None
+    elif visualization_type == 'contig':
+        return None, None, {'display': 'none'}, {'width': '300px', 'display': 'inline-block'}, 'contig', None
     else:
-        visualization_type = 'species_contact'
-        secondary_species_style = {'width': '300px', 'display': 'inline-block'}
-        contig_selector_style = {'display': 'none'}
+        return None, None, {'display': 'none'}, {'display': 'none'}, 'species', None
 
-    return row_contig, col_contig, secondary_species_style, contig_selector_style, visualization_type
+@app.callback(
+    [Output('contact-table', 'active_cell'),
+     Output('contig-info-table', 'active_cell')],
+    [Input('contig-info-table', 'active_cell'),
+     Input('contact-table', 'active_cell')]
+)
+def clear_table_selections(contig_info_active_cell, contact_table_active_cell):
+    ctx = callback_context
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    if triggered_id == 'contig-info-table' and contig_info_active_cell:
+        return None, contig_info_active_cell
+
+    if triggered_id == 'contact-table' and contact_table_active_cell:
+        return contact_table_active_cell, None
+
+    return None, None
 
 @app.callback(
     [Output('cyto-graph', 'elements'),
@@ -817,10 +848,6 @@ def update_visualization(reset_clicks, confirm_clicks, selected_species, seconda
                 cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
                 filtered_data = contig_matrix_display
                 return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
-
-            # Ensure selected_species and secondary_species are strings
-            if not isinstance(selected_species, str) or not isinstance(secondary_species, str):
-                raise ValueError("Both selected_species and secondary_species must be string values.")
 
             cyto_elements, cyto_stylesheet, bar_fig, involved_contigs = species_contact_visualization(None, selected_species, secondary_species, table_data)
             filtered_data = contig_matrix_display.loc[involved_contigs]
