@@ -239,45 +239,40 @@ def styling_species_table(matrix_df):
     styles = []
     numeric_df = matrix_df[columns].select_dtypes(include=[np.number])
     log_max_value = np.log1p(numeric_df.values.max())
-    blugrn_colors = pcolors.sequential.Blugrn
-
     for i in range(len(numeric_df)):
         for j in range(len(numeric_df.columns)):
             value = numeric_df.iloc[i, j]
             log_value = np.log1p(value)
-            color_index = int((log_value / log_max_value) * (len(blugrn_colors) - 1))
-            background_color = blugrn_colors[color_index]
-            rgba_color = f"rgba({background_color[0]*255}, {background_color[1]*255}, {background_color[2]*255}, 0.6)"  # Adjust alpha for transparency
+            opacity = 0.6  # Set a fixed opacity for transparency
             styles.append({
                 'if': {
                     'row_index': i,
                     'column_id': numeric_df.columns[j]
                 },
-                'backgroundColor': rgba_color
+                'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'  # Set background color for the contact matrix.
             })
     return styles
 
-# Function to style contig info table using Blugrn color scheme
+# Function to style contig info table
 def styling_contig_table(matrix_df):
     styles = []
     columns = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
-    blugrn_colors = pcolors.sequential.Blugrn
 
-    for column in columns:
-        numeric_series = matrix_df[column]
-        log_max_value = np.log1p(numeric_series.max())
-        for i, value in enumerate(numeric_series):
-            log_value = np.log1p(value)
-            color_index = int((log_value / log_max_value) * (len(blugrn_colors) - 1))
-            background_color = blugrn_colors[color_index]
-            rgba_color = f"rgba({background_color[0]*255}, {background_color[1]*255}, {background_color[2]*255}, 0.6)"  # Adjust alpha for transparency
-            styles.append({
-                'if': {
-                    'row_index': i,
-                    'column_id': column
-                },
-                'backgroundColor': rgba_color
-            })
+    for col in columns:
+        numeric_column = matrix_df[col].astype(float)
+        log_max_value = np.log1p(numeric_column.max())
+        for i, value in enumerate(numeric_column):
+            if not pd.isnull(value):
+                log_value = np.log1p(value)
+                opacity = 0.6  # Set a fixed opacity for transparency
+                styles.append({
+                    'if': {
+                        'row_index': i,
+                        'column_id': col
+                    },
+                    'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'  # Set background color for the contact matrix.
+                })
+    
     return styles
 
 # Function to arrange contigs
