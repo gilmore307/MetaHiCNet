@@ -96,7 +96,7 @@ def basic_visualization():
     # Add nodes with size based on total contig coverage
     is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
     total_contig_coverage = contig_information.groupby('Contig annotation')['Contig coverage'].sum().reindex(unique_annotations)
-    node_sizes = generate_gradient_values(total_contig_coverage.values, 50, 200)  # Example range from 50 to 150
+    node_sizes = generate_gradient_values(total_contig_coverage.values, 50, 200)  # Example range from 50 to 200
 
     node_colors = {}
     for annotation, size in zip(total_contig_coverage.index, node_sizes):
@@ -108,22 +108,23 @@ def basic_visualization():
         G.add_node(annotation, size=size, color=color)
 
     # Add edges with weight based on inter-species contacts
-    inter_species_contacts = [
-        species_contact_matrix.at[annotation_i, annotation_j]
-        for annotation_i in unique_annotations
-        for annotation_j in unique_annotations
-        if annotation_i != annotation_j
-    ]
-    edge_lengths = generate_gradient_values(np.array(inter_species_contacts), 10, 100)  # Example range from 10 to 100
-    edge_index = 0
+    inter_species_contacts = []
     for annotation_i in unique_annotations:
         for annotation_j in unique_annotations:
             if annotation_i != annotation_j and species_contact_matrix.at[annotation_i, annotation_j] > 0:
-                G.add_edge(annotation_i, annotation_j, length=edge_lengths[edge_index])
-                edge_index += 1
+                weight = species_contact_matrix.at[annotation_i, annotation_j]
+                G.add_edge(annotation_i, annotation_j, weight=weight)
+                inter_species_contacts.append(weight)
+
+    # Generate gradient values for the edge weights
+    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 100)  # Example range from 10 to 100
+
+    # Assign the gradient values as edge weights
+    for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
+        d['weight'] = weight
 
     # Initial node positions using a force-directed layout with increased dispersion
-    pos = nx.spring_layout(G, dim=2, k=2, iterations=50)
+    pos = nx.spring_layout(G, dim=2, k=1, iterations=50, weight='weight')
 
     cyto_elements = nx_to_cyto_elements(G, pos)
     cyto_stylesheet = base_stylesheet.copy()
@@ -151,11 +152,10 @@ def nx_to_cyto_elements(G, pos):
             'id': node,
             'size': G.nodes[node]['size'],
             'color': G.nodes[node]['color'],
+            'label': node if 'parent' not in G.nodes[node] else ''  # Add label for species nodes only
         }
         if 'parent' in G.nodes[node]:
             data['parent'] = G.nodes[node]['parent']
-        else:
-            data['label'] = node  # Only add label for species nodes
         elements.append({
             'data': data,
             'position': {
@@ -168,7 +168,7 @@ def nx_to_cyto_elements(G, pos):
             'data': {
                 'source': edge[0],
                 'target': edge[1],
-                'weight': edge[2]['length']
+                'weight': edge[2]['weight']
             }
         })
     return elements
@@ -217,7 +217,7 @@ def create_bar_chart(data_dict):
             tickfont=dict(size=12),
             rangeslider=dict(
                visible=True,
-               thickness=0.05  # 5% of the plot area height)
+               thickness=0.05  # 5% of the plot area height
            )
         ),
         yaxis=dict(title="Value", tickfont=dict(size=15)),
@@ -249,45 +249,63 @@ def create_conditional_styles(matrix_df, columns):
     return styles
 
 # Function to arrange contigs
-
-
-def arrange_contigs(contigs, inter_contig_edges, radius, jitter, selected_contig=None):
+def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None, center_position=(0, 0)):
     phi = (1 + sqrt(5)) / 2  # golden ratio
 
     # Identify contigs that connect to other species
     connecting_contigs = [contig for contig in contigs if contig in inter_contig_edges and contig != selected_contig]
     other_contigs = [contig for contig in contigs if contig not in inter_contig_edges and contig != selected_contig]
 
-    # Arrange connecting contigs in a circle with jitter
-    num_connecting = len(connecting_contigs)
-    circle_positions = {}
-    angle_step = 2 * pi / num_connecting if num_connecting > 0 else 0
-    for i, contig in enumerate(connecting_contigs):
-        angle = i * angle_step
-        x = radius * cos(angle) + np.random.uniform(-jitter, jitter)
-        y = radius * sin(angle) + np.random.uniform(-jitter, jitter)
-        circle_positions[contig] = (x, y)
-
-    # Arrange other contigs uniformly inside the circle using the sunflower pattern
+    # Arrange inner contigs in a sunflower pattern
     inner_positions = {}
-    n = len(other_contigs)
     angle_stride = 2 * pi / phi ** 2
-    b = round(2 * sqrt(n))
+
+    max_inner_radius = 0  # To keep track of the maximum radius used for inner nodes
+
     for k, contig in enumerate(other_contigs, start=1):
-        if k > n - b:
-            r = 1.0
-        else:
-            r = sqrt(k - 0.5) / sqrt(n - (b + 1) / 2)
+        r = distance * sqrt(k)  # Distance increases with sqrt(k) to maintain spacing
         theta = k * angle_stride
-        x = r * cos(theta) * radius * 0.7
-        y = r * sin(theta) * radius * 0.7
+        x = center_position[0] + r * cos(theta)
+        y = center_position[1] + r * sin(theta)
         inner_positions[contig] = (x, y)
+        if r > max_inner_radius:
+            max_inner_radius = r
 
     # Place selected contig in the center
     if selected_contig:
-        inner_positions[selected_contig] = (0, 0)
+        inner_positions[selected_contig] = center_position
 
-    return {**circle_positions, **inner_positions}
+    # Arrange connecting contigs in concentric circles starting from the boundary of inner nodes
+    distance *= 2
+    outer_positions = {}
+    layer_radius = max_inner_radius + distance  # Start from the boundary of inner nodes
+    current_layer = 1
+    nodes_in_layer = int(2 * pi * layer_radius / distance)
+    angle_step = 2 * pi / nodes_in_layer
+
+    for i, contig in enumerate(connecting_contigs):
+        if i >= nodes_in_layer * current_layer:
+            current_layer += 1
+            layer_radius = max_inner_radius + distance * current_layer
+            nodes_in_layer = int(2 * pi * layer_radius / distance)
+            angle_step = 2 * pi / nodes_in_layer
+
+        angle = (i % nodes_in_layer) * angle_step
+        x = center_position[0] + layer_radius * cos(angle)
+        y = center_position[1] + layer_radius * sin(angle)
+        outer_positions[contig] = (x, y)
+
+    return {**inner_positions, **outer_positions}
+
+# Example usage of the function
+contigs = ['contig1', 'contig2', 'contig3', 'contig4', 'contig5', 'contig6']
+inter_contig_edges = ['contig1', 'contig3', 'contig5']
+distance = 100  # Example closest distance between two nodes
+selected_contig = 'contig1'
+center_position = (0, 0)
+
+positions = arrange_contigs(contigs, inter_contig_edges, distance, selected_contig, center_position)
+print(positions)
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -364,7 +382,7 @@ app.layout = html.Div([
         'left': '0',
         'width': '100%',
         'z-index': '1000',
-        'background-color': 'white',
+        'background-color': 'llite',
         'padding': '10px',  # Add padding to ensure content does not overlap with page content
         'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'  # Optional: Add a shadow for better visibility
     }),
@@ -391,7 +409,10 @@ app.layout = html.Div([
                 elements=cyto_elements,
                 style={'height': '80vh', 'width': '60vw', 'display': 'inline-block'},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
-                stylesheet=cyto_stylesheet
+                stylesheet=cyto_stylesheet,
+                zoom=1,
+                userZoomingEnabled=True,
+                wheelSensitivity=0.1  # Reduce the wheel sensitivity (default is 1)
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'})
     ], style={'width': '100%', 'display': 'flex'}),
@@ -422,11 +443,9 @@ def species_visualization(active_cell, selected_species, table_data):
     node_sizes = generate_gradient_values(np.array(contig_counts), 100, 500)  # Example range from 100 to 500
 
     nodes_to_remove = []
-    selected_node_size = None
     for node, size in zip(G_copy.nodes, node_sizes):
         if node == row_contig:
             G_copy.nodes[node]['size'] = size
-            selected_node_size = size
             G_copy.nodes[node]['color'] = '#A9D08E'  # Green for selected node
         else:
             num_connected_contigs = len(contig_information[(contig_information['Contig annotation'] == node) & (dense_matrix[:, get_contig_indexes(row_contig)].sum(axis=1) > 0)])
@@ -443,23 +462,37 @@ def species_visualization(active_cell, selected_species, table_data):
         G_copy.remove_node(node)
 
     edges_to_remove = []
+    inter_species_contacts = []
+
+    # Collect edge weights and identify edges to remove
     for edge in G_copy.edges(data=True):
         if edge[0] == row_contig or edge[1] == row_contig:
-            G_copy.edges[edge[0], edge[1]]['weight'] = species_contact_matrix.at[row_contig, edge[1]] if edge[0] == row_contig else species_contact_matrix.at[edge[0], row_contig]
-            G_copy.edges[edge[0], edge[1]]['width'] = 30  # Set edge width to 30
+            weight = species_contact_matrix.at[row_contig, edge[1]] if edge[0] == row_contig else species_contact_matrix.at[edge[0], row_contig]
+            inter_species_contacts.append(weight)
         else:
             edges_to_remove.append((edge[0], edge[1]))
 
+    # Remove edges not connected to row_contig
     for edge in edges_to_remove:
         G_copy.remove_edge(edge[0], edge[1])
 
-    if selected_node_size is not None:
-        min_edge_length = selected_node_size / 2
-    else:
-        min_edge_length = 50  # Fallback in case the selected node size is not set
+    # Generate gradient values for the edge weights
+    normalized_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 100)  # Example range from 10 to 100
 
-    new_pos = nx.spring_layout(G_copy, pos={row_contig: (0, 0)}, fixed=[row_contig], k=min_edge_length / (len(G_copy.nodes) ** 0.5), iterations=50)
+    # Assign the normalized weights as edge weights
+    for edge, weight in zip(G_copy.edges(data=True), normalized_weights):
+        if edge[0] == row_contig or edge[1] == row_contig:
+            G_copy.edges[edge[0], edge[1]]['weight'] = weight
 
+    # Calculate min_edge_length based on the largest node size to avoid node overlap
+    max_node_size = max(node_sizes)
+    min_edge_length = max_node_size / 2  # Node size is diameter, so radius is size / 2
+
+    # Set k parameter based on the number of nodes and their sizes to avoid overlap
+    k_value = min_edge_length / sqrt(len(G_copy.nodes))
+
+    new_pos = nx.spring_layout(G_copy, pos={row_contig: (0, 0)}, fixed=[row_contig], k=k_value, iterations=50, weight='weight')
+    
     # Get and arrange contigs within the selected species node
     indices = get_contig_indexes(row_contig)
     contigs = contig_information.loc[indices, 'Contig name']
@@ -471,7 +504,7 @@ def species_visualization(active_cell, selected_species, table_data):
                 inter_contig_edges.add(contig_information.at[i, 'Contig name'])
                 inter_contig_edges.add(contig_information.at[j, 'Contig name'])
 
-    contig_positions = arrange_contigs(contigs, inter_contig_edges, radius=0.6, jitter=0.05)
+    contig_positions = arrange_contigs(contigs, inter_contig_edges, distance=0.05, center_position=new_pos[row_contig])
 
     cyto_elements = nx_to_cyto_elements(G_copy, new_pos)
     
@@ -514,8 +547,8 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
     col_contig = secondary_species
 
     G_copy = nx.Graph()
-    G_copy.add_node(row_contig, size=500, color='#A9D08E')  # Green for primary species
-    G_copy.add_node(col_contig, size=500, color='#FFD966')  # Yellow for secondary species
+    G_copy.add_node(row_contig, size=50, color='#A9D08E')  # Green for primary species
+    G_copy.add_node(col_contig, size=50, color='#FFD966')  # Yellow for secondary species
 
     new_pos = {row_contig: (-1, 0), col_contig: (1, 0)}
 
@@ -538,16 +571,16 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
                     'color': 'blue'  # Set blue color for the bars
                 })
 
-    contig_positions_row = arrange_contigs(inter_contigs_row, list(), radius=0.1, jitter=0.05)
-    contig_positions_col = arrange_contigs(inter_contigs_col, list(), radius=0.1, jitter=0.05)
+    contig_positions_row = arrange_contigs(inter_contigs_row, list(), distance=0.05, center_position=new_pos[row_contig])
+    contig_positions_col = arrange_contigs(inter_contigs_col, list(), distance=0.05, center_position=new_pos[col_contig])
 
     for contig, (x, y) in contig_positions_row.items():
-        G_copy.add_node(contig, size=20, color='#00FF00', parent=row_contig)  # Green for primary
-        new_pos[contig] = (new_pos[row_contig][0] + x * 20, new_pos[row_contig][1] + y * 20)
+        G_copy.add_node(contig, size=15, color='red', parent=row_contig)  # Red for primary
+        new_pos[contig] = (x, y)
 
     for contig, (x, y) in contig_positions_col.items():
-        G_copy.add_node(contig, size=20, color='blue', parent=col_contig)  # Blue for secondary
-        new_pos[contig] = (new_pos[col_contig][0] + x * 20, new_pos[col_contig][1] + y * 20)
+        G_copy.add_node(contig, size=15, color='blue', parent=col_contig)  # Blue for secondary
+        new_pos[contig] = (x, y)
 
     cyto_elements = []
     for node, data in G_copy.nodes(data=True):
@@ -572,8 +605,8 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
         'selector': f'node[id="{row_contig}"]',
         'style': {
             'background-color': '#FFFFFF',
-            'border-color': '#A9D08E',
-            'border-width': 5,
+            'border-color': 'black',
+            'border-width': 10,
             'label': 'data(label)'
         }
     })
@@ -581,8 +614,8 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
         'selector': f'node[id="{col_contig}"]',
         'style': {
             'background-color': '#FFFFFF',
-            'border-color': '#FFD966',
-            'border-width': 5,
+            'border-color': 'black',
+            'border-width': 10,
             'label': 'data(label)'
         }
     })
@@ -622,41 +655,41 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
     G_copy = nx.Graph()
 
     # Use a red-to-blue color scale
-    color_scale = pcolors.diverging.RdBu
+    color_scale = pcolors.diverging.Portland
 
     # Rank species based on the number of contigs with contact to the selected contig
     species_contact_counts = contacts_species.value_counts()
     species_contact_ranks = species_contact_counts.rank(method='first').astype(int)
     max_rank = species_contact_ranks.max()
 
-    # Add species nodes and contig nodes
-    species_positions = {}
+    # Add species nodes and their positions
     for species in contacts_species.unique():
         species_rank = species_contact_ranks[species]
         gradient_color = color_scale[int((species_rank / max_rank) * (len(color_scale) - 1))]
         G_copy.add_node(species, size=50, color=gradient_color)  # Gradient color for species nodes
+
+    # Set k value to avoid overlap and generate positions for the graph nodes
+    k_value = 2 / sqrt(len(G_copy.nodes))
+    pos = nx.spring_layout(G_copy, k=k_value, iterations=50, weight='weight')
+
+    # Add contig nodes to the graph
+    for species in contacts_species.unique():
         species_contigs = contacts_contigs[contacts_species == species]
-        
-        # Arrange contig nodes from the same species closer
-        contig_positions = arrange_contigs(species_contigs, [], 0.5, 0.05, selected_contig=selected_contig if species == selected_species else None)
+        contig_positions = arrange_contigs(
+            species_contigs,
+            [],
+            0.05,
+            center_position=pos[species],
+            selected_contig=selected_contig if species == selected_species else None
+        )
         for contig, (x, y) in contig_positions.items():
-            G_copy.add_node(contig, size=10 if contig != selected_contig else 50, color='red' if contig == selected_contig else gradient_color, parent=species)  # Same color as species, red for selected contig
+            G_copy.add_node(contig, size=10 if contig != selected_contig else 50, color='black' if contig == selected_contig else G_copy.nodes[species]['color'], parent=species)  # Same color as species, red for selected contig
             if contig != selected_contig:
-                G_copy.add_edge(selected_contig, contig, length=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
-            species_positions[contig] = (x, y)
+                G_copy.add_edge(selected_contig, contig, weight=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
+            pos[contig] = (x, y)  # Use positions directly from arrange_contigs
 
     # Ensure the selected contig node is positioned above all other contigs
-    species_positions[selected_contig] = (0, 0)  # Place it at the center of its species node
-
-    # Generate positions for the graph nodes
-    pos = nx.spring_layout(G_copy, k=0.5, iterations=50)
-    
-    # Update positions for contig nodes to be closer to their species node
-    for contig, (x, y) in species_positions.items():
-        pos[contig] = (pos[selected_species][0] + x, pos[selected_species][1] + y)
-
-    # Explicitly set the position of the selected contig to ensure it is above all others
-    pos[selected_contig] = (pos[selected_species][0], pos[selected_species][1])
+    pos[selected_contig] = pos[selected_species]
 
     cyto_elements = nx_to_cyto_elements(G_copy, pos)
     cyto_stylesheet = base_stylesheet.copy()
