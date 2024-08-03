@@ -63,7 +63,7 @@ species_contact_matrix_display.insert(0, 'Species', species_contact_matrix_displ
 
 # Extract and rename the necessary columns for the new matrix
 matrix_columns = {
-    'Contig name': 'Contig name',
+    'Contig name': 'Contig',
     'Contig annotation': 'Species',
     'Number of restriction sites': 'Restriction sites',
     'Contig length': 'Contig length',
@@ -397,7 +397,8 @@ app.layout = html.Div([
                 style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
                 style_data_conditional=create_conditional_styles(contig_matrix_display, contig_columns_to_style),
                 fixed_rows={'headers': True},  # Freeze the first row
-                fixed_columns={'headers': True, 'data': 2}  # Freeze the first 2 columns
+                fixed_columns={'headers': True, 'data': 2},  # Freeze the first 2 columns
+                sort_action='native'
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
