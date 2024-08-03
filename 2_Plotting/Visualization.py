@@ -304,16 +304,6 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 
     return {**inner_positions, **outer_positions}
 
-# Example usage of the function
-contigs = ['contig1', 'contig2', 'contig3', 'contig4', 'contig5', 'contig6']
-inter_contig_edges = ['contig1', 'contig3', 'contig5']
-distance = 100  # Example closest distance between two nodes
-selected_contig = 'contig1'
-center_position = (0, 0)
-
-positions = arrange_contigs(contigs, inter_contig_edges, distance, selected_contig, center_position)
-print(positions)
-
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -453,7 +443,7 @@ def species_visualization(active_cell, selected_species, table_data):
     for node, size in zip(G_copy.nodes, node_sizes):
         if node == row_contig:
             G_copy.nodes[node]['size'] = size
-            G_copy.nodes[node]['color'] = '#A9D08E'  # Green for selected node
+            G_copy.nodes[node]['color'] = '#FFFFFF'  # White for selected node
         else:
             num_connected_contigs = len(contig_information[(contig_information['Contig annotation'] == node) & (dense_matrix[:, get_contig_indexes(row_contig)].sum(axis=1) > 0)])
             if num_connected_contigs == 0:
@@ -498,7 +488,7 @@ def species_visualization(active_cell, selected_species, table_data):
     # Set k parameter based on the number of nodes and their sizes to avoid overlap
     k_value = min_edge_length / sqrt(len(G_copy.nodes))
 
-    new_pos = nx.spring_layout(G_copy, pos={row_contig: (0, 0)}, fixed=[row_contig], k=k_value, iterations=50, weight='weight')
+    new_pos = nx.spring_layout(G_copy, pos={row_contig: (0, 0)}, fixed=[row_contig], k=k_value/2, iterations=50, weight='weight')
     
     # Get and arrange contigs within the selected species node
     indices = get_contig_indexes(row_contig)
@@ -521,7 +511,7 @@ def species_visualization(active_cell, selected_species, table_data):
             'data': {
                 'id': contig,
                 'size': 5,  # Adjust size as needed
-                'color': 'red' if contig in inter_contig_edges else 'blue',  # Red for inter-contig edges, blue otherwise
+                'color': '#7030A0' if contig in inter_contig_edges else '#00B050',  # Purple for inter-contig edges, green otherwise
                 'parent': row_contig  # Indicate that this node is within the selected species node
             },
             'position': {
@@ -533,6 +523,28 @@ def species_visualization(active_cell, selected_species, table_data):
     # Make a copy of the base stylesheet and customize it for this visualization
     cyto_stylesheet = base_stylesheet.copy()
 
+    # Customize the stylesheet for the selected species node
+    cyto_stylesheet.append({
+        'selector': f'node[id="{row_contig}"]',
+        'style': {
+            'background-color': '#FFFFFF',
+            'border-color': 'black',
+            'border-width': 5,
+            'label': 'data(label)',
+            'font-size': '50px'
+        }
+    })
+    
+    # Customize the stylesheet for other species nodes
+    for node in G_copy.nodes:
+        if node != row_contig:
+            cyto_stylesheet.append({
+                'selector': f'node[id="{node}"]',
+                'style': {
+                    'font-size': '40px'  # Adjust label size for other species nodes
+                }
+            })
+            
     # Prepare data for bar chart
     contig_contact_counts = contig_information[contig_information['Contig annotation'] != row_contig]['Contig annotation'].value_counts()
     inter_species_contacts = species_contact_matrix.loc[row_contig].drop(row_contig)
