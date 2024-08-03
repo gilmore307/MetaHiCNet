@@ -181,7 +181,7 @@ base_stylesheet = [
             'width': 'data(size)',
             'height': 'data(size)',
             'background-color': 'data(color)',
-            'label': 'data(label)',
+            'label': 'data(label)'
         }
     },
     {
@@ -189,6 +189,13 @@ base_stylesheet = [
         'style': {
             'width': 2,
             'line-color': '#ccc',
+        }
+    },
+    {
+        'selector': 'node:selected',
+        'style': {
+            'border-width': 8,
+            'border-color': 'black'  # black color for selected node border
         }
     }
 ]
@@ -547,8 +554,8 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
     col_contig = secondary_species
 
     G_copy = nx.Graph()
-    G_copy.add_node(row_contig, size=50, color='#A9D08E')  # Green for primary species
-    G_copy.add_node(col_contig, size=50, color='#FFD966')  # Yellow for secondary species
+    G_copy.add_node(row_contig, size=1, color='#A9D08E', label=row_contig)  # Green for primary species
+    G_copy.add_node(col_contig, size=1, color='#FFD966', label=col_contig)  # Yellow for secondary species
 
     new_pos = {row_contig: (-1, 0), col_contig: (1, 0)}
 
@@ -575,11 +582,11 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
     contig_positions_col = arrange_contigs(inter_contigs_col, list(), distance=0.05, center_position=new_pos[col_contig])
 
     for contig, (x, y) in contig_positions_row.items():
-        G_copy.add_node(contig, size=15, color='red', parent=row_contig)  # Red for primary
+        G_copy.add_node(contig, size=5, color='red', parent=row_contig)  # Red for primary
         new_pos[contig] = (x, y)
 
     for contig, (x, y) in contig_positions_col.items():
-        G_copy.add_node(contig, size=15, color='blue', parent=col_contig)  # Blue for secondary
+        G_copy.add_node(contig, size=5, color='blue', parent=col_contig)  # Blue for secondary
         new_pos[contig] = (x, y)
 
     cyto_elements = []
@@ -593,8 +600,8 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
                 'parent': data['parent'] if 'parent' in data else ''
             },
             'position': {
-                'x': new_pos[node][0] * 500,
-                'y': new_pos[node][1] * 500
+                'x': new_pos[node][0] * 100,
+                'y': new_pos[node][1] * 100
             }
         })
 
@@ -606,8 +613,9 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
         'style': {
             'background-color': '#FFFFFF',
             'border-color': 'black',
-            'border-width': 10,
-            'label': 'data(label)'
+            'border-width': 5,
+            'label': 'data(label)',
+            'font-size': '20px'
         }
     })
     cyto_stylesheet.append({
@@ -615,8 +623,9 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
         'style': {
             'background-color': '#FFFFFF',
             'border-color': 'black',
-            'border-width': 10,
-            'label': 'data(label)'
+            'border-width': 5,
+            'label': 'data(label)',
+            'font-size': '20px'
         }
     })
 
@@ -630,7 +639,7 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
     bar_fig = create_bar_chart(data_dict)
 
     # Filter contigs involved in interspecies contacts and retain all columns
-    involved_contigs = contig_information[contig_information['Contig name'].isin(inter_contigs_row | inter_contigs_col)]
+    involved_contigs = contig_information[contig_information['Contig name'].isin(inter_contigs_row | inter_contigs_col)].index
 
     return cyto_elements, cyto_stylesheet, bar_fig, involved_contigs
 
@@ -801,7 +810,7 @@ def update_visualization(reset_clicks, confirm_clicks, selected_species, seconda
                 raise ValueError("Both selected_species and secondary_species must be string values.")
 
             cyto_elements, cyto_stylesheet, bar_fig, involved_contigs = species_contact_visualization(None, selected_species, secondary_species, table_data)
-            filtered_data = involved_contigs
+            filtered_data = contig_matrix_display.loc[involved_contigs]
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'species':
