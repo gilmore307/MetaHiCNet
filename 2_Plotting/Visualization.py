@@ -144,6 +144,7 @@ def basic_visualization():
 # Function to convert NetworkX graph to Cytoscape elements
 def nx_to_cyto_elements(G, pos):
     elements = []
+    node_ids = set(G.nodes)  # Keep track of added node IDs
     for node in G.nodes:
         data = {
             'id': node,
@@ -161,13 +162,14 @@ def nx_to_cyto_elements(G, pos):
             }
         })
     for edge in G.edges(data=True):
-        elements.append({
-            'data': {
-                'source': edge[0],
-                'target': edge[1],
-                'weight': edge[2]['weight']
-            }
-        })
+        if edge[0] in node_ids and edge[1] in node_ids:  # Ensure both nodes exist
+            elements.append({
+                'data': {
+                    'source': edge[0],
+                    'target': edge[1],
+                    'weight': edge[2]['weight']
+                }
+            })
     return elements
 
 # Base stylesheet for Cytoscape
@@ -417,8 +419,7 @@ app.layout = html.Div([
                 style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
                 style_data_conditional=styling_contig_table(contig_matrix_display),
                 fixed_rows={'headers': True},  # Freeze the first row
-                fixed_columns={'headers': True, 'data': 2},  # Freeze the first 2 columns
-                sort_action='native'
+                fixed_columns={'headers': True, 'data': 2}  # Freeze the first 2 columns
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
@@ -431,6 +432,7 @@ app.layout = html.Div([
                 zoom=1,
                 userZoomingEnabled=True,
                 wheelSensitivity=0.1  # Reduce the wheel sensitivity (default is 1)
+
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'})
     ], style={'width': '100%', 'display': 'flex'}),
@@ -773,6 +775,46 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
 
     return cyto_elements, cyto_stylesheet, bar_fig, selected_species
 
+def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_active_cell, contact_table_active_cell, table_data, contig_info_table_data):
+    # If a node in the network is selected
+    if triggered_id == 'cyto-graph' and selected_node_data:
+        selected_node_id = selected_node_data[0]['id'] if selected_node_data else None
+        print(f"Selected node ID: {selected_node_id}")  # Debug print
+        # Check if the selected node is a contig or a species
+        if selected_node_id in contig_information['Contig name'].values:
+            contig_info = contig_information[contig_information['Contig name'] == selected_node_id].iloc[0]
+            print(f"Contig info: {contig_info}")  # Debug print
+            if 'Contig annotation' in contig_info and 'Contig name' in contig_info:
+                selected_species = contig_info['Contig annotation']
+                selected_contig = contig_info['Contig name']
+                return selected_species, selected_contig, None, None
+        else:
+            selected_species = selected_node_id
+            return selected_species, None, None, None
+
+    # If an edge in the network is selected
+    if triggered_id == 'cyto-graph' and selected_edge_data:
+        source_species = selected_edge_data[0]['source']
+        target_species = selected_edge_data[0]['target']
+        return source_species, None, target_species, None
+
+    # If a cell in the contig-info-table is selected
+    if triggered_id == 'contig-info-table' and contig_info_active_cell:
+        row_contig_info = contig_info_table_data[contig_info_active_cell['row']]
+        print(f"Row contig info: {row_contig_info}")  # Debug print
+        if 'Species' in row_contig_info and 'Contig' in row_contig_info:
+            selected_species = row_contig_info['Species']
+            selected_contig = row_contig_info['Contig']
+            return selected_species, selected_contig, None, None
+
+    # If a cell in the contact-table is selected
+    if triggered_id == 'contact-table' and contact_table_active_cell:
+        row_contig = table_data[contact_table_active_cell['row']]['Species']
+        col_contig = contact_table_active_cell['column_id'] if contact_table_active_cell['column_id'] != 'Species' else None
+        return row_contig, None, col_contig, None
+
+    return None, None, None, None
+
 @app.callback(
     [Output('species-selector', 'value'),
      Output('secondary-species-selector', 'value'),
@@ -784,36 +826,36 @@ def contig_visualization(active_cell, selected_species, selected_contig, table_d
      Output('contig-info-table', 'active_cell')],
     [Input('contact-table', 'active_cell'),
      Input('visualization-selector', 'value'),
-     Input('contig-info-table', 'active_cell')],
+     Input('contig-info-table', 'active_cell'),
+     Input('cyto-graph', 'selectedNodeData'),
+     Input('cyto-graph', 'selectedEdgeData')],
     [State('contact-table', 'data'),
      State('contig-info-table', 'data')]
 )
-def sync_selectors(contact_table_active_cell, visualization_type, contig_info_active_cell, contact_table_data, contig_info_table_data):
+def sync_selectors(contact_table_active_cell, visualization_type, contig_info_active_cell, selected_node_data, selected_edge_data, contact_table_data, contig_info_table_data):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-    # If a cell in the contig-info-table is selected
-    if triggered_id == 'contig-info-table' and contig_info_active_cell:
-        row_contig_info = contig_info_table_data[contig_info_active_cell['row']]
-        selected_species = row_contig_info['Species']
-        selected_contig = row_contig_info['Contig']
-        return selected_species, None, {'display': 'none'}, {'width': '300px', 'display': 'inline-block'}, 'contig', selected_contig, None, contig_info_active_cell
+    selected_species, selected_contig, secondary_species, _ = synchronize_selections(
+        triggered_id, selected_node_data, selected_edge_data, contig_info_active_cell, contact_table_active_cell, contact_table_data, contig_info_table_data
+    )
 
-    # If a cell in the contact-table is selected
-    if triggered_id == 'contact-table' and contact_table_active_cell:
-        row_contig = contact_table_data[contact_table_active_cell['row']]['Species']
-        col_contig = contact_table_active_cell['column_id'] if contact_table_active_cell['column_id'] != 'Species' else None
-
-        if contact_table_active_cell['column_id'] == 'Species':
-            visualization_type = 'intra_species'
-            secondary_species_style = {'display': 'none'}
-            contig_selector_style = {'display': 'none'}
-        else:
+    # If a species is selected in the network or species table
+    if selected_species and not selected_contig:
+        if secondary_species:
             visualization_type = 'inter_species'
             secondary_species_style = {'width': '300px', 'display': 'inline-block'}
             contig_selector_style = {'display': 'none'}
+        else:
+            visualization_type = 'intra_species'
+            secondary_species_style = {'display': 'none'}
+            contig_selector_style = {'display': 'none'}
+        return selected_species, secondary_species, secondary_species_style, contig_selector_style, visualization_type, None, None, None
 
-        return row_contig, col_contig, secondary_species_style, contig_selector_style, visualization_type, None, contact_table_active_cell, None
+    # If a contig is selected in the network or contig table
+    if selected_contig:
+        visualization_type = 'contig'
+        return selected_species, None, {'display': 'none'}, {'width': '300px', 'display': 'inline-block'}, visualization_type, selected_contig, None, None
 
     # Default cases based on visualization_type
     if visualization_type == 'inter_species':
@@ -855,22 +897,18 @@ def update_visualization(reset_clicks, confirm_clicks, selected_species, seconda
                 filtered_data = contig_matrix_display
                 return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
-            # Ensure selected_species and secondary_species are strings
-            if not isinstance(selected_species, str) or not isinstance(secondary_species, str):
-                raise ValueError("Both selected_species and secondary_species must be string values.")
-
             cyto_elements, cyto_stylesheet, bar_fig, involved_contigs = species_contact_visualization(None, selected_species, secondary_species, table_data)
             filtered_data = contig_matrix_display.loc[involved_contigs]
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'intra_species':
-            cyto_elements, cyto_stylesheet, bar_fig, selected_species = species_visualization(None, selected_species, table_data)
+            cyto_elements, cyto_stylesheet, bar_fig, _ = species_visualization(None, selected_species, table_data)
             species_indexes = get_contig_indexes(selected_species)
             filtered_data = contig_matrix_display.loc[species_indexes]
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'contig':
-            cyto_elements, cyto_stylesheet, bar_fig, selected_species = contig_visualization(None, selected_species, selected_contig, table_data)
+            cyto_elements, cyto_stylesheet, bar_fig, _ = contig_visualization(None, selected_species, selected_contig, table_data)
             selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
             contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
             contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
