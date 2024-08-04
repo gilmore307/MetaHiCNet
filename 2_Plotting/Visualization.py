@@ -196,6 +196,13 @@ base_stylesheet = [
             'border-width': 8,
             'border-color': 'black'  # black color for selected node border
         }
+    },
+    {
+        'selector': 'edge:selected',
+        'style': {
+            'width': 5,  # set selected edge width to 5
+            'line-color': 'black'  # black color for selected edge
+        }
     }
 ]
 
@@ -414,7 +421,7 @@ app.layout = html.Div([
                 id='contig-info-table',
                 columns=[{"name": col, "id": col} for col in contig_matrix_display.columns],
                 data=contig_matrix_display.to_dict('records'),
-                style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '30vw', 'minWidth': '100%'},
+                style_table={'height': '40vh', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '30vw', 'minWidth': '100%'},
                 style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
                 style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
                 style_data_conditional=styling_contig_table(contig_matrix_display),
