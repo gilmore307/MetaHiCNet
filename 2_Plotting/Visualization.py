@@ -196,23 +196,33 @@ def add_selection_styles(cyto_stylesheet, selected_element_type, selected_elemen
     if selected_element is None:
         return cyto_stylesheet
 
+    # Define the new style to be added or updated
     if selected_element_type == 'node':
-        cyto_stylesheet.append({
+        new_style = {
             'selector': f'node[id="{selected_element}"]',
             'style': {
                 'border-width': 8,
                 'border-color': 'black'
             }
-        })
+        }
     elif selected_element_type == 'edge':
         source, target = selected_element
-        cyto_stylesheet.append({
+        new_style = {
             'selector': f'edge[source="{source}"][target="{target}"], edge[source="{target}"][target="{source}"]',
             'style': {
                 'width': 5,
                 'line-color': 'black'
             }
-        })
+        }
+
+    # Check if the style already exists and update it
+    for style in cyto_stylesheet:
+        if style['selector'] == new_style['selector']:
+            style['style'].update(new_style['style'])
+            break
+    else:
+        # If the style doesn't exist, append it
+        cyto_stylesheet.append(new_style)
 
     return cyto_stylesheet
 
@@ -943,20 +953,18 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
 
     return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
+# Add a new Output to clear previously selected elements
 @app.callback(
-    Output('cyto-graph', 'stylesheet', allow_duplicate=True),
+    Output('cyto-graph', 'stylesheet'),
     [Input('species-selector', 'value'),
      Input('secondary-species-selector', 'value'),
      Input('contig-selector', 'value')],
     [State('cyto-graph', 'stylesheet')],
-    prevent_initial_call='initial_duplicate'
+    prevent_initial_call=True
 )
 def update_selected_styles(selected_species, secondary_species, selected_contig, current_stylesheet):
     # Copy the current stylesheet to avoid modifying the original
     new_stylesheet = current_stylesheet.copy()
-
-    # Clear previous selection styles
-    new_stylesheet = [style for style in new_stylesheet if 'border-width' not in style['style']]
 
     selected_element_type = None
     selected_element = None
