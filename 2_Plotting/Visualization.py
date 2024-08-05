@@ -11,10 +11,14 @@ import plotly.graph_objects as go
 from dash import callback_context
 import plotly.colors as pcolors
 from math import sqrt, sin, cos, pi
+from openai import OpenAI
+
+# Set your OpenAI API key
+client = OpenAI(api_key='')
 
 # File paths for the current environment
 contig_info_path = '../0_Documents/contig_information.csv'
-raw_contact_matrix_path = '../0_Documents/raw_contact_matrix.npz'
+raw_contact_matrix_path= '../0_Documents/raw_contact_matrix.npz'
 
 # Load the data
 contig_information = pd.read_csv(contig_info_path)
@@ -453,7 +457,7 @@ app.layout = html.Div([
             cyto.Cytoscape(
                 id='cyto-graph',
                 elements=cyto_elements,
-                style={'height': '80vh', 'width': '50vw', 'display': 'inline-block'},
+                style={'height': '80vh', 'width': '48vw', 'display': 'inline-block'},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
                 stylesheet=cyto_stylesheet,
                 zoom=1,
@@ -461,7 +465,18 @@ app.layout = html.Div([
                 wheelSensitivity=0.1  # Reduce the wheel sensitivity (default is 1)
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
-        html.Div(id='hover-info', style={'height': '80vh', 'width': '20vw', 'background-color': 'white', 'padding': '10px', 'border': '1px solid #ccc', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'})
+    html.Div([
+        html.Div(id='hover-info', style={'height': '50vh', 'width': '20vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'}),
+            html.Div([
+                dcc.Textarea(
+                    id='chatgpt-input',
+                    placeholder='Enter your query here...',
+                    style={'width': '100%', 'height': '15vh', 'display': 'inline-block'}
+                ),
+                html.Button('Interpret Data', id='interpret-button', n_clicks=0, style={'width': '100%', 'display': 'inline-block'})
+            ], style={'width': '20vw', 'display': 'inline-block'}),
+            html.Div(id='gpt-answer', style={'height': '15vh', 'width': '20vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'})
+        ], style={'display': 'inline-block', 'vertical-align': 'top', 'margin-left': '20px'}),
     ], style={'width': '100%', 'display': 'flex'}),
     html.Div([
         dash_table.DataTable(
@@ -1015,6 +1030,32 @@ def populate_contig_selector(selected_species, visualization_type):
         contigs = contig_information.loc[get_contig_indexes(selected_species), 'Contig name']
         return [{'label': contig, 'value': contig} for contig in contigs]
     return []
+
+# Example function to call OpenAI API using GPT-4 with the new API format
+def get_chatgpt_response(prompt):
+    response = client.chat.completions.create(model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": prompt}
+    ],
+    max_tokens=150)
+    return response.choices[0].message.content
+
+# Dash callback to use ChatGPT
+@app.callback(
+    Output('gpt-answer', 'children'),
+    [Input('interpret-button', 'n_clicks')],
+    [State('chatgpt-input', 'value')],
+    prevent_initial_call=True
+)
+def interpret_data(n_clicks, query):
+    if n_clicks > 0 and query:
+        try:
+            interpretation = get_chatgpt_response(query)
+            return f"Interpretation:\n{interpretation}"
+        except Exception as e:
+            return f"Error: {str(e)}"
+    return "No query provided."
 
 if __name__ == '__main__':
     app.run_server(debug=True)
