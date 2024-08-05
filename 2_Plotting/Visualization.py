@@ -453,15 +453,15 @@ app.layout = html.Div([
             cyto.Cytoscape(
                 id='cyto-graph',
                 elements=cyto_elements,
-                style={'height': '80vh', 'width': '60vw', 'display': 'inline-block'},
+                style={'height': '80vh', 'width': '50vw', 'display': 'inline-block'},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
                 stylesheet=cyto_stylesheet,
                 zoom=1,
                 userZoomingEnabled=True,
                 wheelSensitivity=0.1  # Reduce the wheel sensitivity (default is 1)
-
             )
-        ], style={'display': 'inline-block', 'vertical-align': 'top'})
+        ], style={'display': 'inline-block', 'vertical-align': 'top'}),
+        html.Div(id='hover-info', style={'height': '80vh', 'width': '20vw', 'background-color': 'white', 'padding': '10px', 'border': '1px solid #ccc', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'})
     ], style={'width': '100%', 'display': 'flex'}),
     html.Div([
         dash_table.DataTable(
@@ -478,7 +478,7 @@ app.layout = html.Div([
     ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
-        
+
 # Visualization functions
 def species_visualization(selected_species):
     row_contig = selected_species
@@ -806,11 +806,9 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
     # If a node in the network is selected
     if triggered_id == 'cyto-graph' and selected_node_data:
         selected_node_id = selected_node_data[0]['id'] if selected_node_data else None
-        print(f"Selected node ID: {selected_node_id}")  # Debug print
         # Check if the selected node is a contig or a species
         if selected_node_id in contig_information['Contig name'].values:
             contig_info = contig_information[contig_information['Contig name'] == selected_node_id].iloc[0]
-            print(f"Contig info: {contig_info}")  # Debug print
             if 'Contig annotation' in contig_info and 'Contig name' in contig_info:
                 selected_species = contig_info['Contig annotation']
                 selected_contig = contig_info['Contig name']
@@ -828,7 +826,6 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
     # If a cell in the contig-info-table is selected
     if triggered_id == 'contig-info-table' and contig_info_active_cell:
         row_contig_info = contig_info_table_data[contig_info_active_cell['row']]
-        print(f"Row contig info: {row_contig_info}")  # Debug print
         if 'Species' in row_contig_info and 'Contig' in row_contig_info:
             selected_species = row_contig_info['Species']
             selected_contig = row_contig_info['Contig']
@@ -966,7 +963,8 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
 
 # Add a new Output to clear previously selected elements
 @app.callback(
-    Output('cyto-graph', 'stylesheet'),
+    [Output('cyto-graph', 'stylesheet'),
+     Output('hover-info', 'children')],
     [Input('species-selector', 'value'),
      Input('secondary-species-selector', 'value'),
      Input('contig-selector', 'value')],
@@ -978,22 +976,27 @@ def update_selected_styles(selected_species, secondary_species, selected_contig)
 
     selected_element_type = None
     selected_element = None
+    hover_info = "No selection"
 
     # Determine the selected element type and value
     if selected_species and secondary_species:
         selected_element_type = 'edge'
         selected_element = (selected_species, secondary_species)
+        hover_info = f"Edge between {selected_species} and {secondary_species}"
     elif selected_contig:
         selected_element_type = 'node'
         selected_element = selected_contig
+        contig_info = contig_information[contig_information['Contig name'] == selected_contig].iloc[0]
+        hover_info = f"Contig: {selected_contig}<br>Species: {contig_info['Contig annotation']}"
     elif selected_species:
         selected_element_type = 'node'
         selected_element = selected_species
+        hover_info = f"Species: {selected_species}"
 
     # Add selection styles
     new_stylesheet = add_selection_styles(new_stylesheet, selected_element_type, selected_element)
 
-    return new_stylesheet
+    return new_stylesheet, hover_info
 
 @app.callback(
     Output('row-count', 'children'),
