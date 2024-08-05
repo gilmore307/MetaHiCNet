@@ -189,22 +189,32 @@ base_stylesheet = [
             'width': 2,
             'line-color': '#ccc',
         }
-    },
-    {
-        'selector': 'node:selected',
-        'style': {
-            'border-width': 8,
-            'border-color': 'black'  # black color for selected node border
-        }
-    },
-    {
-        'selector': 'edge:selected',
-        'style': {
-            'width': 5,  # set selected edge width to 5
-            'line-color': 'black'  # black color for selected edge
-        }
     }
 ]
+
+def add_selection_styles(cyto_stylesheet, selected_element_type, selected_element=None):
+    if selected_element is None:
+        return cyto_stylesheet
+
+    if selected_element_type == 'node':
+        cyto_stylesheet.append({
+            'selector': f'node[id="{selected_element}"]',
+            'style': {
+                'border-width': 8,
+                'border-color': 'black'
+            }
+        })
+    elif selected_element_type == 'edge':
+        source, target = selected_element
+        cyto_stylesheet.append({
+            'selector': f'edge[source="{source}"][target="{target}"], edge[source="{target}"][target="{source}"]',
+            'style': {
+                'width': 5,
+                'line-color': 'black'
+            }
+        })
+
+    return cyto_stylesheet
 
 def create_bar_chart(data_dict):
     traces = []
@@ -882,7 +892,7 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_ac
 
 @app.callback(
     [Output('cyto-graph', 'elements'),
-     Output('cyto-graph', 'stylesheet'),
+     Output('cyto-graph', 'stylesheet', allow_duplicate=True),
      Output('bar-chart', 'figure'),
      Output('contig-info-table', 'data')],
     [Input('reset-btn', 'n_clicks'),
@@ -891,7 +901,8 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_ac
      State('species-selector', 'value'),
      State('secondary-species-selector', 'value'),
      State('contig-selector', 'value'),
-     State('contact-table', 'data')]
+     State('contact-table', 'data')],
+    prevent_initial_call='initial_duplicate'
 )
 def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_species, secondary_species, selected_contig, table_data):
     ctx = callback_context
@@ -931,6 +942,40 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
     return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+
+@app.callback(
+    Output('cyto-graph', 'stylesheet', allow_duplicate=True),
+    [Input('species-selector', 'value'),
+     Input('secondary-species-selector', 'value'),
+     Input('contig-selector', 'value')],
+    [State('cyto-graph', 'stylesheet')],
+    prevent_initial_call='initial_duplicate'
+)
+def update_selected_styles(selected_species, secondary_species, selected_contig, current_stylesheet):
+    # Copy the current stylesheet to avoid modifying the original
+    new_stylesheet = current_stylesheet.copy()
+
+    # Clear previous selection styles
+    new_stylesheet = [style for style in new_stylesheet if 'border-width' not in style['style']]
+
+    selected_element_type = None
+    selected_element = None
+
+    # Determine the selected element type and value
+    if selected_species and secondary_species:
+        selected_element_type = 'edge'
+        selected_element = (selected_species, secondary_species)
+    elif selected_contig:
+        selected_element_type = 'node'
+        selected_element = selected_contig
+    elif selected_species:
+        selected_element_type = 'node'
+        selected_element = selected_species
+
+    # Add selection styles
+    new_stylesheet = add_selection_styles(new_stylesheet, selected_element_type, selected_element)
+
+    return new_stylesheet
 
 @app.callback(
     Output('row-count', 'children'),
