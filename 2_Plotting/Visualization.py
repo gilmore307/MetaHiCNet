@@ -900,6 +900,8 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_ac
         contig_selector_style = {'display': 'none'}
         return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
 
+original_cyto_stylesheet = []
+
 @app.callback(
     [Output('cyto-graph', 'elements'),
      Output('cyto-graph', 'stylesheet', allow_duplicate=True),
@@ -915,12 +917,17 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_ac
     prevent_initial_call='initial_duplicate'
 )
 def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_species, secondary_species, selected_contig, table_data):
+    global original_cyto_stylesheet  # Declare the global variable to store the original stylesheet
+    
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     # Initialize default values for cyto_elements, bar_fig, and filtered_data
     cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
     filtered_data = contig_matrix_display
+
+    # Store the original stylesheet
+    original_cyto_stylesheet = cyto_stylesheet.copy()
 
     if triggered_id == 'reset-btn' or not selected_species:
         # Reset all selections to show the original plot and all contigs
@@ -931,16 +938,19 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             if not selected_species or not secondary_species:
                 cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
                 filtered_data = contig_matrix_display
+                original_cyto_stylesheet = cyto_stylesheet.copy()
                 return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
             cyto_elements, cyto_stylesheet, bar_fig, involved_contigs = species_contact_visualization(selected_species, secondary_species)
             filtered_data = contig_matrix_display.loc[involved_contigs]
+            original_cyto_stylesheet = cyto_stylesheet.copy()
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'intra_species':
             cyto_elements, cyto_stylesheet, bar_fig, _ = species_visualization(selected_species)
             species_indexes = get_contig_indexes(selected_species)
             filtered_data = contig_matrix_display.loc[species_indexes]
+            original_cyto_stylesheet = cyto_stylesheet.copy()
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'contig':
@@ -949,6 +959,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
             contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
             filtered_data = contig_matrix_display.loc[contacts_indices]
+            original_cyto_stylesheet = cyto_stylesheet.copy()
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
     return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
@@ -959,12 +970,11 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     [Input('species-selector', 'value'),
      Input('secondary-species-selector', 'value'),
      Input('contig-selector', 'value')],
-    [State('cyto-graph', 'stylesheet')],
     prevent_initial_call=True
 )
-def update_selected_styles(selected_species, secondary_species, selected_contig, current_stylesheet):
-    # Copy the current stylesheet to avoid modifying the original
-    new_stylesheet = current_stylesheet.copy()
+def update_selected_styles(selected_species, secondary_species, selected_contig):
+    # Use the stored original stylesheet
+    new_stylesheet = original_cyto_stylesheet.copy()
 
     selected_element_type = None
     selected_element = None
