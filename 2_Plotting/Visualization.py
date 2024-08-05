@@ -823,23 +823,23 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
     return None, None, None, None
 
 @app.callback(
-    [Output('species-selector', 'value'),
+    [Output('visualization-selector', 'value'),
+     Output('species-selector', 'value'),
      Output('secondary-species-selector', 'value'),
      Output('secondary-species-selector', 'style'),
-     Output('contig-selector', 'style'),
-     Output('visualization-selector', 'value'),
      Output('contig-selector', 'value'),
+     Output('contig-selector', 'style'),
      Output('contact-table', 'active_cell'),
      Output('contig-info-table', 'active_cell')],
-    [Input('contact-table', 'active_cell'),
-     Input('visualization-selector', 'value'),
+    [Input('visualization-selector', 'value'),
+     Input('contact-table', 'active_cell'),
      Input('contig-info-table', 'active_cell'),
      Input('cyto-graph', 'selectedNodeData'),
      Input('cyto-graph', 'selectedEdgeData')],
     [State('contact-table', 'data'),
      State('contig-info-table', 'data')]
 )
-def sync_selectors(contact_table_active_cell, visualization_type, contig_info_active_cell, selected_node_data, selected_edge_data, contact_table_data, contig_info_table_data):
+def sync_selectors(visualization_type, contact_table_active_cell, contig_info_active_cell, selected_node_data, selected_edge_data, contact_table_data, contig_info_table_data):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
@@ -857,20 +857,28 @@ def sync_selectors(contact_table_active_cell, visualization_type, contig_info_ac
             visualization_type = 'intra_species'
             secondary_species_style = {'display': 'none'}
             contig_selector_style = {'display': 'none'}
-        return selected_species, secondary_species, secondary_species_style, contig_selector_style, visualization_type, None, None, None
+        return visualization_type, selected_species, secondary_species, secondary_species_style, None, contig_selector_style, None, None
 
     # If a contig is selected in the network or contig table
     if selected_contig:
         visualization_type = 'contig'
-        return selected_species, None, {'display': 'none'}, {'width': '300px', 'display': 'inline-block'}, visualization_type, selected_contig, None, None
+        secondary_species_style = {'display': 'none'}
+        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+        return visualization_type, selected_species, None, secondary_species_style, selected_contig, contig_selector_style, None, None
 
     # Default cases based on visualization_type
     if visualization_type == 'inter_species':
-        return None, None, {'width': '300px', 'display': 'inline-block'}, {'display': 'none'}, 'inter_species', None, None, None
+        secondary_species_style = {'width': '300px', 'display': 'inline-block'}
+        contig_selector_style = {'display': 'none'}
+        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
     elif visualization_type == 'contig':
-        return None, None, {'display': 'none'}, {'width': '300px', 'display': 'inline-block'}, 'contig', None, None, None
+        secondary_species_style = {'display': 'none'}
+        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
     else:
-        return None, None, {'display': 'none'}, {'display': 'none'}, 'intra_species', None, None, None
+        secondary_species_style = {'display': 'none'}
+        contig_selector_style = {'display': 'none'}
+        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
 
 @app.callback(
     [Output('cyto-graph', 'elements'),
@@ -879,13 +887,13 @@ def sync_selectors(contact_table_active_cell, visualization_type, contig_info_ac
      Output('contig-info-table', 'data')],
     [Input('reset-btn', 'n_clicks'),
      Input('confirm-btn', 'n_clicks')],
-    [State('species-selector', 'value'),
+    [State('visualization-selector', 'value'),
+     State('species-selector', 'value'),
      State('secondary-species-selector', 'value'),
      State('contig-selector', 'value'),
-     State('visualization-selector', 'value'),
      State('contact-table', 'data')]
 )
-def update_visualization(reset_clicks, confirm_clicks, selected_species, secondary_species, selected_contig, visualization_type, table_data):
+def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_species, secondary_species, selected_contig, table_data):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
