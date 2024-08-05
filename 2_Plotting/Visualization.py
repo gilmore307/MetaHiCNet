@@ -460,8 +460,8 @@ app.layout = html.Div([
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
         
 # Visualization functions
-def species_visualization(active_cell, selected_species, table_data):
-    row_contig = table_data[active_cell['row']]['Species'] if active_cell else selected_species
+def species_visualization(selected_species):
+    row_contig = selected_species
 
     G_copy = G.copy()
 
@@ -588,7 +588,7 @@ def species_visualization(active_cell, selected_species, table_data):
 
     return cyto_elements, cyto_stylesheet, bar_fig, row_contig
 
-def species_contact_visualization(active_cell, selected_species, secondary_species, table_data):
+def species_contact_visualization(selected_species, secondary_species):
     if not selected_species or not secondary_species:
         return basic_visualization()[0], basic_visualization()[1], basic_visualization()[3], selected_species
 
@@ -685,7 +685,7 @@ def species_contact_visualization(active_cell, selected_species, secondary_speci
 
     return cyto_elements, cyto_stylesheet, bar_fig, involved_contigs
 
-def contig_visualization(active_cell, selected_species, selected_contig, table_data):
+def contig_visualization(selected_species, selected_contig):
     if not selected_contig:
         return basic_visualization()[0], basic_visualization()[1], basic_visualization()[3], selected_species
 
@@ -904,18 +904,18 @@ def update_visualization(reset_clicks, confirm_clicks, selected_species, seconda
                 filtered_data = contig_matrix_display
                 return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
-            cyto_elements, cyto_stylesheet, bar_fig, involved_contigs = species_contact_visualization(None, selected_species, secondary_species, table_data)
+            cyto_elements, cyto_stylesheet, bar_fig, involved_contigs = species_contact_visualization(selected_species, secondary_species)
             filtered_data = contig_matrix_display.loc[involved_contigs]
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'intra_species':
-            cyto_elements, cyto_stylesheet, bar_fig, _ = species_visualization(None, selected_species, table_data)
+            cyto_elements, cyto_stylesheet, bar_fig, _ = species_visualization(selected_species)
             species_indexes = get_contig_indexes(selected_species)
             filtered_data = contig_matrix_display.loc[species_indexes]
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'contig':
-            cyto_elements, cyto_stylesheet, bar_fig, _ = contig_visualization(None, selected_species, selected_contig, table_data)
+            cyto_elements, cyto_stylesheet, bar_fig, _ = contig_visualization(selected_species, selected_contig)
             selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
             contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
             contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
