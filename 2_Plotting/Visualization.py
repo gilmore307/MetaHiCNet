@@ -821,41 +821,46 @@ app.layout = html.Div([
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
 def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_active_cell, contact_table_active_cell, table_data, contig_info_table_data):
+    # Initialize the return values
+    selected_species = None
+    selected_contig = None
+    secondary_species = None
+
     # If a node in the network is selected
     if triggered_id == 'cyto-graph' and selected_node_data:
-        selected_node_id = selected_node_data[0]['id'] if selected_node_data else None
+        selected_node_id = selected_node_data[0]['id']
         # Check if the selected node is a contig or a species
         if selected_node_id in contig_information['Contig name'].values:
             contig_info = contig_information[contig_information['Contig name'] == selected_node_id].iloc[0]
             if 'Contig annotation' in contig_info and 'Contig name' in contig_info:
                 selected_species = contig_info['Contig annotation']
                 selected_contig = contig_info['Contig name']
-                return selected_species, selected_contig, None, None
         else:
             selected_species = selected_node_id
-            return selected_species, None, None, None
 
     # If an edge in the network is selected
-    if triggered_id == 'cyto-graph' and selected_edge_data:
+    elif triggered_id == 'cyto-graph' and selected_edge_data:
         source_species = selected_edge_data[0]['source']
         target_species = selected_edge_data[0]['target']
-        return source_species, None, target_species, None
+        selected_species = source_species
+        secondary_species = target_species
 
     # If a cell in the contig-info-table is selected
-    if triggered_id == 'contig-info-table' and contig_info_active_cell:
+    elif triggered_id == 'contig-info-table' and contig_info_active_cell:
         row_contig_info = contig_info_table_data[contig_info_active_cell['row']]
         if 'Species' in row_contig_info and 'Contig' in row_contig_info:
             selected_species = row_contig_info['Species']
             selected_contig = row_contig_info['Contig']
-            return selected_species, selected_contig, None, None
 
     # If a cell in the contact-table is selected
-    if triggered_id == 'contact-table' and contact_table_active_cell:
+    elif triggered_id == 'contact-table' and contact_table_active_cell:
         row_species = table_data[contact_table_active_cell['row']]['Species']
         col_species = contact_table_active_cell['column_id'] if contact_table_active_cell['column_id'] != 'Species' else None
-        return row_species, None, col_species, None
+        selected_species = row_species
+        secondary_species = col_species
 
-    return None, None, None, None
+    return selected_species, selected_contig, secondary_species
+
 
 @app.callback(
     [Output('visualization-selector', 'value'),
@@ -872,13 +877,14 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
      Input('cyto-graph', 'selectedNodeData'),
      Input('cyto-graph', 'selectedEdgeData')],
     [State('contact-table', 'data'),
-     State('contig-info-table', 'data')]
+     State('contig-info-table', 'data')],
+    prevent_initial_call=True
 )
 def sync_selectors(visualization_type, contact_table_active_cell, contig_info_active_cell, selected_node_data, selected_edge_data, contact_table_data, contig_info_table_data):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-    selected_species, selected_contig, secondary_species, _ = synchronize_selections(
+    selected_species, selected_contig, secondary_species = synchronize_selections(
         triggered_id, selected_node_data, selected_edge_data, contig_info_active_cell, contact_table_active_cell, contact_table_data, contig_info_table_data
     )
 
@@ -977,7 +983,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             original_cyto_stylesheet = cyto_stylesheet.copy()
             return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
-    return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+    return cyto_elements, original_cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
 
 # Add a new Output to clear previously selected elements
 @app.callback(
