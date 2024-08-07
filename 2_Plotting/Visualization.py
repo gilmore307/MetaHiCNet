@@ -7,6 +7,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
+import dash_ag_grid as dag
 import plotly.graph_objects as go
 from dash import callback_context
 import plotly.express as px
@@ -628,6 +629,28 @@ matrix_columns = {
 
 contig_matrix_display = contig_information[list(matrix_columns.keys())].rename(columns=matrix_columns)
 
+# Convert your DataFrame to a list of dictionaries
+contig_data_dict = contig_matrix_display.to_dict('records')
+
+# Define the column definitions for AG Grid
+column_defs = [
+    {"headerName": col, "field": col, "pinned": 'left' if i < 2 else None} for i, col in enumerate(contig_matrix_display.columns)
+]
+
+# Define the default column definitions
+default_col_def = {
+    "sortable": True,
+    "filter": True,
+    "resizable": True,
+    "flex": 1,
+}
+
+# Define the grid options
+grid_options = {
+    'headerPinned': 'top',
+    'rowSelection': 'single'  # Enable single row selection
+}
+
 # Base stylesheet for Cytoscape
 base_stylesheet = [
     {
@@ -748,16 +771,13 @@ app.layout = html.Div([
         html.Div([
             dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
             html.Div(id='row-count', style={'margin': '0px','height': '2vh'}),  # Show row number of contig matrix
-            dash_table.DataTable(
+            dag.AgGrid(
                 id='contig-info-table',
-                columns=[{"name": col, "id": col} for col in contig_matrix_display.columns],
-                data=contig_matrix_display.to_dict('records'),
-                style_table={'height': '40vh', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '30vw', 'minWidth': '100%'},
-                style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
-                style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
-                style_data_conditional=styling_contig_table(contig_matrix_display),
-                fixed_rows={'headers': True},  # Freeze the first row
-                fixed_columns={'headers': True, 'data': 2}  # Freeze the first 2 columns
+                columnDefs=column_defs,
+                rowData=contig_data_dict,
+                defaultColDef=default_col_def,
+                style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'},
+                dashGridOptions=grid_options
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
@@ -801,7 +821,7 @@ app.layout = html.Div([
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
-def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_active_cell, contact_table_active_cell, table_data, contig_info_table_data):
+def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, table_data, contig_info_table_data):
     # Initialize the return values
     selected_species = None
     selected_contig = None
@@ -826,9 +846,9 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
         selected_species = source_species
         secondary_species = target_species
 
-    # If a cell in the contig-info-table is selected
-    elif triggered_id == 'contig-info-table' and contig_info_active_cell:
-        row_contig_info = contig_info_table_data[contig_info_active_cell['row']]
+    # If a row in the contig-info-table is selected
+    elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
+        row_contig_info = contig_info_selected_rows[0]
         if 'Species' in row_contig_info and 'Contig' in row_contig_info:
             selected_species = row_contig_info['Species']
             selected_contig = row_contig_info['Contig']
@@ -850,22 +870,22 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
      Output('contig-selector', 'value'),
      Output('contig-selector', 'style'),
      Output('contact-table', 'active_cell'),
-     Output('contig-info-table', 'active_cell')],
+     Output('contig-info-table', 'selectedRows')],
     [Input('visualization-selector', 'value'),
      Input('contact-table', 'active_cell'),
-     Input('contig-info-table', 'active_cell'),
+     Input('contig-info-table', 'selectedRows'),
      Input('cyto-graph', 'selectedNodeData'),
      Input('cyto-graph', 'selectedEdgeData')],
     [State('contact-table', 'data'),
-     State('contig-info-table', 'data')],
+     State('contig-info-table', 'rowData')],
     prevent_initial_call=True
 )
-def sync_selectors(visualization_type, contact_table_active_cell, contig_info_active_cell, selected_node_data, selected_edge_data, contact_table_data, contig_info_table_data):
+def sync_selectors(visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data, contact_table_data, contig_info_table_data):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     selected_species, selected_contig, secondary_species = synchronize_selections(
-        triggered_id, selected_node_data, selected_edge_data, contig_info_active_cell, contact_table_active_cell, contact_table_data, contig_info_table_data
+        triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, contact_table_data, contig_info_table_data
     )
 
     # If a species is selected in the network or species table
@@ -900,11 +920,10 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_ac
         secondary_species_style = {'display': 'none'}
         contig_selector_style = {'display': 'none'}
         return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
-
+    
 @app.callback(
     [Output('cyto-graph', 'elements'),
-     Output('bar-chart', 'figure'),
-     Output('contig-info-table', 'data')],
+     Output('bar-chart', 'figure')],
     [Input('reset-btn', 'n_clicks'),
      Input('confirm-btn', 'n_clicks')],
     [State('visualization-selector', 'value'),
@@ -919,9 +938,8 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-    # Initialize default values for cyto_elements, bar_fig, and filtered_data
+    # Initialize default values for cyto_elements, bar_fig
     cyto_elements, bar_fig = basic_visualization()
-    filtered_data = contig_matrix_display
 
     if triggered_id == 'reset-btn' or not selected_species:
         # Reset all selections to show the original plot and all contigs
@@ -931,7 +949,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             'secondary_species': None,
             'selected_contig': None
         }
-        return cyto_elements, bar_fig, filtered_data.to_dict('records')
+        return cyto_elements, bar_fig
 
     if triggered_id == 'confirm-btn':
         # Update the current visualization mode with selected values
@@ -943,32 +961,23 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         if visualization_type == 'inter_species':
             if not selected_species or not secondary_species:
                 cyto_elements, bar_fig = basic_visualization()
-                filtered_data = contig_matrix_display
-                return cyto_elements, bar_fig, filtered_data.to_dict('records')
+                return cyto_elements, bar_fig
 
             cyto_elements, bar_fig = inter_species_visualization(selected_species, secondary_species)
-            
-            # Extract involved contigs from the cyto_elements
-            involved_contigs = [element['data']['id'] for element in cyto_elements if 'parent' in element['data']]
-
-            filtered_data = contig_matrix_display[contig_matrix_display['Contig'].isin(involved_contigs)]
-            return cyto_elements, bar_fig, filtered_data.to_dict('records')
+            return cyto_elements, bar_fig
 
         elif visualization_type == 'intra_species':
             cyto_elements, bar_fig = intra_species_visualization(selected_species)
-            species_indexes = get_contig_indexes(selected_species)
-            filtered_data = contig_matrix_display.loc[species_indexes]
-            return cyto_elements, bar_fig, filtered_data.to_dict('records')
+            return cyto_elements, bar_fig
 
         elif visualization_type == 'contig':
             cyto_elements, bar_fig = contig_visualization(selected_species, selected_contig)
             selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
             contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
             contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
-            filtered_data = contig_matrix_display.loc[contacts_indices]
-            return cyto_elements, bar_fig, filtered_data.to_dict('records')
+            return cyto_elements, bar_fig
 
-    return cyto_elements, bar_fig, filtered_data.to_dict('records')
+    return cyto_elements, bar_fig
 
 @app.callback(
     [Output('cyto-graph', 'stylesheet'),
@@ -1036,11 +1045,55 @@ def update_selected_styles(selected_species, secondary_species, selected_contig)
     return stylesheet, hover_info
 
 @app.callback(
-    Output('row-count', 'children'),
-    [Input('contig-info-table', 'data')]
+    [Output('contig-info-table', 'filterModel'),
+     Output('row-count', 'children')],
+    [Input('species-selector', 'value'),
+     Input('secondary-species-selector', 'value')],
+    [State('contig-info-table', 'rowData')]
 )
-def update_row_count(data):
-    return f"Total Number of Rows: {len(data)}"
+def update_filter_model_and_row_count(selected_species, secondary_species, contig_data):
+    filter_model = {}
+    filtered_data = contig_data
+
+    if selected_species and not secondary_species:
+        # Show all contigs in the selected species
+        filter_model['Species'] = {
+            "filterType": "text",
+            "operator": "OR",
+            "conditions": [
+                {
+                    "filter": selected_species,
+                    "filterType": "text",
+                    "type": "contains",
+                }
+            ]
+        }
+        filtered_data = [row for row in contig_data if row['Species'] == selected_species]
+    elif selected_species and secondary_species:
+        # Show all contigs from both species involved in the interspecies contact
+        filter_model['Species'] = {
+            "filterType": "text",
+            "operator": "OR",
+            "conditions": [
+                {
+                    "filter": selected_species,
+                    "filterType": "text",
+                    "type": "contains",
+                },
+                {
+                    "filter": secondary_species,
+                    "filterType": "text",
+                    "type": "contains",
+                }
+            ]
+        }
+        filtered_data = [row for row in contig_data if row['Species'] in {selected_species, secondary_species}]
+    else:
+        # Clear filter model if no species is selected
+        filter_model = {}
+
+    row_count_text = f"Total Number of Rows: {len(filtered_data)}"
+    return filter_model, row_count_text
 
 @app.callback(
     Output('contig-selector', 'options'),
