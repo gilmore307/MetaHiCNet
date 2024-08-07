@@ -61,68 +61,61 @@ def calculate_contacts(annotation, annotation_type='species'):
     
     return intra_contacts, inter_contacts
 
-# Function to convert NetworkX graph to Cytoscape elements
+# Function to convert NetworkX graph to Cytoscape elements with sizes and colors
 def nx_to_cyto_elements(G, pos):
     elements = []
-    node_ids = set(G.nodes)  # Keep track of added node IDs
     for node in G.nodes:
-        data = {
-            'id': node,
-            'size': G.nodes[node]['size'],
-            'color': G.nodes[node]['color'],
-            'label': node if 'parent' not in G.nodes[node] else ''  # Add label for species nodes only
-        }
-        if 'parent' in G.nodes[node]:
-            data['parent'] = G.nodes[node]['parent']
         elements.append({
-            'data': data,
+            'data': {
+                'id': node,
+                'label': node if G.nodes[node].get('parent') is None else '',  # Add label for species nodes only
+                'label_size': G.nodes[node].get('label_size', 6), # Default size to 6
+                'size': G.nodes[node].get('size', 1),  # Default size to 1
+                'color': G.nodes[node].get('color', '#000'),  # Default color
+                'border_color': G.nodes[node].get('border_color', None),  # Default to None
+                'border_width': G.nodes[node].get('border_width', None),  # Default to None
+                'parent': G.nodes[node].get('parent', None)  # Default to None
+            },
             'position': {
                 'x': pos[node][0] * 100,
                 'y': pos[node][1] * 100
             }
         })
     for edge in G.edges(data=True):
-        if edge[0] in node_ids and edge[1] in node_ids:  # Ensure both nodes exist
-            elements.append({
-                'data': {
-                    'source': edge[0],
-                    'target': edge[1],
-                    'weight': edge[2]['weight']
-                }
-            })
+        elements.append({
+            'data': {
+                'source': edge[0],
+                'target': edge[1],
+                'width': edge[2].get('width', 1),  # Default width
+                'color': edge[2].get('color', '#ccc')  # Default color
+            }
+        })
     return elements
 
-def add_selection_styles(cyto_stylesheet, selected_element_type, selected_element=None):
-    if selected_element is None:
-        return cyto_stylesheet
+def add_selection_styles(selected_node=None, selected_edge=None):
+    cyto_stylesheet = base_stylesheet.copy()
 
-    # Define the new style to be added or updated
-    if selected_element_type == 'node':
-        new_style = {
-            'selector': f'node[id="{selected_element}"]',
+    # Define the new styles to be added
+    if selected_node:
+        node_style = {
+            'selector': f'node[id="{selected_node}"]',
             'style': {
                 'border-width': 2,
                 'border-color': 'black'
             }
         }
-    elif selected_element_type == 'edge':
-        source, target = selected_element
-        new_style = {
+        cyto_stylesheet.append(node_style)
+
+    if selected_edge:
+        source, target = selected_edge
+        edge_style = {
             'selector': f'edge[source="{source}"][target="{target}"], edge[source="{target}"][target="{source}"]',
             'style': {
                 'width': 2,
                 'line-color': 'black'
             }
         }
-
-    # Check if the style already exists and update it
-    for style in cyto_stylesheet:
-        if style['selector'] == new_style['selector']:
-            style['style'].update(new_style['style'])
-            break
-    else:
-        # If the style doesn't exist, append it
-        cyto_stylesheet.append(new_style)
+        cyto_stylesheet.append(edge_style)
 
     return cyto_stylesheet
 
@@ -254,8 +247,8 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 
     return {**inner_positions, **outer_positions}
 
+# Updated visualization function
 def basic_visualization():
-    # Create a graph for the Arc Diagram
     G = nx.Graph()
 
     # Add nodes with size based on total contig coverage
@@ -270,7 +263,7 @@ def basic_visualization():
         ].values[0]
         color = is_viral_colors[str(is_viral)]
         node_colors[annotation] = color
-        G.add_node(annotation, size=size, color=color)
+        G.add_node(annotation, size=size, color=color, border_color=None, border_width=None, parent=None)
 
     # Add edges with weight based on inter-species contacts
     inter_species_contacts = []
@@ -282,9 +275,9 @@ def basic_visualization():
                 inter_species_contacts.append(weight)
 
     # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 500)  # Example range from 10 to 100
+    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 300)  # Example range from 10 to 100
 
-    # Assign the gradient values as edge weights
+    # Assign the gradient values as edge weights and set default edge color
     for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
         d['weight'] = weight
 
@@ -292,7 +285,6 @@ def basic_visualization():
     pos = nx.spring_layout(G, dim=2, k=5, iterations=50, weight='weight')
 
     cyto_elements = nx_to_cyto_elements(G, pos)
-    cyto_stylesheet = base_stylesheet.copy()
 
     # Prepare data for bar chart with 3 traces
     inter_species_contact_sum = species_matrix.sum(axis=1) - np.diag(species_matrix.values)
@@ -307,127 +299,110 @@ def basic_visualization():
 
     bar_fig = create_bar_chart(data_dict)
 
-    return cyto_elements, cyto_stylesheet, G, bar_fig
+    return cyto_elements, bar_fig
 
-# Visualization functions
+# Function to visualize intra-species relationships
 def intra_species_visualization(selected_species):
-    row_contig = selected_species
+    G = nx.Graph()
 
-    G_copy = G.copy()
-
-    # Generate node sizes using generate_gradient_values
-    contig_counts = [len(contig_information[contig_information['Contig annotation'] == node]) for node in G_copy.nodes]
-    node_sizes = generate_gradient_values(np.array(contig_counts), 10, 30)  # Example range from 10 to 50
+    # Add nodes with size based on contig counts
+    is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
+    contig_counts = [len(contig_information[contig_information['Contig annotation'] == node]) for node in unique_annotations]
+    node_sizes = generate_gradient_values(np.array(contig_counts), 10, 30)  # Example range from 10 to 30
 
     nodes_to_remove = []
-    for node, size in zip(G_copy.nodes, node_sizes):
-        if node == row_contig:
-            G_copy.nodes[node]['size'] = size
-            G_copy.nodes[node]['color'] = '#FFFFFF'  # White for selected node
-        else:
-            num_connected_contigs = len(contig_information[(contig_information['Contig annotation'] == node) & (dense_matrix[:, get_contig_indexes(row_contig)].sum(axis=1) > 0)])
-            if num_connected_contigs == 0:
-                nodes_to_remove.append(node)
-            else:
-                G_copy.nodes[node]['size'] = size
-                is_viral = contig_information.loc[
-                    contig_information['Contig annotation'] == node, 'Is Viral'
-                ].values[0]
-                G_copy.nodes[node]['color'] = '#F4B084' if is_viral else '#8EA9DB'  # Red for viral, blue for non-viral
+    for annotation, size in zip(unique_annotations, node_sizes):
+        is_viral = contig_information.loc[
+            contig_information['Contig annotation'] == annotation, 'Is Viral'
+        ].values[0]
+        color = is_viral_colors[str(is_viral)]
 
+        if annotation == selected_species:
+            G.add_node(annotation, size=size, color='#FFFFFF', border_color='#000', border_width=2, parent=None)  # White for selected node
+        else:
+            num_connected_contigs = len(contig_information[(contig_information['Contig annotation'] == annotation) & (dense_matrix[:, get_contig_indexes(selected_species)].sum(axis=1) > 0)])
+            if num_connected_contigs == 0:
+                nodes_to_remove.append(annotation)
+            else:
+                G.add_node(annotation, size=size, color=color, border_color='#000', border_width=1, parent=None)  # Red for viral, blue for non-viral
+
+    # Add edges with weight based on inter-species contacts
+    inter_species_contacts = []
+    for annotation_i in unique_annotations:
+        for annotation_j in unique_annotations:
+            if annotation_i != annotation_j and species_matrix.at[annotation_i, annotation_j] > 0:
+                weight = species_matrix.at[annotation_i, annotation_j]
+                G.add_edge(annotation_i, annotation_j, weight=weight)
+                inter_species_contacts.append(weight)
+
+    # Remove nodes not connected to selected species
     for node in nodes_to_remove:
-        G_copy.remove_node(node)
+        G.remove_node(node)
+
+    # Generate gradient values for the edge weights
+    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 500)  # Example range from 10 to 100
+
+    # Assign the gradient values as edge weights and set default edge color
+    for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
+        d['width'] = weight
+        d['color'] = '#ccc'  # Default edge color
 
     edges_to_remove = []
     inter_species_contacts = []
 
     # Collect edge weights and identify edges to remove
-    for edge in G_copy.edges(data=True):
-        if edge[0] == row_contig or edge[1] == row_contig:
-            weight = species_matrix.at[row_contig, edge[1]] if edge[0] == row_contig else species_matrix.at[edge[0], row_contig]
+    for edge in G.edges(data=True):
+        if edge[0] == selected_species or edge[1] == selected_species:
+            weight = species_matrix.at[selected_species, edge[1]] if edge[0] == selected_species else species_matrix.at[edge[0], selected_species]
             inter_species_contacts.append(weight)
         else:
             edges_to_remove.append((edge[0], edge[1]))
 
-    # Remove edges not connected to row_contig
+    # Remove edges not connected to selected_species
     for edge in edges_to_remove:
-        G_copy.remove_edge(edge[0], edge[1])
+        G.remove_edge(edge[0], edge[1])
 
     # Generate gradient values for the edge weights
     normalized_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 50)  # Example range from 10 to 30
 
     # Assign the normalized weights as edge weights
-    for edge, weight in zip(G_copy.edges(data=True), normalized_weights):
-        if edge[0] == row_contig or edge[1] == row_contig:
-            G_copy.edges[edge[0], edge[1]]['weight'] = weight
+    for edge, weight in zip(G.edges(data=True), normalized_weights):
+        if edge[0] == selected_species or edge[1] == selected_species:
+            G.edges[edge[0], edge[1]]['width'] = weight
+            G.edges[edge[0], edge[1]]['color'] = '#ccc'  # Default edge color
 
     # Calculate min_edge_length based on the largest node size to avoid node overlap
     max_node_size = max(node_sizes)
     min_edge_length = max_node_size / 2  # Node size is diameter, so radius is size / 2
 
     # Set k parameter based on the number of nodes and their sizes to avoid overlap
-    k_value = min_edge_length / sqrt(len(G_copy.nodes))
+    k_value = min_edge_length / sqrt(len(G.nodes))
 
-    new_pos = nx.spring_layout(G_copy, pos={row_contig: (0, 0)}, fixed=[row_contig], k=k_value, iterations=50, weight='weight')
+    new_pos = nx.spring_layout(G, pos={selected_species: (0, 0)}, fixed=[selected_species], k=k_value, iterations=50, weight='weight')
     
     # Get and arrange contigs within the selected species node
-    indices = get_contig_indexes(row_contig)
+    indices = get_contig_indexes(selected_species)
     contigs = contig_information.loc[indices, 'Contig name']
     inter_contig_edges = set()
 
     for i in indices:
         for j in range(dense_matrix.shape[0]):
-            if dense_matrix[i, j] != 0 and contig_information.at[j, 'Contig annotation'] != row_contig:
+            if dense_matrix[i, j] != 0 and contig_information.at[j, 'Contig annotation'] != selected_species:
                 inter_contig_edges.add(contig_information.at[i, 'Contig name'])
                 inter_contig_edges.add(contig_information.at[j, 'Contig name'])
 
-    contig_positions = arrange_contigs(contigs, inter_contig_edges, distance=1, center_position=new_pos[row_contig])
+    contig_positions = arrange_contigs(contigs, inter_contig_edges, distance=1, center_position=new_pos[selected_species])
 
-    cyto_elements = nx_to_cyto_elements(G_copy, new_pos)
-    
-    # Add contig nodes and edges to the Cytoscape elements
+    # Add contig nodes and edges to the graph G
     for contig, (x, y) in contig_positions.items():
-        cyto_elements.append({
-            'data': {
-                'id': contig,
-                'size': 1,  # Adjust size as needed
-                'color': '#7030A0' if contig in inter_contig_edges else '#00B050',  # Purple for inter-contig edges, green otherwise
-                'parent': row_contig  # Indicate that this node is within the selected species node
-            },
-            'position': {
-                'x': new_pos[row_contig][0] + x * 100,  # Scale position appropriately
-                'y': new_pos[row_contig][1] + y * 100
-            }
-        })
-    
-    # Make a copy of the base stylesheet and customize it for this visualization
-    cyto_stylesheet = base_stylesheet.copy()
+        G.add_node(contig, size=1, color='#7030A0' if contig in inter_contig_edges else '#00B050', parent=selected_species)
+        new_pos[contig] = (new_pos[selected_species][0] + x * 100, new_pos[selected_species][1] + y * 100)
 
-    # Customize the stylesheet for the selected species node
-    cyto_stylesheet.append({
-        'selector': f'node[id="{row_contig}"]',
-        'style': {
-            'background-color': '#FFFFFF',
-            'border-color': 'black',
-            'border-width': 2,
-            'label': 'data(label)',
-            'font-size': '10px'
-        }
-    })
+    cyto_elements = nx_to_cyto_elements(G, new_pos)
     
-    # Customize the stylesheet for other species nodes
-    for node in G_copy.nodes:
-        if node != row_contig:
-            cyto_stylesheet.append({
-                'selector': f'node[id="{node}"]',
-                'style': {
-                    'font-size': '6px'  # Adjust label size for other species nodes
-                }
-            })
-            
     # Prepare data for bar chart
-    contig_contact_counts = contig_information[contig_information['Contig annotation'] != row_contig]['Contig annotation'].value_counts()
-    inter_species_contacts = species_matrix.loc[row_contig].drop(row_contig)
+    contig_contact_counts = contig_information[contig_information['Contig annotation'] != selected_species]['Contig annotation'].value_counts()
+    inter_species_contacts = species_matrix.loc[selected_species].drop(selected_species)
     
     data_dict = {
         'Contig Number': pd.DataFrame({'name': contig_contact_counts.index, 'value': contig_contact_counts.values, 'color': [G.nodes[species]['color'] for species in contig_contact_counts.index]}),
@@ -436,18 +411,20 @@ def intra_species_visualization(selected_species):
 
     bar_fig = create_bar_chart(data_dict)
 
-    return cyto_elements, cyto_stylesheet, bar_fig, row_contig
+    return cyto_elements, bar_fig, selected_species
 
+
+# Function to visualize inter-species relationships
 def inter_species_visualization(selected_species, secondary_species):
     if not selected_species or not secondary_species:
-        return basic_visualization()[0], basic_visualization()[1], basic_visualization()[3], selected_species
+        return basic_visualization()[0], base_stylesheet, basic_visualization()[3], selected_species
 
     row_contig = selected_species
     col_contig = secondary_species
 
-    G_copy = nx.Graph()
-    G_copy.add_node(row_contig, size=1, color='white', label=row_contig)
-    G_copy.add_node(col_contig, size=1, color='white', label=col_contig)
+    G = nx.Graph()
+    G.add_node(row_contig, color='#FFFFFF', border_color='black', border_width=2, label=row_contig)
+    G.add_node(col_contig, color='#FFFFFF', border_color='black', border_width=2, label=col_contig)
 
     new_pos = {row_contig: (-1, 0), col_contig: (1, 0)}
 
@@ -473,53 +450,16 @@ def inter_species_visualization(selected_species, secondary_species):
     contig_positions_row = arrange_contigs(inter_contigs_row, list(), distance=1, center_position=new_pos[row_contig])
     contig_positions_col = arrange_contigs(inter_contigs_col, list(), distance=1, center_position=new_pos[col_contig])
 
+    # Add contig nodes to the graph G
     for contig, (x, y) in contig_positions_row.items():
-        G_copy.add_node(contig, size=1, color='red', parent=row_contig)  # Red for primary
+        G.add_node(contig, color='red', parent=row_contig)  # Red for primary
         new_pos[contig] = (x, y)
 
     for contig, (x, y) in contig_positions_col.items():
-        G_copy.add_node(contig, size=1, color='blue', parent=col_contig)  # Blue for secondary
+        G.add_node(contig, color='blue', parent=col_contig)  # Blue for secondary
         new_pos[contig] = (x, y)
 
-    cyto_elements = []
-    for node, data in G_copy.nodes(data=True):
-        cyto_elements.append({
-            'data': {
-                'id': node,
-                'size': data['size'],
-                'color': data['color'],
-                'label': data['label'] if 'label' in data else '',
-                'parent': data['parent'] if 'parent' in data else ''
-            },
-            'position': {
-                'x': new_pos[node][0] * 100,
-                'y': new_pos[node][1] * 100
-            }
-        })
-
-    cyto_stylesheet = base_stylesheet.copy()  # Use a unique stylesheet for this visualization
-
-    # Customize the stylesheet for parent nodes
-    cyto_stylesheet.append({
-        'selector': f'node[id="{row_contig}"]',
-        'style': {
-            'background-color': '#FFFFFF',
-            'border-color': 'black',
-            'border-width': 2,
-            'label': 'data(label)',
-            'font-size': '10px'
-        }
-    })
-    cyto_stylesheet.append({
-        'selector': f'node[id="{col_contig}"]',
-        'style': {
-            'background-color': '#FFFFFF',
-            'border-color': 'black',
-            'border-width': 2,
-            'label': 'data(label)',
-            'font-size': '10px'
-        }
-    })
+    cyto_elements = nx_to_cyto_elements(G, new_pos)
 
     # Prepare data for bar chart
     interspecies_contacts_df = pd.DataFrame(interspecies_contacts)
@@ -530,14 +470,12 @@ def inter_species_visualization(selected_species, secondary_species):
 
     bar_fig = create_bar_chart(data_dict)
 
-    # Filter contigs involved in interspecies contacts and retain all columns
-    involved_contigs = contig_information[contig_information['Contig name'].isin(inter_contigs_row | inter_contigs_col)].index
+    return cyto_elements, bar_fig, selected_species
 
-    return cyto_elements, cyto_stylesheet, bar_fig, involved_contigs
-
+# Function to visualize contig relationships
 def contig_visualization(selected_species, selected_contig):
     if not selected_contig:
-        return basic_visualization()[0], basic_visualization()[1], basic_visualization()[3], selected_species
+        return basic_visualization()[0], base_stylesheet, basic_visualization()[3], selected_species
 
     # Find the index of the selected contig
     selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
@@ -553,7 +491,7 @@ def contig_visualization(selected_species, selected_contig):
     contacts_contigs = contig_information.loc[contacts_indices, 'Contig name']
 
     # Create the graph
-    G_copy = nx.Graph()
+    G = nx.Graph()
 
     # Use a red-to-blue color scale
     color_scale = pcolors.diverging.Portland
@@ -567,50 +505,30 @@ def contig_visualization(selected_species, selected_contig):
     for species in contacts_species.unique():
         species_rank = species_contact_ranks[species]
         gradient_color = color_scale[int((species_rank / max_rank) * (len(color_scale) - 1))]
-        G_copy.add_node(species, size=1, color=gradient_color)  # Gradient color for species nodes
+        G.add_node(species, size=1, color=gradient_color)  # Gradient color for species nodes
 
     # Set k value to avoid overlap and generate positions for the graph nodes
-    k_value = 1 / sqrt(len(G_copy.nodes))
-    pos = nx.spring_layout(G_copy, k=k_value, iterations=50, weight='weight')
+    k_value = 1 / sqrt(len(G.nodes))
+    pos = nx.spring_layout(G, k=k_value, iterations=50, weight='weight')
 
     # Add contig nodes to the graph
     for species in contacts_species.unique():
         species_contigs = contacts_contigs[contacts_species == species]
-        contig_positions = arrange_contigs(
-            species_contigs,
-            [],
-            1,
-            center_position=pos[species],
-            selected_contig=selected_contig if species == selected_species else None
-        )
+        contig_positions = arrange_contigs(species_contigs, [], distance=1, center_position=pos[species],selected_contig=selected_contig if species == selected_species else None)
         for contig, (x, y) in contig_positions.items():
-            G_copy.add_node(contig, size=1 if contig != selected_contig else 5, color='black' if contig == selected_contig else G_copy.nodes[species]['color'], parent=species)  # Same color as species, black for selected contig
+            G.add_node(contig, size=1 if contig != selected_contig else 5, color='black' if contig == selected_contig else G.nodes[species]['color'], parent=species)  # Same color as species, black for selected contig
             if contig != selected_contig:
-                G_copy.add_edge(selected_contig, contig, weight=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
+                G.add_edge(selected_contig, contig, weight=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
             pos[contig] = (x, y)  # Use positions directly from arrange_contigs
 
     # Ensure the selected contig node is positioned above all other contigs
     pos[selected_contig] = pos[selected_species]
 
-    cyto_elements = nx_to_cyto_elements(G_copy, pos)
-    cyto_stylesheet = base_stylesheet.copy()
-
-    # Customize the stylesheet for species nodes
-    for species in contacts_species.unique():
-        cyto_stylesheet.append({
-            'selector': f'node[id="{species}"]',
-            'style': {
-                'background-color': '#FFFFFF',
-                'border-color': G_copy.nodes[species]['color'],
-                'border-width': 2,
-                'label': 'data(label)',
-                'font-size': '6px'
-            }
-        })
-
+    cyto_elements = nx_to_cyto_elements(G, pos)
+    
     # Prepare data for bar chart
     contig_contact_values = dense_matrix[selected_contig_index, contacts_indices]
-    contig_data = pd.DataFrame({'name': contacts_contigs, 'value': contig_contact_values, 'color': [G_copy.nodes[contig]['color'] for contig in contacts_contigs]})
+    contig_data = pd.DataFrame({'name': contacts_contigs, 'value': contig_contact_values, 'color': [G.nodes[contig]['color'] for contig in contacts_contigs]})
 
     species_contact_values = []
     contig_contact_counts_per_species = []  # For the new trace
@@ -620,8 +538,8 @@ def contig_visualization(selected_species, selected_contig):
         species_contact_values.append(contact_value)
         contig_contact_counts_per_species.append(len(species_indexes))  # Count the number of contigs per species
 
-    species_data = pd.DataFrame({'name': contacts_species.unique(), 'value': species_contact_values, 'color': [G_copy.nodes[species]['color'] for species in contacts_species.unique()]})
-    contig_contact_counts_data = pd.DataFrame({'name': contacts_species.unique(), 'value': contig_contact_counts_per_species, 'color': [G_copy.nodes[species]['color'] for species in contacts_species.unique()]})
+    species_data = pd.DataFrame({'name': contacts_species.unique(), 'value': species_contact_values, 'color': [G.nodes[species]['color'] for species in contacts_species.unique()]})
+    contig_contact_counts_data = pd.DataFrame({'name': contacts_species.unique(), 'value': contig_contact_counts_per_species, 'color': [G.nodes[species]['color'] for species in contacts_species.unique()]})
 
     data_dict = {
         'Contig Contacts': contig_data,
@@ -631,7 +549,8 @@ def contig_visualization(selected_species, selected_contig):
 
     bar_fig = create_bar_chart(data_dict)
 
-    return cyto_elements, cyto_stylesheet, bar_fig, selected_species
+    return cyto_elements, bar_fig, selected_species
+
 
 # Calculate the total intra-species contacts and inter-species contacts
 unique_annotations = contig_information['Contig annotation'].unique()
@@ -671,14 +590,17 @@ base_stylesheet = [
             'height': 'data(size)',
             'background-color': 'data(color)',
             'label': 'data(label)',
-            'font-size': '6px'
+            'font-size': 'data(label_size)',
+            'border-color': 'data(border_color)',
+            'border-width': 'data(border_width)',
+            'parent': 'data(parent)'
         }
     },
     {
         'selector': 'edge',
         'style': {
-            'width': 1,
-            'line-color': '#ccc'
+            'width': 'data(width)',
+            'line-color': 'data(color)'
         }
     }
 ]
@@ -687,7 +609,7 @@ base_stylesheet = [
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 # Set the global graph G
-cyto_elements, cyto_stylesheet, G, bar_fig = basic_visualization()
+cyto_elements, bar_fig = basic_visualization()
 
 common_style = {
     'height': '38px',  # Adjusted height to match both elements
@@ -783,9 +705,9 @@ app.layout = html.Div([
             cyto.Cytoscape(
                 id='cyto-graph',
                 elements=cyto_elements,
+                stylesheet=base_stylesheet,
                 style={'height': '80vh', 'width': '48vw', 'display': 'inline-block'},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
-                stylesheet=cyto_stylesheet,
                 zoom=1,
                 userZoomingEnabled=True,
                 wheelSensitivity=0.1  # Reduce the wheel sensitivity (default is 1)
@@ -861,7 +783,6 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
 
     return selected_species, selected_contig, secondary_species
 
-
 @app.callback(
     [Output('visualization-selector', 'value'),
      Output('species-selector', 'value'),
@@ -921,11 +842,8 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_ac
         contig_selector_style = {'display': 'none'}
         return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
 
-original_cyto_stylesheet = []
-
 @app.callback(
     [Output('cyto-graph', 'elements'),
-     Output('cyto-graph', 'stylesheet', allow_duplicate=True),
      Output('bar-chart', 'figure'),
      Output('contig-info-table', 'data')],
     [Input('reset-btn', 'n_clicks'),
@@ -938,52 +856,44 @@ original_cyto_stylesheet = []
     prevent_initial_call=True
 )
 def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_species, secondary_species, selected_contig, table_data):
-    global original_cyto_stylesheet  # Declare the global variable to store the original stylesheet
-    
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     # Initialize default values for cyto_elements, bar_fig, and filtered_data
-    cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
+    cyto_elements, bar_fig = basic_visualization()
     filtered_data = contig_matrix_display
-
-    # Store the original stylesheet
-    original_cyto_stylesheet = cyto_stylesheet.copy()
 
     if triggered_id == 'reset-btn' or not selected_species:
         # Reset all selections to show the original plot and all contigs
-        return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+        return cyto_elements, bar_fig, filtered_data.to_dict('records')
 
     if triggered_id == 'confirm-btn':
         if visualization_type == 'inter_species':
             if not selected_species or not secondary_species:
-                cyto_elements, cyto_stylesheet, _, bar_fig = basic_visualization()
+                cyto_elements, bar_fig = basic_visualization()
                 filtered_data = contig_matrix_display
-                original_cyto_stylesheet = cyto_stylesheet.copy()
-                return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+                return cyto_elements, bar_fig, filtered_data.to_dict('records')
 
-            cyto_elements, cyto_stylesheet, bar_fig, involved_contigs = inter_species_visualization(selected_species, secondary_species)
+            cyto_elements, bar_fig, _ = inter_species_visualization(selected_species, secondary_species)
+            involved_contigs = contig_information[contig_information['Contig annotation'].isin([selected_species, secondary_species])].index
             filtered_data = contig_matrix_display.loc[involved_contigs]
-            original_cyto_stylesheet = cyto_stylesheet.copy()
-            return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+            return cyto_elements, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'intra_species':
-            cyto_elements, cyto_stylesheet, bar_fig, _ = intra_species_visualization(selected_species)
+            cyto_elements, bar_fig, _ = intra_species_visualization(selected_species)
             species_indexes = get_contig_indexes(selected_species)
             filtered_data = contig_matrix_display.loc[species_indexes]
-            original_cyto_stylesheet = cyto_stylesheet.copy()
-            return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+            return cyto_elements, bar_fig, filtered_data.to_dict('records')
 
         elif visualization_type == 'contig':
-            cyto_elements, cyto_stylesheet, bar_fig, _ = contig_visualization(selected_species, selected_contig)
+            cyto_elements, bar_fig, _ = contig_visualization(selected_species, selected_contig)
             selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
             contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
             contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
             filtered_data = contig_matrix_display.loc[contacts_indices]
-            original_cyto_stylesheet = cyto_stylesheet.copy()
-            return cyto_elements, cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+            return cyto_elements, bar_fig, filtered_data.to_dict('records')
 
-    return cyto_elements, original_cyto_stylesheet, bar_fig, filtered_data.to_dict('records')
+    return cyto_elements, bar_fig, filtered_data.to_dict('records')
 
 # Add a new Output to clear previously selected elements
 @app.callback(
@@ -995,32 +905,26 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     prevent_initial_call=True
 )
 def update_selected_styles(selected_species, secondary_species, selected_contig):
-    # Use the stored original stylesheet
-    new_stylesheet = original_cyto_stylesheet.copy()
-
-    selected_element_type = None
-    selected_element = None
+    selected_node = None
+    selected_edge = None
     hover_info = "No selection"
 
     # Determine the selected element type and value
     if selected_species and secondary_species:
-        selected_element_type = 'edge'
-        selected_element = (selected_species, secondary_species)
+        selected_edge = (selected_species, secondary_species)
         hover_info = f"Edge between {selected_species} and {secondary_species}"
     elif selected_contig:
-        selected_element_type = 'node'
-        selected_element = selected_contig
+        selected_node = selected_contig
         contig_info = contig_information[contig_information['Contig name'] == selected_contig].iloc[0]
         hover_info = f"Contig: {selected_contig}<br>Species: {contig_info['Contig annotation']}"
     elif selected_species:
-        selected_element_type = 'node'
-        selected_element = selected_species
+        selected_node = selected_species
         hover_info = f"Species: {selected_species}"
 
     # Add selection styles
-    new_stylesheet = add_selection_styles(new_stylesheet, selected_element_type, selected_element)
+    stylesheet = add_selection_styles(selected_node, selected_edge)
 
-    return new_stylesheet, hover_info
+    return stylesheet, hover_info
 
 @app.callback(
     Output('row-count', 'children'),
