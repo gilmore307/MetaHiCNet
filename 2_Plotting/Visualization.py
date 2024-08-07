@@ -415,7 +415,8 @@ def intra_species_visualization(selected_species):
 # Function to visualize inter-species relationships
 def inter_species_visualization(selected_species, secondary_species):
     if not selected_species or not secondary_species:
-        return basic_visualization()[0], base_stylesheet, basic_visualization()[3], selected_species
+        cyto_elements, bar_fig = basic_visualization()
+        return cyto_elements, bar_fig
 
     row_contig = selected_species
     col_contig = secondary_species
@@ -432,6 +433,8 @@ def inter_species_visualization(selected_species, secondary_species):
     inter_contigs_col = set()
 
     interspecies_contacts = []
+    contig_contact_counts = []
+    inter_contig_contacts = []
 
     for i in row_indices:
         for j in col_indices:
@@ -442,7 +445,29 @@ def inter_species_visualization(selected_species, secondary_species):
                 interspecies_contacts.append({
                     'name': f"{contig_information.at[i, 'Contig name']} - {contig_information.at[j, 'Contig name']}",
                     'value': contact_value,
-                    'color': 'blue'  # Set blue color for the bars
+                    'color': 'green'  # Set blue color for the bars
+                })
+                contig_contact_counts.append({
+                    'name': contig_information.at[i, 'Contig name'],
+                    'species': selected_species,
+                    'count': 1,
+                    'color': 'red'
+                })
+                contig_contact_counts.append({
+                    'name': contig_information.at[j, 'Contig name'],
+                    'species': secondary_species,
+                    'count': 1,
+                    'color': 'blue'
+                })
+                inter_contig_contacts.append({
+                    'name': contig_information.at[i, 'Contig name'],
+                    'value': contact_value,
+                    'color': 'red'
+                })
+                inter_contig_contacts.append({
+                    'name': contig_information.at[j, 'Contig name'],
+                    'value': contact_value,
+                    'color': 'blue'
                 })
 
     contig_positions_row = arrange_contigs(inter_contigs_row, list(), distance=1, center_position=new_pos[row_contig])
@@ -471,8 +496,16 @@ def inter_species_visualization(selected_species, secondary_species):
     # Prepare data for bar chart
     interspecies_contacts_df = pd.DataFrame(interspecies_contacts)
 
+    contig_contact_counts_df = pd.DataFrame(contig_contact_counts)
+    contig_contact_counts_summary = contig_contact_counts_df.groupby(['name', 'color']).size().reset_index(name='value')
+
+    inter_contig_contacts_df = pd.DataFrame(inter_contig_contacts)
+    inter_contig_contacts_summary = inter_contig_contacts_df.groupby(['name', 'color']).sum().reset_index()
+
     data_dict = {
-        'Interspecies Contacts': interspecies_contacts_df
+        'Inter Contig Contacts': interspecies_contacts_df,
+        'Contig Contacts Counts': contig_contact_counts_summary,
+        'Contig Contacts Value': inter_contig_contacts_summary
     }
 
     bar_fig = create_bar_chart(data_dict)
