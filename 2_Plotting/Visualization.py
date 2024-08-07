@@ -247,7 +247,7 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 
     return {**inner_positions, **outer_positions}
 
-# Updated visualization function
+# Updated basic_visualization function to reset node attributes properly
 def basic_visualization():
     G = nx.Graph()
 
@@ -263,7 +263,7 @@ def basic_visualization():
         ].values[0]
         color = is_viral_colors[str(is_viral)]
         node_colors[annotation] = color
-        G.add_node(annotation, size=size, color=color, border_color=None, border_width=None, parent=None)
+        G.add_node(annotation, size=size, color=color, parent=None)  # Removed border attributes
 
     # Add edges with weight based on inter-species contacts
     inter_species_contacts = []
@@ -340,7 +340,7 @@ def intra_species_visualization(selected_species):
         G.remove_node(node)
 
     # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 500)  # Example range from 10 to 100
+    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 100)  # Example range from 10 to 100
 
     edges_to_remove = []
     inter_species_contacts = []
@@ -394,9 +394,13 @@ def intra_species_visualization(selected_species):
     contig_contact_counts = contig_information[contig_information['Contig annotation'] != selected_species]['Contig annotation'].value_counts()
     inter_species_contacts = species_matrix.loc[selected_species].drop(selected_species)
 
+    # Filter out contigs that are not in the graph
+    filtered_contig_counts = contig_contact_counts[contig_contact_counts.index.isin(G.nodes)]
+    filtered_inter_species_contacts = inter_species_contacts[inter_species_contacts.index.isin(G.nodes)]
+
     data_dict = {
-        'Contig Number': pd.DataFrame({'name': contig_contact_counts.index, 'value': contig_contact_counts.values, 'color': [G.nodes[species]['color'] for species in contig_contact_counts.index]}),
-        'Inter-Species Contacts': pd.DataFrame({'name': inter_species_contacts.index, 'value': inter_species_contacts.values, 'color': [G.nodes[species]['color'] for species in inter_species_contacts.index]})
+        'Contig Number': pd.DataFrame({'name': filtered_contig_counts.index, 'value': filtered_contig_counts.values, 'color': [G.nodes[species]['color'] for species in filtered_contig_counts.index]}),
+        'Inter-Species Contacts': pd.DataFrame({'name': filtered_inter_species_contacts.index, 'value': filtered_inter_species_contacts.values, 'color': [G.nodes[species]['color'] for species in filtered_inter_species_contacts.index]})
     }
 
     bar_fig = create_bar_chart(data_dict)
