@@ -9,7 +9,7 @@ from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
 import plotly.graph_objects as go
 from dash import callback_context
-import plotly.colors as pcolors
+import plotly.express as px
 from math import sqrt, sin, cos, pi
 from openai import OpenAI
 
@@ -324,7 +324,7 @@ def intra_species_visualization(selected_species):
             if num_connected_contigs == 0:
                 nodes_to_remove.append(annotation)
             else:
-                G.add_node(annotation, size=size, color=color, border_color='#000', border_width=1, parent=None)  # Red for viral, blue for non-viral
+                G.add_node(annotation, size=size, color=color, parent=None)  # Red for viral, blue for non-viral
 
     # Add edges with weight based on inter-species contacts
     inter_species_contacts = []
@@ -342,11 +342,6 @@ def intra_species_visualization(selected_species):
     # Generate gradient values for the edge weights
     edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 500)  # Example range from 10 to 100
 
-    # Assign the gradient values as edge weights and set default edge color
-    for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
-        d['width'] = weight
-        d['color'] = '#ccc'  # Default edge color
-
     edges_to_remove = []
     inter_species_contacts = []
 
@@ -361,15 +356,10 @@ def intra_species_visualization(selected_species):
     # Remove edges not connected to selected_species
     for edge in edges_to_remove:
         G.remove_edge(edge[0], edge[1])
-
-    # Generate gradient values for the edge weights
-    normalized_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 50)  # Example range from 10 to 30
-
-    # Assign the normalized weights as edge weights
-    for edge, weight in zip(G.edges(data=True), normalized_weights):
+    # Assign the gradient values as edge weights and set default edge color
+    for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
         if edge[0] == selected_species or edge[1] == selected_species:
-            G.edges[edge[0], edge[1]]['width'] = weight
-            G.edges[edge[0], edge[1]]['color'] = '#ccc'  # Default edge color
+            d['weight'] = weight
 
     # Calculate min_edge_length based on the largest node size to avoid node overlap
     max_node_size = max(node_sizes)
@@ -379,7 +369,7 @@ def intra_species_visualization(selected_species):
     k_value = min_edge_length / sqrt(len(G.nodes))
 
     new_pos = nx.spring_layout(G, pos={selected_species: (0, 0)}, fixed=[selected_species], k=k_value, iterations=50, weight='weight')
-    
+
     # Get and arrange contigs within the selected species node
     indices = get_contig_indexes(selected_species)
     contigs = contig_information.loc[indices, 'Contig name']
@@ -396,14 +386,14 @@ def intra_species_visualization(selected_species):
     # Add contig nodes and edges to the graph G
     for contig, (x, y) in contig_positions.items():
         G.add_node(contig, size=1, color='#7030A0' if contig in inter_contig_edges else '#00B050', parent=selected_species)
-        new_pos[contig] = (new_pos[selected_species][0] + x * 100, new_pos[selected_species][1] + y * 100)
+        new_pos[contig] = (new_pos[selected_species][0] + x, new_pos[selected_species][1] + y)
 
     cyto_elements = nx_to_cyto_elements(G, new_pos)
-    
+
     # Prepare data for bar chart
     contig_contact_counts = contig_information[contig_information['Contig annotation'] != selected_species]['Contig annotation'].value_counts()
     inter_species_contacts = species_matrix.loc[selected_species].drop(selected_species)
-    
+
     data_dict = {
         'Contig Number': pd.DataFrame({'name': contig_contact_counts.index, 'value': contig_contact_counts.values, 'color': [G.nodes[species]['color'] for species in contig_contact_counts.index]}),
         'Inter-Species Contacts': pd.DataFrame({'name': inter_species_contacts.index, 'value': inter_species_contacts.values, 'color': [G.nodes[species]['color'] for species in inter_species_contacts.index]})
@@ -412,7 +402,6 @@ def intra_species_visualization(selected_species):
     bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, bar_fig, selected_species
-
 
 # Function to visualize inter-species relationships
 def inter_species_visualization(selected_species, secondary_species):
@@ -493,8 +482,13 @@ def contig_visualization(selected_species, selected_contig):
     # Create the graph
     G = nx.Graph()
 
-    # Use a red-to-blue color scale
-    color_scale = pcolors.diverging.Portland
+    # Use a categorical color scale from Plotly Express
+    color_scale = px.colors.qualitative.Plotly
+
+    # Ensure we have enough colors for the unique species
+    num_colors_needed = len(contacts_species.unique())
+    while num_colors_needed > len(color_scale):
+        color_scale += color_scale  # Duplicate the color scale to ensure enough colors
 
     # Rank species based on the number of contigs with contact to the selected contig
     species_contact_counts = contacts_species.value_counts()
@@ -505,7 +499,8 @@ def contig_visualization(selected_species, selected_contig):
     for species in contacts_species.unique():
         species_rank = species_contact_ranks[species]
         gradient_color = color_scale[int((species_rank / max_rank) * (len(color_scale) - 1))]
-        G.add_node(species, size=1, color=gradient_color)  # Gradient color for species nodes
+        G.add_node(species, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)  # White color for nodes, gradient color for border
+
 
     # Set k value to avoid overlap and generate positions for the graph nodes
     k_value = 1 / sqrt(len(G.nodes))
@@ -514,9 +509,9 @@ def contig_visualization(selected_species, selected_contig):
     # Add contig nodes to the graph
     for species in contacts_species.unique():
         species_contigs = contacts_contigs[contacts_species == species]
-        contig_positions = arrange_contigs(species_contigs, [], distance=1, center_position=pos[species],selected_contig=selected_contig if species == selected_species else None)
+        contig_positions = arrange_contigs(species_contigs, [], distance=2, center_position=pos[species],selected_contig=selected_contig if species == selected_species else None)
         for contig, (x, y) in contig_positions.items():
-            G.add_node(contig, size=1 if contig != selected_contig else 5, color='black' if contig == selected_contig else G.nodes[species]['color'], parent=species)  # Same color as species, black for selected contig
+            G.add_node(contig, size=1 if contig != selected_contig else 5, color='black' if contig == selected_contig else G.nodes[species]['border_color'], parent=species)  # Same color as species, black for selected contig
             if contig != selected_contig:
                 G.add_edge(selected_contig, contig, weight=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
             pos[contig] = (x, y)  # Use positions directly from arrange_contigs
@@ -600,7 +595,8 @@ base_stylesheet = [
         'selector': 'edge',
         'style': {
             'width': 'data(width)',
-            'line-color': 'data(color)'
+            'line-color': 'data(color)',
+            'opacity': 0.6
         }
     }
 ]
