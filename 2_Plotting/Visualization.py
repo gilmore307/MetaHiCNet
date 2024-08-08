@@ -169,15 +169,17 @@ def styling_species_table(matrix_df):
     return styles
 
 # Function to style contig info table
-def styling_contig_table(matrix_df, contig_information, contig_colors, species_colors, n_bins=5):
+def styling_contig_table(matrix_df, contig_information, contig_colors, species_colors):
     columns = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
-    styleConditions = []
-
+    styles = []
     for col in columns:
-        col_min = np.log1p(matrix_df[col].min())
-        col_max = np.log1p(matrix_df[col].max())
+        numeric_df = matrix_df[[col]].select_dtypes(include=[np.number])
+        col_min = np.log1p(numeric_df.values.min())
+        col_max = np.log1p(numeric_df.values.max())
         col_range = col_max - col_min
+        n_bins = 5  # Number of bins for color scaling
         bounds = [i * (col_range / n_bins) + col_min for i in range(n_bins + 1)]
+        opacity = 0.6  # Set a fixed opacity for transparency
 
         for i in range(1, len(bounds)):
             min_bound = bounds[i - 1]
@@ -185,45 +187,53 @@ def styling_contig_table(matrix_df, contig_information, contig_colors, species_c
             if i == len(bounds) - 1:
                 max_bound += 1
 
-            opacity = 0.6  # Set a fixed opacity for transparency
-
-            styleConditions.append(
-                {
-                    "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
-                    "style": {
-                        'backgroundColor': f"rgba({255 - int((min_bound - col_min) / col_range * 255)}, {255 - int((min_bound - col_min) / col_range * 255)}, 255, {opacity})",
-                        'color': "white" if i > len(bounds) / 2.0 else "inherit"
-                    },
+            styles.append({
+                "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
+                "style": {
+                    'backgroundColor': f"rgba({255 - int((min_bound - col_min) / col_range * 255)}, {255 - int((min_bound - col_min) / col_range * 255)}, 255, {opacity})",
+                    'color': "white" if i > len(bounds) / 2.0 else "inherit"
                 }
-            )
+            })
+
+    # Function to add opacity to a hex color
+    def add_opacity_to_color(hex_color, opacity):
+        if hex_color.startswith('#') and len(hex_color) == 7:
+            hex_color = hex_color.lstrip('#')
+            rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})'
+        else:
+            # Return a default color if hex_color is invalid
+            return f'rgba(255, 255, 255, {opacity})'
 
     # Add style conditions for the "Contig" column
     for contig in matrix_df['Contig']:
         contig_color = contig_colors.get(contig, species_colors.get(contig_information.loc[contig_information['Contig name'] == contig, 'Contig annotation'].values[0], '#FFFFFF'))
-        styleConditions.append(
+        contig_color_with_opacity = add_opacity_to_color(contig_color, 0.6)
+        styles.append(
             {
                 "condition": f"params.colDef.field == 'Contig' && params.value == '{contig}'",
                 "style": {
-                    'backgroundColor': contig_color,
+                    'backgroundColor': contig_color_with_opacity,
                     'color': 'black'
-                },
+                }
             }
         )
 
     # Add style conditions for the "Species" column
     for species in matrix_df['Species'].unique():
         species_color = species_colors.get(species, '#FFFFFF')  # Default to white if species color is not found
-        styleConditions.append(
+        species_color_with_opacity = add_opacity_to_color(species_color, 0.6)
+        styles.append(
             {
                 "condition": f"params.colDef.field == 'Species' && params.value == '{species}'",
                 "style": {
-                    'backgroundColor': species_color,
+                    'backgroundColor': species_color_with_opacity,
                     'color': 'black'
-                },
+                }
             }
         )
 
-    return styleConditions
+    return styles
 
 # Function to get contig colors from Cytoscape elements or use species color if not found
 def get_contig_and_species_colors(contig_information, cyto_elements):
@@ -550,7 +560,8 @@ def inter_species_visualization(selected_species, secondary_species):
 # Function to visualize contig relationships
 def contig_visualization(selected_species, selected_contig):
     if not selected_contig:
-        return basic_visualization()[0], base_stylesheet, basic_visualization()[3], selected_species
+        cyto_elements, bar_fig = basic_visualization()
+        return cyto_elements, bar_fig
 
     # Find the index of the selected contig
     selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
@@ -637,9 +648,6 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
     selected_species = None
     selected_contig = None
     secondary_species = None
-
-    # Print the structure of contig_info_selected_rows for debugging
-    print("contig_info_selected_rows:", contig_info_selected_rows)
 
     # If a node in the network is selected
     if triggered_id == 'cyto-graph' and selected_node_data:
@@ -762,11 +770,6 @@ default_col_def = {
         "styleConditions": styleConditions
     }
 }
-# Define the grid options
-grid_options = {
-    'headerPinned': 'top',
-    'rowSelection': 'single'  # Enable single row selection
-}
 
 # Base stylesheet for Cytoscape
 base_stylesheet = [
@@ -887,7 +890,10 @@ app.layout = html.Div([
                 rowData=contig_data_dict,
                 defaultColDef=default_col_def,
                 style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'},
-                dashGridOptions=grid_options
+                dashGridOptions={
+                    'headerPinned': 'top',
+                    'rowSelection': 'single'  # Enable single row selection
+                }
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
@@ -994,7 +1000,7 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
 @app.callback(
     [Output('cyto-graph', 'elements'),
      Output('bar-chart', 'figure'),
-     Output('contig-info-table', 'dashGridOptions')],
+     Output('contig-info-table', 'columnDefs')],
     [Input('reset-btn', 'n_clicks'),
      Input('confirm-btn', 'n_clicks')],
     [State('visualization-selector', 'value'),
@@ -1009,7 +1015,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-    # Initialize default values for cyto_elements, bar_fig
+    # Initialize default values for cyto_elements and bar_fig
     cyto_elements, bar_fig = basic_visualization()
 
     if triggered_id == 'reset-btn' or not selected_species:
@@ -1020,17 +1026,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             'secondary_species': None,
             'selected_contig': None
         }
-        contig_colors, species_colors = get_contig_and_species_colors(contig_information, cyto_elements)
-        styleConditions = styling_contig_table(contig_matrix_display, contig_information, contig_colors, species_colors)
-        grid_options = {
-            'headerPinned': 'top',
-            'rowSelection': 'single',  # Enable single row selection
-            'suppressMovableColumns': True,  # Prevent columns from being moved
-            'styleConditions': styleConditions
-        }
-        return cyto_elements, bar_fig, grid_options
-
-    if triggered_id == 'confirm-btn':
+    elif triggered_id == 'confirm-btn':
         # Update the current visualization mode with selected values
         current_visualization_mode['visualization_type'] = visualization_type
         current_visualization_mode['selected_species'] = selected_species
@@ -1038,9 +1034,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         current_visualization_mode['selected_contig'] = selected_contig
 
         if visualization_type == 'inter_species':
-            if not selected_species or not secondary_species:
-                cyto_elements, bar_fig = basic_visualization()
-            else:
+            if selected_species and secondary_species:
                 cyto_elements, bar_fig = inter_species_visualization(selected_species, secondary_species)
 
         elif visualization_type == 'intra_species':
@@ -1048,21 +1042,17 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
 
         elif visualization_type == 'contig':
             cyto_elements, bar_fig = contig_visualization(selected_species, selected_contig)
-            selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
-            contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
-            contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
 
-        contig_colors, species_colors = get_contig_and_species_colors(contig_information, cyto_elements)
-        styleConditions = styling_contig_table(contig_matrix_display, contig_information, contig_colors, species_colors)
-        grid_options = {
-            'headerPinned': 'top',
-            'rowSelection': 'single',  # Enable single row selection
-            'suppressMovableColumns': True,  # Prevent columns from being moved
-            'styleConditions': styleConditions
-        }
-        return cyto_elements, bar_fig, grid_options
+    # Update column definitions with style conditions
+    contig_colors, species_colors = get_contig_and_species_colors(contig_information, cyto_elements)
+    styleConditions = styling_contig_table(contig_matrix_display, contig_information, contig_colors, species_colors)
+    column_defs_updated = column_defs.copy()
+    for col_def in column_defs_updated:
+        if 'cellStyle' not in col_def:
+            col_def['cellStyle'] = {}
+        col_def['cellStyle'].update({"styleConditions": styleConditions})
 
-    return cyto_elements, bar_fig, grid_options
+    return cyto_elements, bar_fig, column_defs_updated
 
 @app.callback(
     [Output('cyto-graph', 'stylesheet'),
@@ -1156,23 +1146,29 @@ def update_filter_model_and_row_count(selected_species, secondary_species, conti
         filtered_data = [row for row in contig_data if row['Species'] == selected_species]
     elif selected_species and secondary_species:
         # Show all contigs from both species involved in the interspecies contact
-        filter_model['Species'] = {
-            "filterType": "text",
-            "operator": "OR",
-            "conditions": [
-                {
-                    "filter": selected_species,
-                    "filterType": "text",
-                    "type": "contains",
-                },
-                {
-                    "filter": secondary_species,
-                    "filterType": "text",
-                    "type": "contains",
-                }
-            ]
+        row_indices = get_contig_indexes(selected_species)
+        col_indices = get_contig_indexes(secondary_species)
+        inter_contigs_row = set()
+        inter_contigs_col = set()
+
+        for i in row_indices:
+            for j in col_indices:
+                contact_value = dense_matrix[i, j]
+                if contact_value != 0:
+                    inter_contigs_row.add(contig_information.at[i, 'Contig name'])
+                    inter_contigs_col.add(contig_information.at[j, 'Contig name'])
+
+        # Combine the contigs from both species that are involved in the interspecies contact
+        inter_contigs = inter_contigs_row.union(inter_contigs_col)
+
+        # Filter the data to only show these contigs
+        filtered_data = [row for row in contig_data if row['Contig'] in inter_contigs]
+
+        filter_model['Contig'] = {
+            "filterType": "set",
+            "values": list(inter_contigs)
         }
-        filtered_data = [row for row in contig_data if row['Species'] in {selected_species, secondary_species}]
+
     else:
         # Clear filter model if no species is selected
         filter_model = {}
