@@ -490,29 +490,29 @@ def inter_species_visualization(selected_species, secondary_species):
                 interspecies_contacts.append({
                     'name': f"{contig_information.at[i, 'Contig name']} - {contig_information.at[j, 'Contig name']}",
                     'value': contact_value,
-                    'color': 'green'  # Set blue color for the bars
+                    'color': 'green'  # Set green color for the bars
                 })
                 contig_contact_counts.append({
                     'name': contig_information.at[i, 'Contig name'],
                     'species': selected_species,
                     'count': 1,
-                    'color': 'red'
+                    'color': '#C00000'  # Set red color for the bars
                 })
                 contig_contact_counts.append({
                     'name': contig_information.at[j, 'Contig name'],
                     'species': secondary_species,
                     'count': 1,
-                    'color': 'blue'
+                    'color': '#0070C0'  # Set blue color for the bars
                 })
                 inter_contig_contacts.append({
                     'name': contig_information.at[i, 'Contig name'],
                     'value': contact_value,
-                    'color': 'red'
+                    'color': '#C00000'  # Set red color for the bars
                 })
                 inter_contig_contacts.append({
                     'name': contig_information.at[j, 'Contig name'],
                     'value': contact_value,
-                    'color': 'blue'
+                    'color': '#0070C0'  # Set blue color for the bars
                 })
 
     contig_positions_row = arrange_contigs(inter_contigs_row, list(), distance=1, center_position=new_pos[row_contig])
@@ -520,11 +520,11 @@ def inter_species_visualization(selected_species, secondary_species):
 
     # Add contig nodes to the graph G
     for contig, (x, y) in contig_positions_row.items():
-        G.add_node(contig, color='red', parent=row_contig)  # Red for primary
+        G.add_node(contig, color='#C00000', parent=row_contig)  # Red for primary
         new_pos[contig] = (x, y)
 
     for contig, (x, y) in contig_positions_col.items():
-        G.add_node(contig, color='blue', parent=col_contig)  # Blue for secondary
+        G.add_node(contig, color='#0070C0', parent=col_contig)  # Blue for secondary
         new_pos[contig] = (x, y)
 
     # Add edges between contigs
@@ -742,6 +742,9 @@ cyto_elements, bar_fig = basic_visualization()
 
 contig_matrix_display = contig_information[list(matrix_columns.keys())].rename(columns=matrix_columns)
 
+# Add a "Visibility" column to the contig_matrix_display DataFrame
+contig_matrix_display['Visibility'] = 1  # Default value to 1 (visible)
+
 # Extract colors for contigs and species
 contig_colors, species_colors = get_contig_and_species_colors(contig_information, cyto_elements)
 
@@ -754,11 +757,12 @@ contig_data_dict = contig_matrix_display.to_dict('records')
 # Define the column definitions for AG Grid
 column_defs = [
     {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120},
-    {"headerName": "Species", "field": "Species", "pinned": 'left', "width": 120},
-    {"headerName": "Restriction sites", "field": "Restriction sites", "width": 120, "wrapHeaderText": True},
-    {"headerName": "Contig length", "field": "Contig length", "width": 120, "wrapHeaderText": True},
-    {"headerName": "Contig coverage", "field": "Contig coverage", "width": 120, "wrapHeaderText": True},
-    {"headerName": "Intra-contig contact", "field": "Intra-contig contact", "width": 120, "wrapHeaderText": True}
+    {"headerName": "Species", "field": "Species", "pinned": 'left', "width": 140},
+    {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
+    {"headerName": "Contig length", "field": "Contig length", "width": 140, "wrapHeaderText": True},
+    {"headerName": "Contig coverage", "field": "Contig coverage", "width": 140, "wrapHeaderText": True},
+    {"headerName": "Intra-contig contact", "field": "Intra-contig contact", "width": 140, "wrapHeaderText": True},
+    {"headerName": "Visibility", "field": "Visibility",  "hide": True}
 ]
 
 # Define the default column definitions
@@ -883,7 +887,13 @@ app.layout = html.Div([
     html.Div([
         html.Div([
             dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
-            html.Div(id='row-count', style={'margin': '0px','height': '2vh'}),  # Show row number of contig matrix
+            html.Div(id='row-count', style={'margin': '0px', 'height': '2vh', 'display': 'inline-block'}),
+            dcc.Checklist(
+                id='visibility-filter',
+                options=[{'label': '  Only show contigs in the map', 'value': 'filter'}],
+                value=['filter'],
+                style={'display': 'inline-block', 'margin-right': '10px', 'float': 'right'}
+            ),
             dag.AgGrid(
                 id='contig-info-table',
                 columnDefs=column_defs,
@@ -1120,18 +1130,24 @@ def update_selected_styles(selected_species, secondary_species, selected_contig)
     return stylesheet, hover_info
 
 @app.callback(
-    [Output('contig-info-table', 'filterModel'),
+    [Output('contig-info-table', 'rowData'), 
+     Output('contig-info-table', 'filterModel'),
      Output('row-count', 'children')],
     [Input('species-selector', 'value'),
-     Input('secondary-species-selector', 'value')],
+     Input('secondary-species-selector', 'value'),
+     Input('visibility-filter', 'value')],
     [State('contig-info-table', 'rowData')]
 )
-def update_filter_model_and_row_count(selected_species, secondary_species, contig_data):
+def update_filter_model_and_row_count(selected_species, secondary_species, filter_value, contig_data):
     filter_model = {}
     filtered_data = contig_data
-
+    
+    # Set the default visibility to 1
+    for row in filtered_data:
+        row['Visibility'] = 1
+        
+    # Update the filter model based on selected species and secondary species
     if selected_species and not secondary_species:
-        # Show all contigs in the selected species
         filter_model['Species'] = {
             "filterType": "text",
             "operator": "OR",
@@ -1143,38 +1159,89 @@ def update_filter_model_and_row_count(selected_species, secondary_species, conti
                 }
             ]
         }
-        filtered_data = [row for row in contig_data if row['Species'] == selected_species]
+        for row in filtered_data:
+            if row['Species'] != selected_species:
+                row['Visibility'] = 2
+
     elif selected_species and secondary_species:
-        # Show all contigs from both species involved in the interspecies contact
-        row_indices = get_contig_indexes(selected_species)
-        col_indices = get_contig_indexes(secondary_species)
-        inter_contigs_row = set()
-        inter_contigs_col = set()
-
-        for i in row_indices:
-            for j in col_indices:
-                contact_value = dense_matrix[i, j]
-                if contact_value != 0:
-                    inter_contigs_row.add(contig_information.at[i, 'Contig name'])
-                    inter_contigs_col.add(contig_information.at[j, 'Contig name'])
-
-        # Combine the contigs from both species that are involved in the interspecies contact
-        inter_contigs = inter_contigs_row.union(inter_contigs_col)
-
-        # Filter the data to only show these contigs
-        filtered_data = [row for row in contig_data if row['Contig'] in inter_contigs]
-
-        filter_model['Contig'] = {
-            "filterType": "set",
-            "values": list(inter_contigs)
+        filter_model['Species'] = {
+            "filterType": "text",
+            "operator": "OR",
+            "conditions": [
+                {
+                    "filter": selected_species,
+                    "filterType": "text",
+                    "type": "contains",
+                },
+                {
+                    "filter": secondary_species,
+                    "filterType": "text",
+                    "type": "contains",
+                }
+            ]
         }
-
+        for row in filtered_data:
+            if row['Species'] not in [selected_species, secondary_species]:
+                row['Visibility'] = 2
     else:
-        # Clear filter model if no species is selected
         filter_model = {}
 
-    row_count_text = f"Total Number of Rows: {len(filtered_data)}"
-    return filter_model, row_count_text
+    # Set visibility based on the current visualization mode
+    if current_visualization_mode['visualization_type'] == 'intra_species':
+        if current_visualization_mode['selected_species']:
+            for row in filtered_data:
+                if row['Species'] != current_visualization_mode['selected_species']:
+                    row['Visibility'] = 0
+
+    elif current_visualization_mode['visualization_type'] == 'inter_species':
+        if current_visualization_mode['selected_species'] and current_visualization_mode['secondary_species']:
+            row_indices = get_contig_indexes(current_visualization_mode['selected_species'])
+            col_indices = get_contig_indexes(current_visualization_mode['secondary_species'])
+            inter_contigs_row = set()
+            inter_contigs_col = set()
+
+            for i in row_indices:
+                for j in col_indices:
+                    contact_value = dense_matrix[i, j]
+                    if contact_value != 0:
+                        inter_contigs_row.add(contig_information.at[i, 'Contig name'])
+                        inter_contigs_col.add(contig_information.at[j, 'Contig name'])
+
+            inter_contigs = inter_contigs_row.union(inter_contigs_col)
+
+            for row in filtered_data:
+                if row['Contig'] not in inter_contigs:
+                    row['Visibility'] = 0
+
+    elif current_visualization_mode['visualization_type'] == 'contig':
+        if current_visualization_mode['selected_contig']:
+            selected_contig_index = contig_information[contig_information['Contig name'] == current_visualization_mode['selected_contig']].index[0]
+
+            connected_contigs = set()
+            for j in range(dense_matrix.shape[0]):
+                if dense_matrix[selected_contig_index, j] != 0:
+                    connected_contigs.add(contig_information.at[j, 'Contig name'])
+
+            for row in filtered_data:
+                if row['Contig'] not in connected_contigs and row['Contig'] != current_visualization_mode['selected_contig']:
+                    row['Visibility'] = 0
+
+    # Apply filter if the checkbox is checked
+    if 'filter' in filter_value:
+        filter_model['Visibility'] = {
+            "filterType": "number",
+            "operator": "OR",
+            "conditions": [
+                {
+                    "filter": 0,
+                    "filterType": "number",
+                    "type": "notEqual",
+                }
+            ]
+        }
+
+    row_count_text = f"Total Number of Rows: {len([row for row in filtered_data if row['Visibility'] == 1])}"
+    return filtered_data, filter_model, row_count_text
 
 @app.callback(
     Output('contig-selector', 'options'),
