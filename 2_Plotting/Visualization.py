@@ -14,29 +14,6 @@ import plotly.express as px
 from math import sqrt, sin, cos, pi
 from openai import OpenAI
 
-# Set your OpenAI API key
-client = OpenAI(api_key='')
-
-# File paths for the current environment
-contig_info_path = '../0_Documents/contig_information.csv'
-raw_contact_matrix_path= '../0_Documents/raw_contact_matrix.npz'
-
-# Load the data
-contig_information = pd.read_csv(contig_info_path)
-contact_matrix_data = np.load(raw_contact_matrix_path)
-data = contact_matrix_data['data']
-indices = contact_matrix_data['indices']
-indptr = contact_matrix_data['indptr']
-shape = contact_matrix_data['shape']
-sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
-dense_matrix = sparse_matrix.toarray()
-
-# Remove contigs with annotation "Unmapped"
-unmapped_contigs = contig_information[contig_information['Contig annotation'] == "Unmapped"].index
-contig_information = contig_information.drop(unmapped_contigs).reset_index(drop=True)
-dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=0)
-dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=1)
-
 # Function to get contig indexes based on species
 def get_contig_indexes(species):
     contigs = contig_information[contig_information['Contig annotation'] == species].index
@@ -182,26 +159,78 @@ def styling_species_table(matrix_df):
     return styles
 
 # Function to style contig info table
-def styling_contig_table(matrix_df):
-    styles = []
+def styling_contig_table(matrix_df, contig_information, contig_colors, species_colors, n_bins=5):
     columns = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
+    styleConditions = []
 
     for col in columns:
-        numeric_column = matrix_df[col].astype(float)
-        log_max_value = np.log1p(numeric_column.max())
-        for i, value in enumerate(numeric_column):
-            if not pd.isnull(value):
-                log_value = np.log1p(value)
-                opacity = 0.6  # Set a fixed opacity for transparency
-                styles.append({
-                    'if': {
-                        'row_index': i,
-                        'column_id': col
+        col_min = np.log1p(matrix_df[col].min())
+        col_max = np.log1p(matrix_df[col].max())
+        col_range = col_max - col_min
+        bounds = [i * (col_range / n_bins) + col_min for i in range(n_bins + 1)]
+
+        for i in range(1, len(bounds)):
+            min_bound = bounds[i - 1]
+            max_bound = bounds[i]
+            if i == len(bounds) - 1:
+                max_bound += 1
+
+            opacity = 0.6  # Set a fixed opacity for transparency
+
+            styleConditions.append(
+                {
+                    "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
+                    "style": {
+                        'backgroundColor': f"rgba({255 - int((min_bound - col_min) / col_range * 255)}, {255 - int((min_bound - col_min) / col_range * 255)}, 255, {opacity})",
+                        'color': "white" if i > len(bounds) / 2.0 else "inherit"
                     },
-                    'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'  # Set background color for the contact matrix.
-                })
-    
-    return styles
+                }
+            )
+
+    # Add style conditions for the "Contig" column
+    for contig in matrix_df['Contig']:
+        contig_color = contig_colors.get(contig, species_colors.get(contig_information.loc[contig_information['Contig name'] == contig, 'Contig annotation'].values[0], '#FFFFFF'))
+        styleConditions.append(
+            {
+                "condition": f"params.colDef.field == 'Contig' && params.value == '{contig}'",
+                "style": {
+                    'backgroundColor': contig_color,
+                    'color': 'black'
+                },
+            }
+        )
+
+    # Add style conditions for the "Species" column
+    for species in matrix_df['Species'].unique():
+        species_color = species_colors.get(species, '#FFFFFF')  # Default to white if species color is not found
+        styleConditions.append(
+            {
+                "condition": f"params.colDef.field == 'Species' && params.value == '{species}'",
+                "style": {
+                    'backgroundColor': species_color,
+                    'color': 'black'
+                },
+            }
+        )
+
+    return styleConditions
+
+# Function to get contig colors from Cytoscape elements or use species color if not found
+def get_contig_and_species_colors(contig_information, cyto_elements):
+    contig_colors = {}
+    species_colors = {}
+
+    # Extract colors from Cytoscape elements
+    for element in cyto_elements:
+        if 'data' in element and 'color' in element['data'] and 'id' in element['data']:
+            contig_colors[element['data']['id']] = element['data']['color']
+
+    # Get species colors based on viral status
+    for species in contig_information['Contig annotation'].unique():
+        is_viral = str(contig_information.loc[contig_information['Contig annotation'] == species, 'Is Viral'].values[0])
+        species_colors[species] = is_viral_colors.get(is_viral, '#FFFFFF')  # Default to white if species color is not found
+
+    return contig_colors, species_colors
 
 # Function to arrange contigs
 def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None, center_position=(0, 0)):
@@ -258,7 +287,6 @@ def basic_visualization():
     G = nx.Graph()
 
     # Add nodes with size based on total contig coverage
-    is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
     total_contig_coverage = contig_information.groupby('Contig annotation')['Contig coverage'].sum().reindex(unique_annotations)
     node_sizes = generate_gradient_values(total_contig_coverage.values, 10, 30)  # Example range from 10 to 30
 
@@ -312,7 +340,6 @@ def intra_species_visualization(selected_species):
     G = nx.Graph()
 
     # Add nodes with size based on contig counts
-    is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
     contig_counts = [len(contig_information[contig_information['Contig annotation'] == node]) for node in unique_annotations]
     node_sizes = generate_gradient_values(np.array(contig_counts), 10, 30)  # Example range from 10 to 30
 
@@ -367,12 +394,9 @@ def intra_species_visualization(selected_species):
         if edge[0] == selected_species or edge[1] == selected_species:
             d['weight'] = weight
 
-    # Calculate min_edge_length based on the largest node size to avoid node overlap
-    max_node_size = max(node_sizes)
-    min_edge_length = max_node_size / 2  # Node size is diameter, so radius is size / 2
-
-    # Set k parameter based on the number of nodes and their sizes to avoid overlap
-    k_value = min_edge_length / sqrt(len(G.nodes))
+    # Calculate k_value based on the number of contigs of the selected species
+    num_contigs = len(get_contig_indexes(selected_species))
+    k_value = sqrt(num_contigs)
 
     new_pos = nx.spring_layout(G, pos={selected_species: (0, 0)}, fixed=[selected_species], k=k_value, iterations=50, weight='weight')
 
@@ -598,10 +622,77 @@ def contig_visualization(selected_species, selected_contig):
     bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, bar_fig
+        
+def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, table_data, contig_info_table_data):
+    # Initialize the return values
+    selected_species = None
+    selected_contig = None
+    secondary_species = None
 
+    # If a node in the network is selected
+    if triggered_id == 'cyto-graph' and selected_node_data:
+        selected_node_id = selected_node_data[0]['id']
+        # Check if the selected node is a contig or a species
+        if selected_node_id in contig_information['Contig name'].values:
+            contig_info = contig_information[contig_information['Contig name'] == selected_node_id].iloc[0]
+            if 'Contig annotation' in contig_info and 'Contig name' in contig_info:
+                selected_species = contig_info['Contig annotation']
+                selected_contig = contig_info['Contig name']
+        else:
+            selected_species = selected_node_id
+
+    # If an edge in the network is selected
+    elif triggered_id == 'cyto-graph' and selected_edge_data:
+        source_species = selected_edge_data[0]['source']
+        target_species = selected_edge_data[0]['target']
+        selected_species = source_species
+        secondary_species = target_species
+
+    # If a row in the contig-info-table is selected
+    elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
+        row_contig_info = contig_info_selected_rows[0]
+        if 'Species' in row_contig_info and 'Contig' in row_contig_info:
+            selected_species = row_contig_info['Species']
+            selected_contig = row_contig_info['Contig']
+
+    # If a cell in the contact-table is selected
+    elif triggered_id == 'contact-table' and contact_table_active_cell:
+        row_species = table_data[contact_table_active_cell['row']]['Species']
+        col_species = contact_table_active_cell['column_id'] if contact_table_active_cell['column_id'] != 'Species' else None
+        selected_species = row_species
+        secondary_species = col_species
+
+    return selected_species, selected_contig, secondary_species
+
+# Initialize the Dash app
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
+# Set your OpenAI API key
+client = OpenAI(api_key='')
+
+# File paths for the current environment
+contig_info_path = '../0_Documents/contig_information.csv'
+raw_contact_matrix_path= '../0_Documents/raw_contact_matrix.npz'
+
+# Load the data
+contig_information = pd.read_csv(contig_info_path)
+contact_matrix_data = np.load(raw_contact_matrix_path)
+data = contact_matrix_data['data']
+indices = contact_matrix_data['indices']
+indptr = contact_matrix_data['indptr']
+shape = contact_matrix_data['shape']
+sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
+dense_matrix = sparse_matrix.toarray()
+
+# Remove contigs with annotation "Unmapped"
+unmapped_contigs = contig_information[contig_information['Contig annotation'] == "Unmapped"].index
+contig_information = contig_information.drop(unmapped_contigs).reset_index(drop=True)
+dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=0)
+dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=1)
 
 # Calculate the total intra-species contacts and inter-species contacts
 unique_annotations = contig_information['Contig annotation'].unique()
+is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
 species_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
 
 for annotation_i in unique_annotations:
@@ -627,14 +718,28 @@ matrix_columns = {
     'Hi-C contacts mapped to the same contigs': 'Intra-contig contact'
 }
 
+# Set the global graph G
+cyto_elements, bar_fig = basic_visualization()
+
 contig_matrix_display = contig_information[list(matrix_columns.keys())].rename(columns=matrix_columns)
+
+# Extract colors for contigs and species
+contig_colors, species_colors = get_contig_and_species_colors(contig_information, cyto_elements)
+
+# Apply the updated function in your Dash layout
+styleConditions = styling_contig_table(contig_matrix_display, contig_information, contig_colors, species_colors)
 
 # Convert your DataFrame to a list of dictionaries
 contig_data_dict = contig_matrix_display.to_dict('records')
 
 # Define the column definitions for AG Grid
 column_defs = [
-    {"headerName": col, "field": col, "pinned": 'left' if i < 2 else None} for i, col in enumerate(contig_matrix_display.columns)
+    {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120},
+    {"headerName": "Species", "field": "Species", "pinned": 'left', "width": 120},
+    {"headerName": "Restriction sites", "field": "Restriction sites", "width": 120, "wrapHeaderText": True},
+    {"headerName": "Contig length", "field": "Contig length", "width": 120, "wrapHeaderText": True},
+    {"headerName": "Contig coverage", "field": "Contig coverage", "width": 120, "wrapHeaderText": True},
+    {"headerName": "Intra-contig contact", "field": "Intra-contig contact", "width": 120, "wrapHeaderText": True}
 ]
 
 # Define the default column definitions
@@ -642,9 +747,10 @@ default_col_def = {
     "sortable": True,
     "filter": True,
     "resizable": True,
-    "flex": 1,
+    "cellStyle": {
+        "styleConditions": styleConditions
+    }
 }
-
 # Define the grid options
 grid_options = {
     'headerPinned': 'top',
@@ -677,13 +783,6 @@ base_stylesheet = [
         }
     }
 ]
-
-
-# Initialize the Dash app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-
-# Set the global graph G
-cyto_elements, bar_fig = basic_visualization()
 
 current_visualization_mode = {
     'visualization_type': None,
@@ -821,47 +920,6 @@ app.layout = html.Div([
     help_modal
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
-def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, table_data, contig_info_table_data):
-    # Initialize the return values
-    selected_species = None
-    selected_contig = None
-    secondary_species = None
-
-    # If a node in the network is selected
-    if triggered_id == 'cyto-graph' and selected_node_data:
-        selected_node_id = selected_node_data[0]['id']
-        # Check if the selected node is a contig or a species
-        if selected_node_id in contig_information['Contig name'].values:
-            contig_info = contig_information[contig_information['Contig name'] == selected_node_id].iloc[0]
-            if 'Contig annotation' in contig_info and 'Contig name' in contig_info:
-                selected_species = contig_info['Contig annotation']
-                selected_contig = contig_info['Contig name']
-        else:
-            selected_species = selected_node_id
-
-    # If an edge in the network is selected
-    elif triggered_id == 'cyto-graph' and selected_edge_data:
-        source_species = selected_edge_data[0]['source']
-        target_species = selected_edge_data[0]['target']
-        selected_species = source_species
-        secondary_species = target_species
-
-    # If a row in the contig-info-table is selected
-    elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
-        row_contig_info = contig_info_selected_rows[0]
-        if 'Species' in row_contig_info and 'Contig' in row_contig_info:
-            selected_species = row_contig_info['Species']
-            selected_contig = row_contig_info['Contig']
-
-    # If a cell in the contact-table is selected
-    elif triggered_id == 'contact-table' and contact_table_active_cell:
-        row_species = table_data[contact_table_active_cell['row']]['Species']
-        col_species = contact_table_active_cell['column_id'] if contact_table_active_cell['column_id'] != 'Species' else None
-        selected_species = row_species
-        secondary_species = col_species
-
-    return selected_species, selected_contig, secondary_species
-
 @app.callback(
     [Output('visualization-selector', 'value'),
      Output('species-selector', 'value'),
@@ -921,9 +979,11 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
         contig_selector_style = {'display': 'none'}
         return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
     
+# Callback to update the visualization
 @app.callback(
     [Output('cyto-graph', 'elements'),
-     Output('bar-chart', 'figure')],
+     Output('bar-chart', 'figure'),
+     Output('contig-info-table', 'dashGridOptions')],
     [Input('reset-btn', 'n_clicks'),
      Input('confirm-btn', 'n_clicks')],
     [State('visualization-selector', 'value'),
@@ -949,7 +1009,15 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             'secondary_species': None,
             'selected_contig': None
         }
-        return cyto_elements, bar_fig
+        contig_colors, species_colors = get_contig_and_species_colors(contig_information, cyto_elements)
+        styleConditions = styling_contig_table(contig_matrix_display, contig_information, contig_colors, species_colors)
+        grid_options = {
+            'headerPinned': 'top',
+            'rowSelection': 'single',  # Enable single row selection
+            'suppressMovableColumns': True,  # Prevent columns from being moved
+            'styleConditions': styleConditions
+        }
+        return cyto_elements, bar_fig, grid_options
 
     if triggered_id == 'confirm-btn':
         # Update the current visualization mode with selected values
@@ -961,23 +1029,29 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         if visualization_type == 'inter_species':
             if not selected_species or not secondary_species:
                 cyto_elements, bar_fig = basic_visualization()
-                return cyto_elements, bar_fig
-
-            cyto_elements, bar_fig = inter_species_visualization(selected_species, secondary_species)
-            return cyto_elements, bar_fig
+            else:
+                cyto_elements, bar_fig = inter_species_visualization(selected_species, secondary_species)
 
         elif visualization_type == 'intra_species':
             cyto_elements, bar_fig = intra_species_visualization(selected_species)
-            return cyto_elements, bar_fig
 
         elif visualization_type == 'contig':
             cyto_elements, bar_fig = contig_visualization(selected_species, selected_contig)
             selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
             contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
             contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
-            return cyto_elements, bar_fig
 
-    return cyto_elements, bar_fig
+        contig_colors, species_colors = get_contig_and_species_colors(contig_information, cyto_elements)
+        styleConditions = styling_contig_table(contig_matrix_display, contig_information, contig_colors, species_colors)
+        grid_options = {
+            'headerPinned': 'top',
+            'rowSelection': 'single',  # Enable single row selection
+            'suppressMovableColumns': True,  # Prevent columns from being moved
+            'styleConditions': styleConditions
+        }
+        return cyto_elements, bar_fig, grid_options
+
+    return cyto_elements, bar_fig, grid_options
 
 @app.callback(
     [Output('cyto-graph', 'stylesheet'),
