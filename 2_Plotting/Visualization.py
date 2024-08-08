@@ -138,6 +138,16 @@ def create_bar_chart(data_dict):
     bar_fig = go.Figure(data=traces, layout=bar_layout)
     return bar_fig
 
+# Function to call OpenAI API using GPT-4 with the new API format
+def get_chatgpt_response(prompt):
+    response = client.chat.completions.create(model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": prompt}
+    ],
+    max_tokens=150)
+    return response.choices[0].message.content
+
 # Function to style species contact table using Blugrn color scheme
 def styling_species_table(matrix_df):
     columns = species_matrix_display.columns[1:]
@@ -537,7 +547,6 @@ def inter_species_visualization(selected_species, secondary_species):
 
     return cyto_elements, bar_fig
 
-
 # Function to visualize contig relationships
 def contig_visualization(selected_species, selected_contig):
     if not selected_contig:
@@ -580,7 +589,7 @@ def contig_visualization(selected_species, selected_contig):
 
 
     # Set k value to avoid overlap and generate positions for the graph nodes
-    k_value = 1 / sqrt(len(G.nodes))
+    k_value = sqrt(len(G.nodes))
     pos = nx.spring_layout(G, k=k_value, iterations=50, weight='weight')
 
     # Add contig nodes to the graph
@@ -622,12 +631,15 @@ def contig_visualization(selected_species, selected_contig):
     bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, bar_fig
-        
+
 def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, table_data, contig_info_table_data):
     # Initialize the return values
     selected_species = None
     selected_contig = None
     secondary_species = None
+
+    # Print the structure of contig_info_selected_rows for debugging
+    print("contig_info_selected_rows:", contig_info_selected_rows)
 
     # If a node in the network is selected
     if triggered_id == 'cyto-graph' and selected_node_data:
@@ -635,9 +647,8 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
         # Check if the selected node is a contig or a species
         if selected_node_id in contig_information['Contig name'].values:
             contig_info = contig_information[contig_information['Contig name'] == selected_node_id].iloc[0]
-            if 'Contig annotation' in contig_info and 'Contig name' in contig_info:
-                selected_species = contig_info['Contig annotation']
-                selected_contig = contig_info['Contig name']
+            selected_species = contig_info['Contig annotation']
+            selected_contig = contig_info['Contig name']
         else:
             selected_species = selected_node_id
 
@@ -650,10 +661,10 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
 
     # If a row in the contig-info-table is selected
     elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
-        row_contig_info = contig_info_selected_rows[0]
-        if 'Species' in row_contig_info and 'Contig' in row_contig_info:
-            selected_species = row_contig_info['Species']
-            selected_contig = row_contig_info['Contig']
+        selected_row = contig_info_selected_rows[0]
+        if 'Species' in selected_row and 'Contig' in selected_row:
+            selected_species = selected_row['Species']
+            selected_contig = selected_row['Contig']
 
     # If a cell in the contact-table is selected
     elif triggered_id == 'contact-table' and contact_table_active_cell:
@@ -946,6 +957,13 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
         triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, contact_table_data, contig_info_table_data
     )
 
+    # If a contig is selected in the network or contig table
+    if selected_contig:
+        visualization_type = 'contig'
+        secondary_species_style = {'display': 'none'}
+        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+        return visualization_type, selected_species, None, secondary_species_style, selected_contig, contig_selector_style, None, []
+
     # If a species is selected in the network or species table
     if selected_species and not selected_contig:
         if secondary_species:
@@ -956,29 +974,22 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
             visualization_type = 'intra_species'
             secondary_species_style = {'display': 'none'}
             contig_selector_style = {'display': 'none'}
-        return visualization_type, selected_species, secondary_species, secondary_species_style, None, contig_selector_style, None, None
-
-    # If a contig is selected in the network or contig table
-    if selected_contig:
-        visualization_type = 'contig'
-        secondary_species_style = {'display': 'none'}
-        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
-        return visualization_type, selected_species, None, secondary_species_style, selected_contig, contig_selector_style, None, None
+        return visualization_type, selected_species, secondary_species, secondary_species_style, None, contig_selector_style, None, []
 
     # Default cases based on visualization_type
     if visualization_type == 'inter_species':
         secondary_species_style = {'width': '300px', 'display': 'inline-block'}
         contig_selector_style = {'display': 'none'}
-        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
+        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, []
     elif visualization_type == 'contig':
         secondary_species_style = {'display': 'none'}
         contig_selector_style = {'width': '300px', 'display': 'inline-block'}
-        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
+        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, []
     else:
         secondary_species_style = {'display': 'none'}
         contig_selector_style = {'display': 'none'}
-        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, None
-    
+        return visualization_type, None, None, secondary_species_style, None, contig_selector_style, None, []
+
 # Callback to update the visualization
 @app.callback(
     [Output('cyto-graph', 'elements'),
@@ -1179,16 +1190,6 @@ def populate_contig_selector(selected_species, visualization_type):
         contigs = contig_information.loc[get_contig_indexes(selected_species), 'Contig name']
         return [{'label': contig, 'value': contig} for contig in contigs]
     return []
-
-# Example function to call OpenAI API using GPT-4 with the new API format
-def get_chatgpt_response(prompt):
-    response = client.chat.completions.create(model="gpt-4o-mini",
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": prompt}
-    ],
-    max_tokens=150)
-    return response.choices[0].message.content
 
 # Dash callback to use ChatGPT
 @app.callback(
