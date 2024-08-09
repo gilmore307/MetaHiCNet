@@ -681,7 +681,7 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-# Set your OpenAI API key
+# Set OpenAI API key
 client = OpenAI(api_key='')
 
 # File paths for the current environment
