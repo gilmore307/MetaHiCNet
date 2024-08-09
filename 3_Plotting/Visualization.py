@@ -302,7 +302,7 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 
     return {**inner_positions, **outer_positions}
 
-# Updated basic_visualization function to reset node attributes properly
+# Function to visualize species relationship
 def basic_visualization():
     G = nx.Graph()
 
@@ -329,7 +329,7 @@ def basic_visualization():
                 inter_species_contacts.append(weight)
 
     # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 300)  # Example range from 10 to 100
+    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 300) 
 
     # Assign the gradient values as edge weights and set default edge color
     for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
@@ -361,7 +361,7 @@ def intra_species_visualization(selected_species):
 
     # Add nodes with size based on contig counts
     contig_counts = [len(contig_information[contig_information['Contig annotation'] == node]) for node in unique_annotations]
-    node_sizes = generate_gradient_values(np.array(contig_counts), 10, 30)  # Example range from 10 to 30
+    node_sizes = generate_gradient_values(np.array(contig_counts), 10, 30)
 
     nodes_to_remove = []
     for annotation, size in zip(unique_annotations, node_sizes):
@@ -393,7 +393,7 @@ def intra_species_visualization(selected_species):
         G.remove_node(node)
 
     # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 100)  # Example range from 10 to 100
+    edge_weights = generate_gradient_values(np.array(inter_species_contacts), 10, 100)
 
     edges_to_remove = []
     inter_species_contacts = []
@@ -575,11 +575,10 @@ def contig_visualization(selected_species, selected_contig):
     
     contacts_species = contig_information.loc[contacts_indices, 'Contig annotation']
     contacts_contigs = contig_information.loc[contacts_indices, 'Contig name']
-
-    # Create the graph
+    
     G = nx.Graph()
 
-    # Use a categorical color scale from Plotly Express
+    # Use a categorical color scale
     color_scale = px.colors.qualitative.Dark24 + px.colors.qualitative.Light24
 
     # Rank species based on the number of contigs with contact to the selected contig
@@ -618,7 +617,7 @@ def contig_visualization(selected_species, selected_contig):
     contig_data = pd.DataFrame({'name': contacts_contigs, 'value': contig_contact_values, 'color': [G.nodes[contig]['color'] for contig in contacts_contigs]})
 
     species_contact_values = []
-    contig_contact_counts_per_species = []  # For the new trace
+    contig_contact_counts_per_species = [] 
     for species in contacts_species.unique():
         species_indexes = get_contig_indexes(species)
         contact_value = dense_matrix[selected_contig_index, species_indexes].sum()
@@ -806,7 +805,7 @@ current_visualization_mode = {
 
 
 common_style = {
-    'height': '38px',  # Adjusted height to match both elements
+    'height': '38px',
     'display': 'inline-block',
     'margin-right': '10px',
     'vertical-align': 'middle'
@@ -876,7 +875,7 @@ app.layout = html.Div([
         'z-index': '1000',
         'background-color': 'llite',
         'padding': '10px',  # Add padding to ensure content does not overlap with page content
-        'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'  # Optional: Add a shadow for better visibility
+        'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'  # Add a shadow
     }),
     html.Div(style={'height': '60px'}),  # Add a placeholder div to account for the fixed header height
     html.Div([
@@ -910,7 +909,7 @@ app.layout = html.Div([
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
                 zoom=1,
                 userZoomingEnabled=True,
-                wheelSensitivity=0.1  # Reduce the wheel sensitivity (default is 1)
+                wheelSensitivity=0.1  # Reduce the wheel sensitivity
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
     html.Div([
@@ -1016,7 +1015,7 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
     prevent_initial_call=True
 )
 def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_species, secondary_species, selected_contig, table_data):
-    global current_visualization_mode  # Ensure we are using the global variable
+    global current_visualization_mode
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
