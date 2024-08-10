@@ -85,7 +85,7 @@ combined_data['classification'] = combined_data['classification'].apply(
     lambda x: "Unmapped" if pd.isna(x) or "Unclassified" in x else x
 )
 
-combined_data = combined_data.drop(columns=['Bin', 'type', 'classification_plasmid', 'classification_vir'])
+final_data = combined_data.drop(columns=['Bin', 'type', 'classification_plasmid', 'classification_vir'])
 
-combined_data_file_path = 'contig_info_final.csv'
-combined_data.to_csv(combined_data_file_path, index=False)
+final_data_file_path = 'contig_info_final.csv'
+final_data.to_csv(final_data_file_path, index=False)
