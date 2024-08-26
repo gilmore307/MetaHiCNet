@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from plsdbapi import query
 
 # **1. contig_info.csv**
@@ -57,9 +58,9 @@ def filter_contigs(group):
 
 filtered_data = demo_vir_data.groupby("Contig", as_index=False).apply(filter_contigs).reset_index(drop=True)
 
-filtered_data["Order"] = "o_" + filtered_data["Order"].astype(str)
+filtered_data["Order"] = "o__" + filtered_data["Order"].astype(str)
 filtered_data["Order"] = filtered_data["Order"].apply(lambda x: "" if "no_order_" in x else x)
-filtered_data["Family"] = "f_" + filtered_data["Family"].astype(str)
+filtered_data["Family"] = "f__" + filtered_data["Family"].astype(str)
 filtered_data["classification"] = filtered_data["Order"] + ";" + filtered_data["Family"]
 filtered_data.rename(columns={"Contig": "Contig name"}, inplace=True)
 
@@ -104,13 +105,16 @@ contig_data = pd.merge(contig_data, ppr_meta_data, on="Contig name", how="left")
 
 chromosome_data = contig_data[contig_data['type'] == "chromosome"]
 chromosome_data = pd.merge(chromosome_data, metacc_data, on="Bin", how="left")
+chromosome_data['classification'] = chromosome_data['classification'].apply(
+    lambda x: np.nan if isinstance(x, str) and "Unclassified" in x else x
+)
 
 
 phage_data = contig_data[contig_data['type'] == "phage"]
 phage_data = pd.merge(phage_data, demo_vir_data, on="Contig name", how="left")
 
 unmapped_data = contig_data[contig_data['type'] == "Unmapped"]
-unmapped_data['classification'] = "Unmapped"
+unmapped_data['classification'] = np.nan
 
 # **8. Query classification for plasmids**
 plasmid_data = contig_data[contig_data['type'] == "plasmid"]
@@ -121,48 +125,81 @@ plasmid_classification_df = query.query_plasmid_id(plasmid_ids)[['NUCCORE_ACC', 
 # Processing the taxonomy information
 taxonomy_columns = ['TAXONOMY_superkingdom', 'TAXONOMY_phylum', 'TAXONOMY_class', 'TAXONOMY_order', 'TAXONOMY_family', 'TAXONOMY_genus', 'TAXONOMY_species']
 taxonomy_prefixes = {
-    'TAXONOMY_superkingdom': 'd_',
-    'TAXONOMY_phylum': 'p_',
-    'TAXONOMY_class': 'c_',
-    'TAXONOMY_order': 'o_',
-    'TAXONOMY_family': 'f_',
-    'TAXONOMY_genus': 'g_',
-    'TAXONOMY_species': 's_'
+    'TAXONOMY_superkingdom': 'd__',
+    'TAXONOMY_phylum': 'p__',
+    'TAXONOMY_class': 'c__',
+    'TAXONOMY_order': 'o__',
+    'TAXONOMY_family': 'f__',
+    'TAXONOMY_genus': 'g__',
+    'TAXONOMY_species': 's__'
 }
 
 for column, prefix in taxonomy_prefixes.items():
     plasmid_classification_df[column] = plasmid_classification_df[column].apply(lambda x: prefix + x.split(' (')[0].split('_')[-1] if pd.notna(x) and x != '' else '')
 
 # Combine taxonomy columns into a classification string
-plasmid_classification_df['combined_taxonomy'] = plasmid_classification_df[taxonomy_columns].apply(lambda row: ';'.join(filter(None, row)), axis=1)
-plasmid_classification_df = plasmid_classification_df[['NUCCORE_ACC','combined_taxonomy']]
-plasmid_classification_df.columns = ['plasmid_ID','combined_taxonomy']
+plasmid_classification_df['classification'] = plasmid_classification_df[taxonomy_columns].apply(lambda row: ';'.join(filter(None, row)), axis=1)
+plasmid_classification_df = plasmid_classification_df[['NUCCORE_ACC','classification']]
+plasmid_classification_df.columns = ['plasmid_ID','classification']
 
-# Merging plasmid classification data with the original plasmid data
 plasmid_data = pd.merge(plasmid_data, plasmid_classification_df, on='plasmid_ID', how='left')
-plasmid_data = plasmid_data.drop(columns=['plasmid_ID'])
+
+def adjust_classification(row):
+    if row['type'] == 'plasmid' and pd.isna(row['classification']):
+        row['E-value'] = 100
+        row['Bit Score'] = -100
+    return row
+
+plasmid_data = plasmid_data.apply(adjust_classification, axis=1)
+plasmid_data_sorted = plasmid_data.sort_values(by=['E-value', 'Bit Score'], ascending=[True, False])
+plasmid_data_filtered = plasmid_data_sorted.drop_duplicates(subset=['Contig name'], keep='first')
+plasmid_data = plasmid_data_filtered.drop(columns=['plasmid_ID','E-value', 'Bit Score'])
+
+# **9. Combine sub-dataframe**
+combined_data = pd.concat([chromosome_data, phage_data, plasmid_data, unmapped_data], ignore_index=True)
+combined_data = combined_data.sort_values(by='Contig name').reset_index(drop=True)
 
 
-'''
-# Adjust classification for plasmid rows
-plasmid_data['classification'] = plasmid_data.apply(
-    lambda row: 'Unmapped' if pd.isna(row['combined_taxonomy']) else row['classification'], axis=1
-)
+prefix_to_tier = {
+    'd__': 'domain',
+    'p__': 'phylum',
+    'c__': 'class',
+    'o__': 'order',
+    'f__': 'family',
+    'g__': 'genus',
+    's__': 'species'
+}
 
-# Step 3: Combining all sub-dataframes back together
-#combined_data = pd.concat([phage_data, plasmid_data, unmapped_data, contig_data[~contig_data['type'].isin(['phage', 'plasmid', 'Unmapped'])]])
+def split_classification(classification):
+    result = {tier: "" for tier in prefix_to_tier.values()}
+    
+    if isinstance(classification, str):
+        components = classification.split(";")
+        
+        for component in components:
+            for prefix, tier in prefix_to_tier.items():
+                if component.startswith(prefix):
+                    result[tier] = component.split("__")[1]
+    
+    return pd.Series(result)
 
-# Step 4: Final classification adjustments
-#combined_data['classification'] = combined_data['classification'].apply(
-    #lambda x: "Unmapped" if pd.isna(x) or "Unclassified" in x else x
-#)
+tiers = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+combined_data[tiers] = combined_data['classification'].apply(split_classification)
+combined_data.loc[combined_data['classification'].isna(), 'type'] = 'Unmapped'
 
-# combined_data now contains the processed and classified contig data based on the logic described.
+higher_tiers = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
 
-# Dropping unnecessary columns
-#final_data = combined_data.drop(columns=['Bin', 'type', 'classification_plasmid', 'classification_vir', 'combined_taxonomy'])
+def fill_unspecified(row):
+    if row['type'] != 'Unmapped' and not row['domain']:
+        for tier in higher_tiers:
+            if not row[tier]:
+                row[tier] = 'Unspecified'
+            else:
+                break
+    return row
 
-# Saving the final data to CSV
-#final_data_file_path = 'contig_info_final.csv'
-#final_data.to_csv(final_data_file_path, index=False)
-'''
+combined_data = combined_data.apply(fill_unspecified, axis=1)
+final_data = combined_data.drop(columns=['Bin', 'classification'])
+final_data_file_path = 'contig_info_final.csv'
+final_data.to_csv(final_data_file_path, index=False)
+
