@@ -1,26 +1,27 @@
 import pandas as pd
 import numpy as np
 from plsdbapi import query
+from scipy.sparse import csc_matrix
 
 # **1. contig_info.csv**
-file_path = 'contig_info.csv'
+file_path = 'input/contig_info.csv'
 contig_data = pd.read_csv(file_path)
 new_column_names = [
     "Contig name",
-    "Column A",
-    "Column B",
-    "Column C",
-    "Column D"
+    "Number of restriction sites",
+    "Contig length",
+    "Contig coverage",
+    "Hi-C contacts mapped to the same contigs"
 ]
 contig_data.columns = new_column_names
 
 # **2. binned_contig.txt**
-binned_file_path = 'binned_contig.txt'
+binned_file_path = 'input/binned_contig.txt'
 binned_contig_data = pd.read_csv(binned_file_path, sep='\t', header=None)
 binned_contig_data.columns = ["Contig name", "Bin"]
 
 # **3. DemoVir_assignments.txt**
-demo_vir_file_path = 'DemoVir_assignments.txt'
+demo_vir_file_path = 'input/DemoVir_assignments.txt'
 demo_vir_data = pd.read_csv(demo_vir_file_path, sep='\t')
 split_columns = demo_vir_data['Sequence_ID'].str.split(r'[ #;]+', expand=True)
 split_columns.columns = [
@@ -67,7 +68,7 @@ filtered_data.rename(columns={"Contig": "Contig name"}, inplace=True)
 demo_vir_data = filtered_data[["Contig name", "classification"]]
 
 # **4. ppr_meta_result.csv**
-ppr_meta_file_path = 'ppr_meta_result.csv'
+ppr_meta_file_path = 'input/ppr_meta_result.csv'
 ppr_meta_data = pd.read_csv(ppr_meta_file_path)
 
 def classify(row):
@@ -87,14 +88,14 @@ ppr_meta_data.rename(columns={"Header": "Contig name"}, inplace=True)
 ppr_meta_data = ppr_meta_data[["Contig name", "type"]]
 
 # **5. query_plasmid.txt**
-query_plasmid_file_path = 'query_plasmid.txt'
+query_plasmid_file_path = 'input/query_plasmid.txt'
 query_plasmid_data = pd.read_csv(query_plasmid_file_path, sep='\t', header=None)
 column_names = ["Contig name", "plasmid_ID", "Column3", "Column4", "Column5", "Column6", "Column7", "Column8", "Column9", "Column10", "E-value", "Bit Score"]
 query_plasmid_data.columns = column_names
 query_plasmid_data = query_plasmid_data[["Contig name", "plasmid_ID","E-value", "Bit Score"]]
 
 # **6. metacc.gtdbtk.bac120.summary.tsv**
-metacc_file_path = 'metacc.gtdbtk.bac120.summary.tsv'
+metacc_file_path = 'input/metacc.gtdbtk.bac120.summary.tsv'
 metacc_data = pd.read_csv(metacc_file_path, sep='\t')
 metacc_data.rename(columns={"user_genome": "Bin"}, inplace=True)
 metacc_data = metacc_data.iloc[:, :2]
@@ -187,19 +188,50 @@ tiers = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
 combined_data[tiers] = combined_data['classification'].apply(split_classification)
 combined_data.loc[combined_data['classification'].isna(), 'type'] = 'Unmapped'
 
-higher_tiers = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+tiers = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
 
 def fill_unspecified(row):
-    if row['type'] != 'Unmapped' and not row['domain']:
-        for tier in higher_tiers:
-            if not row[tier]:
-                row[tier] = 'Unspecified'
+    if row['type'] == 'phage':
+        row['domain'] = 'Virus'
+        row['phylum'] = 'Virus'
+        row['class'] = 'Virus'
+        
+    last_non_blank = ""
+
+    if row['type'] != 'Unmapped':
+        for tier in tiers:
+            if row[tier] and row[tier] != "N/A":
+                last_non_blank = row[tier]
             else:
-                break
+                row[tier] = f"Unspecified {last_non_blank}"
+
     return row
 
 combined_data = combined_data.apply(fill_unspecified, axis=1)
-final_data = combined_data.drop(columns=['Bin', 'classification'])
-final_data_file_path = 'contig_info_final.csv'
-final_data.to_csv(final_data_file_path, index=False)
+combined_data = combined_data.drop(columns=['Bin', 'classification'])
+combined_data['kingdom'] = combined_data['domain'] 
+cols = combined_data.columns.tolist()
+cols.insert(cols.index('domain') + 1, cols.pop(cols.index('kingdom')))
+combined_data = combined_data[cols]
 
+# **10. Remove unmapped contig**
+contact_matrix_path= 'input/Normalized_contact_matrix.npz'
+contact_matrix_data = np.load(contact_matrix_path)
+data = contact_matrix_data['data']
+indices = contact_matrix_data['indices']
+indptr = contact_matrix_data['indptr']
+shape = contact_matrix_data['shape']
+sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
+dense_matrix = sparse_matrix.toarray()
+
+unmapped_contigs = combined_data[combined_data['type'] == "Unmapped"].index
+final_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
+
+dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=0)
+dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=1)
+
+final_data_path = 'output/contig_info_final.csv'
+dense_matrix_path = 'output/contact_matrix_final.npz'
+
+np.savez(dense_matrix_path, dense_matrix=dense_matrix)
+final_data.to_csv(final_data_path, index=False)
