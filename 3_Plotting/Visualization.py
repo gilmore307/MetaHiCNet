@@ -301,20 +301,86 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 
     return {**inner_positions, **outer_positions}
 
-def taxonomy_visualization():
-    # Ensure the taxonomy columns are present
-    taxonomy_columns = ['domain', 'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+def taxonomy_visualization(contig_information_intact):
+    # Define the order of the levels and their corresponding names, with Domain as 8 and Species as 1
+    level_mapping = {
+        'domain': 8,
+        'kingdom': 7,
+        'phylum': 6,
+        'class': 5,
+        'order': 4,
+        'family': 3,
+        'genus': 2,
+        'species': 1
+    }
     
-    # Prepare the data for the Treemap
-    treemap_fig = px.treemap(
-        contig_information_intact,
-        path=taxonomy_columns,  # Specify the hierarchy for the treemap
-        values='Contig coverage',  # You can choose another column like 'Contig coverage' or 'Number of restriction sites'
-        color='type',  # Color by domain or any other category
-        title='Taxonomy Hierarchy Visualization'
+    level_names = {v: k.capitalize() for k, v in level_mapping.items()}
+
+    records = []
+    existing_annotations = set()
+    
+    for _, row in contig_information_intact.iterrows():
+        for level, level_num in level_mapping.items():
+            annotation = f"{level}_{row[level]}"
+            parent = "" if level_num == 8 else f"{list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]}_{row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]]}"
+            
+            # Only add the annotation if it's not already added
+            if annotation not in existing_annotations:
+                records.append({
+                    "annotation": annotation,
+                    "parent": parent,  # Ensure correct parent-child relationship
+                    "level": level_num,  # Use level number for color mapping
+                    "level_name": level.capitalize(),  # Use level name for hover and color axis
+                    "type": row["type"],
+                    "total coverage": row["Contig coverage"],
+                    "border_color": type_colors.get(row["type"], "gray")  # Set border color based on type
+                })
+                existing_annotations.add(annotation)
+            else:
+                # If the annotation already exists, just update the coverage
+                for rec in records:
+                    if rec['annotation'] == annotation:
+                        rec['total coverage'] += row['Contig coverage']
+                        break
+
+    # Create DataFrame
+    hierarchy_df = pd.DataFrame(records)
+
+    # Standardize the box sizes using generate_gradient_values
+    hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
+
+    # Create the treemap using the numeric levels for color mapping
+    fig = px.treemap(
+        hierarchy_df,
+        names='annotation',
+        parents='parent',
+        values='scaled_coverage',  # Use scaled values for the box sizes
+        color='level',  # Use the numeric level for the color scale
+        color_continuous_scale='Sunset'  # Use the reversed Sunset color scale
     )
-    
-    return treemap_fig
+
+    # Set border color and customize hover info
+    fig.update_traces(
+        marker=dict(
+            line=dict(width=2, color=hierarchy_df['border_color'])  # Use border_color directly from the DataFrame
+        ),
+        customdata=hierarchy_df[['level_name']],
+        hovertemplate='<b>%{label}</b><br>Level: %{customdata[0]}<br>Coverage: %{value}'
+    )
+
+    # Customize the color axis to display level names
+    fig.update_layout(
+        coloraxis_colorbar=dict(
+            tickvals=list(level_mapping.values()),
+            ticktext=[level_names[i] for i in sorted(level_mapping.values(), reverse=True)],  # Reverse the order for display
+            title="Hierarchy Level"
+        ),
+        title="Taxonomy Tree Diagram",
+        font_size=15,
+        autosize=True
+    )
+
+    return fig
 
 # Function to visualize annotation relationship
 def basic_visualization():
@@ -720,9 +786,9 @@ contig_information = contig_information.drop(columns=taxonomy_columns)
 
 unique_annotations = contig_information['Contig annotation'].unique()
 type_colors = {
-    'chromosome': '#FF0000',  # Red
-    'phage': '#00FF00',       # Green
-    'plasmid': '#0000FF'      # Blue
+    'chromosome': '#0000FF',# Blue
+    'phage': '#FF0000',# Red
+    'plasmid': '#00FF00'# Green
 }
 default_color = '#808080' 
 annotation_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
@@ -738,6 +804,7 @@ for annotation_i in unique_annotations:
 
 # Copy annotation_matrix and add a column for annotation names for display
 annotation_matrix_display = annotation_matrix.copy()
+annotation_matrix_display = annotation_matrix_display.astype(int)
 annotation_matrix_display.insert(0, 'Annotation', annotation_matrix_display.index)
 
 # Extract and rename the necessary columns for the new matrix
@@ -752,7 +819,7 @@ matrix_columns = {
 
 # Set the global graph G
 cyto_elements, bar_fig = basic_visualization()
-treemap_fig = taxonomy_visualization()
+sunburst_fig = taxonomy_visualization(contig_information_intact)
 
 contig_matrix_display = contig_information[list(matrix_columns.keys())].rename(columns=matrix_columns)
 
@@ -939,7 +1006,7 @@ app.layout = html.Div([
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
-            dcc.Graph(id='treemap-graph', figure=treemap_fig, style={'height': '80vh', 'width': '48vw', 'display': 'block'}),
+            dcc.Graph(id='sunburst-graph', figure=sunburst_fig, style={'height': '80vh', 'width': '48vw', 'display': 'block'}),
             cyto.Cytoscape(
                 id='cyto-graph',
                 elements=[],
@@ -1054,19 +1121,19 @@ def update_contig_information(taxonomy_level):
     return contig_information.to_dict('records')
 
 @app.callback(
-    [Output('treemap-graph', 'style'),
+    [Output('sunburst-graph', 'style'),
      Output('cyto-graph', 'style')],
     Input('visualization-selector', 'value')
 )
 def toggle_visualization(visualization_type):
     if visualization_type == 'taxonomy_hierarchy':
-        treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'block'}
+        sunburst_style = {'height': '80vh', 'width': '48vw', 'display': 'block'}
         cyto_style = {'display': 'none'}
     else:
-        treemap_style = {'display': 'none'}
+        sunburst_style = {'display': 'none'}
         cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'block'}
     
-    return treemap_style, cyto_style
+    return sunburst_style, cyto_style
 
 # Callback to update the visualization
 @app.callback(
