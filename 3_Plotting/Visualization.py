@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import networkx as nx
-from scipy.sparse import csc_matrix
 import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, dash_table
@@ -247,8 +246,8 @@ def get_contig_and_annotation_colors(contig_information, cyto_elements):
 
     # Get annotation colors based on viral status
     for annotation in contig_information['Contig annotation'].unique():
-        is_viral = str(contig_information.loc[contig_information['Contig annotation'] == annotation, 'Is Viral'].values[0])
-        annotation_colors[annotation] = is_viral_colors.get(is_viral, '#FFFFFF')  # Default to white if annotation color is not found
+        contig_type = contig_information[contig_information['Contig annotation'] == annotation]['type'].values[0]
+        annotation_colors[annotation] = type_colors.get(contig_type, default_color)
 
     return contig_colors, annotation_colors
 
@@ -302,6 +301,21 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 
     return {**inner_positions, **outer_positions}
 
+def taxonomy_visualization():
+    # Ensure the taxonomy columns are present
+    taxonomy_columns = ['domain', 'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+    
+    # Prepare the data for the Treemap
+    treemap_fig = px.treemap(
+        contig_information_intact,
+        path=taxonomy_columns,  # Specify the hierarchy for the treemap
+        values='Contig coverage',  # You can choose another column like 'Contig coverage' or 'Number of restriction sites'
+        color='type',  # Color by domain or any other category
+        title='Taxonomy Hierarchy Visualization'
+    )
+    
+    return treemap_fig
+
 # Function to visualize annotation relationship
 def basic_visualization():
     G = nx.Graph()
@@ -312,10 +326,10 @@ def basic_visualization():
 
     node_colors = {}
     for annotation, size in zip(total_contig_coverage.index, node_sizes):
-        is_viral = contig_information.loc[
-            contig_information['Contig annotation'] == annotation, 'Is Viral'
+        contig_type = contig_information.loc[
+            contig_information['Contig annotation'] == annotation, 'type'
         ].values[0]
-        color = is_viral_colors[str(is_viral)]
+        color = type_colors.get(contig_type, default_color)
         node_colors[annotation] = color
         G.add_node(annotation, size=size, color=color, parent=None)  # Removed border attributes
 
@@ -365,10 +379,12 @@ def intra_annotation_visualization(selected_annotation):
 
     nodes_to_remove = []
     for annotation, size in zip(unique_annotations, node_sizes):
-        is_viral = contig_information.loc[
-            contig_information['Contig annotation'] == annotation, 'Is Viral'
+        contig_type = contig_information.loc[
+            contig_information['Contig annotation'] == annotation, 'type'
         ].values[0]
-        color = is_viral_colors[str(is_viral)]
+        
+        # Assign color based on the 'type'
+        color = type_colors.get(contig_type, default_color)
 
         if annotation == selected_annotation:
             G.add_node(annotation, size=size, color='#FFFFFF', border_color='#000', border_width=2, parent=None)  # White for selected node
@@ -684,28 +700,31 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 client = OpenAI(api_key='')
 
 # File paths for the current environment
-contig_info_path = '../0_Documents/contig_information.csv'
-raw_contact_matrix_path= '../0_Documents/raw_contact_matrix.npz'
+contig_info_path = '../1_Data_Processing/output/contig_info_final.csv'
+raw_contact_matrix_path= '../1_Data_Processing/output/contact_matrix_final.npz'
 
 # Load the data
-contig_information = pd.read_csv(contig_info_path)
+contig_information_intact = pd.read_csv(contig_info_path)
 contact_matrix_data = np.load(raw_contact_matrix_path)
-data = contact_matrix_data['data']
-indices = contact_matrix_data['indices']
-indptr = contact_matrix_data['indptr']
-shape = contact_matrix_data['shape']
-sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
-dense_matrix = sparse_matrix.toarray()
-
-# Remove contigs with annotation "Unmapped"
-unmapped_contigs = contig_information[contig_information['Contig annotation'] == "Unmapped"].index
-contig_information = contig_information.drop(unmapped_contigs).reset_index(drop=True)
-dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=0)
-dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=1)
+dense_matrix = contact_matrix_data['dense_matrix']
 
 # Calculate the total intra-annotation contacts and inter-annotation contacts
+contig_information = contig_information_intact.copy()
+
+# Set the 'Family' column as the 'Contig annotation'
+contig_information['Contig annotation'] = contig_information['family']
+
+# Remove other taxonomy columns
+taxonomy_columns = ['domain', 'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+contig_information = contig_information.drop(columns=taxonomy_columns)
+
 unique_annotations = contig_information['Contig annotation'].unique()
-is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
+type_colors = {
+    'chromosome': '#FF0000',  # Red
+    'phage': '#00FF00',       # Green
+    'plasmid': '#0000FF'      # Blue
+}
+default_color = '#808080' 
 annotation_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
 
 for annotation_i in unique_annotations:
@@ -733,6 +752,7 @@ matrix_columns = {
 
 # Set the global graph G
 cyto_elements, bar_fig = basic_visualization()
+treemap_fig = taxonomy_visualization()
 
 contig_matrix_display = contig_information[list(matrix_columns.keys())].rename(columns=matrix_columns)
 
@@ -834,11 +854,29 @@ app.layout = html.Div([
         dcc.Dropdown(
             id='visualization-selector',
             options=[
+                {'label': 'Taxonomy Hierarchy', 'value': 'taxonomy_hierarchy'},
+                {'label': 'Community', 'value': 'basic'},
                 {'label': 'Intra-annotation', 'value': 'intra_annotation'},
                 {'label': 'Inter-annotation', 'value': 'inter_annotation'},
                 {'label': 'Contig', 'value': 'contig'}
             ],
-            value='intra_annotation',
+            value='taxonomy_hierarchy',
+            style={'width': '300px', 'display': 'inline-block'}
+        ),
+        dcc.Dropdown(
+            id='taxonomy-level-selector',
+            options=[
+                {'label': 'Domain', 'value': 'domain'},
+                {'label': 'Kingdom', 'value': 'kingdom'},
+                {'label': 'Phylum', 'value': 'phylum'},
+                {'label': 'Class', 'value': 'class'},
+                {'label': 'Order', 'value': 'order'},
+                {'label': 'Family', 'value': 'family'},
+                {'label': 'Genus', 'value': 'genus'},
+                {'label': 'Species', 'value': 'species'},
+            ],
+            value='Family',  # Default value
+            placeholder="Select Taxonomy Level",
             style={'width': '300px', 'display': 'inline-block'}
         ),
         dcc.Dropdown(
@@ -901,11 +939,12 @@ app.layout = html.Div([
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
+            dcc.Graph(id='treemap-graph', figure=treemap_fig, style={'height': '80vh', 'width': '48vw', 'display': 'block'}),
             cyto.Cytoscape(
                 id='cyto-graph',
-                elements=cyto_elements,
+                elements=[],
                 stylesheet=base_stylesheet,
-                style={'height': '80vh', 'width': '48vw', 'display': 'inline-block'},
+                style={'height': '80vh', 'width': '48vw', 'display': 'none'},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
                 zoom=1,
                 userZoomingEnabled=True,
@@ -999,6 +1038,35 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
         secondary_annotation_style = {'display': 'none'}
         contig_selector_style = {'display': 'none'}
         return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
+
+@app.callback(
+    Output('contig-information', 'data'),
+    Input('taxonomy-level-selector', 'value')
+)
+def update_contig_information(taxonomy_level):
+    # Copy the intact contig information
+    contig_information = contig_information_intact.copy()
+    
+    # Use the selected taxonomy level as the 'Contig annotation'
+    contig_information['Contig annotation'] = contig_information[taxonomy_level]
+    
+    # Return the updated contig information
+    return contig_information.to_dict('records')
+
+@app.callback(
+    [Output('treemap-graph', 'style'),
+     Output('cyto-graph', 'style')],
+    Input('visualization-selector', 'value')
+)
+def toggle_visualization(visualization_type):
+    if visualization_type == 'taxonomy_hierarchy':
+        treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'block'}
+        cyto_style = {'display': 'none'}
+    else:
+        treemap_style = {'display': 'none'}
+        cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'block'}
+    
+    return treemap_style, cyto_style
 
 # Callback to update the visualization
 @app.callback(
