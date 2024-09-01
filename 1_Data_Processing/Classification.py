@@ -230,8 +230,16 @@ final_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
 dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=0)
 dense_matrix = np.delete(dense_matrix, unmapped_contigs, axis=1)
 
+dense_matrix = csc_matrix(dense_matrix)
+
+# Extract the updated components
+updated_data = dense_matrix.data
+updated_indices = dense_matrix.indices
+updated_indptr = dense_matrix.indptr
+updated_shape = dense_matrix.shape
+
 final_data_path = 'output/contig_info_final.csv'
 dense_matrix_path = 'output/contact_matrix_final.npz'
 
-np.savez(dense_matrix_path, dense_matrix=dense_matrix)
+np.savez_compressed(dense_matrix_path, data=updated_data, indices=updated_indices, indptr=updated_indptr, shape=updated_shape)
 final_data.to_csv(final_data_path, index=False)
