@@ -13,14 +13,49 @@ from dash import callback_context
 import plotly.express as px
 from math import sqrt, sin, cos, pi
 from openai import OpenAI
+import os
+from concurrent.futures import ThreadPoolExecutor
+import logging
 
-# Function to get contig indexes based on annotation
-def get_contig_indexes(annotation):
-    contigs = contig_information[contig_information['Contig annotation'] == annotation].index
-    return contigs
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Number of threads to use: 4 * CPU core count
+num_threads = 4 * os.cpu_count()
+
+# Function to get contig indexes based on annotation in a specific part of the dataframe
+def get_contig_indexes(annotations):
+    # Ensure annotations is a list even if a single annotation is provided
+    if isinstance(annotations, str):
+        annotations = [annotations]
+    
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        futures = {}
+        for annotation in annotations:
+            futures[executor.submit(
+                lambda ann: (ann, contig_information[contig_information['Contig annotation'] == ann].index),
+                annotation)] = annotation
+        
+        contig_indexes = {}
+        for future in futures:
+            annotation = futures[future]
+            try:
+                annotation, indexes = future.result()
+                contig_indexes[annotation] = indexes
+                logger.info(f'Completed fetching contig indexes for annotation: {annotation}')
+            except Exception as e:
+                logger.error(f'Error fetching contig indexes for annotation: {annotation}, error: {e}')
+        
+    # If only one annotation was given as input, return its indexes directly
+    if len(contig_indexes) == 1:
+        return list(contig_indexes.values())[0]
+    
+    return contig_indexes
 
 # Function to generate gradient values in a range [A, B]
 def generate_gradient_values(input_array, range_A, range_B):
+    logger.info(f'Generating gradient values in the range [{range_A}, {range_B}]')
     min_val = np.min(input_array)
     max_val = np.max(input_array)
     scaled_values = range_A + ((input_array - min_val) / (max_val - min_val)) * (range_B - range_A)
@@ -28,6 +63,7 @@ def generate_gradient_values(input_array, range_A, range_B):
 
 # Function to calculate contacts
 def calculate_contacts(annotation, annotation_type='annotation'):
+    logger.info(f'Calculating contacts for annotation: {annotation} with type: {annotation_type}')
     if annotation_type == 'annotation':
         intra_contacts = annotation_matrix.at[annotation, annotation]
         inter_contacts = annotation_matrix.loc[annotation].sum() - intra_contacts
@@ -37,10 +73,12 @@ def calculate_contacts(annotation, annotation_type='annotation'):
         intra_contacts = dense_matrix[contig_index, get_contig_indexes(annotation)].sum()
         inter_contacts = dense_matrix[contig_index, :].sum() - intra_contacts
     
+    logger.info(f'Intra contacts: {intra_contacts}, Inter contacts: {inter_contacts}')
     return intra_contacts, inter_contacts
 
 # Function to convert NetworkX graph to Cytoscape elements with sizes and colors
 def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
+    logger.info('Converting NetworkX graph to Cytoscape elements')
     elements = []
     for node in G.nodes:
         elements.append({
@@ -70,10 +108,12 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
                 'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element'  # Set visibility
             }
         })
+    logger.info('Cytoscape elements conversion completed')
     return elements
 
 
 def add_selection_styles(selected_nodes=None, selected_edges=None):
+    logger.info('Adding selection styles')
     cyto_stylesheet = base_stylesheet.copy()
 
     # Define the new styles to be added
@@ -100,9 +140,11 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
             }
             cyto_stylesheet.append(edge_style)
 
+    logger.info('Selection styles added')
     return cyto_stylesheet
 
 def create_bar_chart(data_dict):
+    logger.info('Creating bar chart')
     traces = []
 
     for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
@@ -136,20 +178,24 @@ def create_bar_chart(data_dict):
     )
 
     bar_fig = go.Figure(data=traces, layout=bar_layout)
+    logger.info('Bar chart creation completed')
     return bar_fig
 
 # Function to call OpenAI API using GPT-4 with the new API format
 def get_chatgpt_response(prompt):
+    logger.info('Calling ChatGPT API')
     response = client.chat.completions.create(model="gpt-4o-mini",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": prompt}
     ],
     max_tokens=150)
+    logger.info('Received response from ChatGPT API')
     return response.choices[0].message.content
 
 # Function to style annotation contact table using Blugrn color scheme
 def styling_annotation_table(matrix_df):
+    logger.info('Styling annotation table')
     columns = annotation_matrix_display.columns[1:]
     styles = []
     numeric_df = matrix_df[columns].select_dtypes(include=[np.number])
@@ -166,25 +212,25 @@ def styling_annotation_table(matrix_df):
                 },
                 'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'  # Set background color for the contact matrix.
             })
+    logger.info('Annotation table styling completed')
     return styles
 
 # Function to style contig info table
 def styling_contig_table(contig_colors, annotation_colors):
-    # List of taxonomy columns to apply the same styling as the Annotation column
+    logger.info('Styling contig info table')
     taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
     
     columns = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
     styles = []
     
-    # Style the original columns as before
     for col in columns:
         numeric_df = contig_matrix_display[[col]].select_dtypes(include=[np.number])
         col_min = np.log1p(numeric_df.values.min())
         col_max = np.log1p(numeric_df.values.max())
         col_range = col_max - col_min
-        n_bins = 10  # Number of bins for color scaling
+        n_bins = 10
         bounds = [i * (col_range / n_bins) + col_min for i in range(n_bins + 1)]
-        opacity = 0.6  # Set a fixed opacity for transparency
+        opacity = 0.6
 
         for i in range(1, len(bounds)):
             min_bound = bounds[i - 1]
@@ -200,17 +246,14 @@ def styling_contig_table(contig_colors, annotation_colors):
                 }
             })
 
-    # Function to add opacity to a hex color
     def add_opacity_to_color(hex_color, opacity):
         if hex_color.startswith('#') and len(hex_color) == 7:
             hex_color = hex_color.lstrip('#')
             rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
             return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})'
         else:
-            # Return a default color if hex_color is invalid
             return f'rgba(255, 255, 255, {opacity})'
 
-    # Add style conditions for the "Contig" column
     for contig in contig_matrix_display['Contig']:
         contig_color = contig_colors.get(contig, annotation_colors.get(contig_information.loc[contig_information['Contig name'] == contig, 'Contig annotation'].values[0], '#FFFFFF'))
         contig_color_with_opacity = add_opacity_to_color(contig_color, 0.6)
@@ -224,15 +267,12 @@ def styling_contig_table(contig_colors, annotation_colors):
             }
         )
 
-    # Apply the same annotation color across all taxonomy columns
     for taxonomy_column in taxonomy_columns:
         if taxonomy_column in contig_matrix_display.columns:
             unique_annotations = contig_matrix_display[taxonomy_column].unique()
             for annotation in unique_annotations:
                 annotation_color = annotation_colors.get(annotation, '#FFFFFF')
                 annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
-                
-                # Apply the same style to all taxonomy columns
                 styles.append(
                     {
                         "condition": f"params.colDef.field == '{taxonomy_column}' && params.value == '{annotation}'",
@@ -243,42 +283,42 @@ def styling_contig_table(contig_colors, annotation_colors):
                     }
                 )
 
+    logger.info('Contig info table styling completed')
     return styles
 
 # Function to get contig colors from Cytoscape elements or use annotation color if not found
 def get_contig_and_annotation_colors(contig_information, cyto_elements):
+    logger.info('Getting contig and annotation colors')
     contig_colors = {}
     annotation_colors = {}
 
-    # Extract colors from Cytoscape elements
     for element in cyto_elements:
         if 'data' in element and 'color' in element['data'] and 'id' in element['data']:
             contig_colors[element['data']['id']] = element['data']['color']
 
-    # Get annotation colors based on viral status
     for annotation in contig_information['Contig annotation'].unique():
         contig_type = contig_information[contig_information['Contig annotation'] == annotation]['type'].values[0]
         annotation_colors[annotation] = type_colors.get(contig_type, default_color)
 
+    logger.info('Contig and annotation colors extracted')
     return contig_colors, annotation_colors
 
 # Function to arrange contigs
 def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None, center_position=(0, 0)):
+    logger.info('Arranging contigs')
     distance /= 100 
-    phi = (1 + sqrt(5)) / 2  # golden ratio
+    phi = (1 + sqrt(5)) / 2
 
-    # Identify contigs that connect to other annotation
     connecting_contigs = [contig for contig in contigs if contig in inter_contig_edges and contig != selected_contig]
     other_contigs = [contig for contig in contigs if contig not in inter_contig_edges and contig != selected_contig]
 
-    # Arrange inner contigs in a sunflower pattern
     inner_positions = {}
     angle_stride = 2 * pi / phi ** 2
 
-    max_inner_radius = 0  # To keep track of the maximum radius used for inner nodes
+    max_inner_radius = 0
 
     for k, contig in enumerate(other_contigs, start=1):
-        r = distance * sqrt(k)  # Distance increases with sqrt(k) to maintain spacing
+        r = distance * sqrt(k)
         theta = k * angle_stride
         x = center_position[0] + r * cos(theta)
         y = center_position[1] + r * sin(theta)
@@ -286,14 +326,12 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
         if r > max_inner_radius:
             max_inner_radius = r
 
-    # Place selected contig in the center
     if selected_contig:
         inner_positions[selected_contig] = center_position
 
-    # Arrange connecting contigs in concentric circles starting from the boundary of inner nodes
     distance *= 2
     outer_positions = {}
-    layer_radius = max_inner_radius + distance  # Start from the boundary of inner nodes
+    layer_radius = max_inner_radius + distance
     current_layer = 1
     nodes_in_layer = int(2 * pi * layer_radius / distance)
     angle_step = 2 * pi / nodes_in_layer
@@ -310,10 +348,11 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
         y = center_position[1] + layer_radius * sin(angle)
         outer_positions[contig] = (x, y)
 
+    logger.info('Contig arrangement completed')
     return {**inner_positions, **outer_positions}
 
 def taxonomy_visualization(contig_information_intact):
-    # Define the order of the levels and their corresponding names, with Domain as 8 and Species as 1
+    logger.info('Creating taxonomy visualization')
     level_mapping = {
         'life': 9,
         'domain': 8,
@@ -332,67 +371,60 @@ def taxonomy_visualization(contig_information_intact):
     records.append({
         "annotation": "Life",
         "parent": "",
-        "level": 9,  # 'Life' level
+        "level": 9,
         "level_name": "Life",
         "type": "life",
-        "total coverage": 0,  # This will be summed from the children
-        "border_color": "black"  # Border color for life
+        "total coverage": 0,
+        "border_color": "black"
     })
     existing_annotations.add("Life")
     
     for _, row in contig_information_intact.iterrows():
         for level, level_num in level_mapping.items():
             if level == 'life':
-                continue  # Skip the 'life' level here, it's already added
+                continue
                 
             annotation = f"{level}_{row[level]}"
             parent = "Life" if level_num == 8 else f"{list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]}_{row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]]}"
             
-            # Only add the annotation if it's not already added
             if annotation not in existing_annotations:
                 records.append({
                     "annotation": annotation,
-                    "parent": parent,  # Ensure correct parent-child relationship
-                    "level": level_num,  # Use level number for color mapping
-                    "level_name": level.capitalize(),  # Use level name for hover and color axis
+                    "parent": parent,
+                    "level": level_num,
+                    "level_name": level.capitalize(),
                     "type": row["type"],
                     "total coverage": row["Contig coverage"],
-                    "border_color": type_colors.get(row["type"], "gray")  # Set border color based on type
+                    "border_color": type_colors.get(row["type"], "gray")
                 })
                 existing_annotations.add(annotation)
             else:
-                # If the annotation already exists, just update the coverage
                 for rec in records:
                     if rec['annotation'] == annotation:
                         rec['total coverage'] += row['Contig coverage']
                         break
 
-    # Create DataFrame
     hierarchy_df = pd.DataFrame(records)
 
-    # Standardize the box sizes using generate_gradient_values
     hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
 
-    # Create the treemap using the numeric levels for color mapping
     fig = px.treemap(
         hierarchy_df,
         names='annotation',
         parents='parent',
-        values='scaled_coverage',  # Use scaled values for the box sizes
-        color='level',  # Use the numeric level for the color scale
-        color_continuous_scale='Sunset'  # Use the reversed Sunset color scale
+        values='scaled_coverage',
+        color='level',
+        color_continuous_scale='Sunset'
     )
 
-    # Set border color and customize hover info
     fig.update_traces(
         marker=dict(
-            line=dict(width=2, color=hierarchy_df['border_color'])  # Use border_color directly from the DataFrame
+            line=dict(width=2, color=hierarchy_df['border_color'])
         ),
         customdata=hierarchy_df[['level_name']],
         hovertemplate='<b>%{label}</b><br>Level: %{customdata[0]}<br>Coverage: %{value}'
     )
 
-    # Customize the color axis to display level names
     fig.update_layout(
         coloraxis_showscale=False,
         title="Taxonomy Tree Diagram",
@@ -400,15 +432,16 @@ def taxonomy_visualization(contig_information_intact):
         autosize=True
     )
 
+    logger.info('Taxonomy visualization creation completed')
     return fig
 
 # Function to visualize annotation relationship
 def basic_visualization():
+    logger.info('Creating basic visualization')
     G = nx.Graph()
 
-    # Add nodes with size based on total contig coverage
     total_contig_coverage = contig_information.groupby('Contig annotation')['Contig coverage'].sum().reindex(unique_annotations)
-    node_sizes = generate_gradient_values(total_contig_coverage.values, 10, 30)  # Example range from 10 to 30
+    node_sizes = generate_gradient_values(total_contig_coverage.values, 10, 30)
 
     node_colors = {}
     for annotation, size in zip(total_contig_coverage.index, node_sizes):
@@ -417,9 +450,8 @@ def basic_visualization():
         ].values[0]
         color = type_colors.get(contig_type, default_color)
         node_colors[annotation] = color
-        G.add_node(annotation, size=size, color=color, parent=None)  # Removed border attributes
+        G.add_node(annotation, size=size, color=color, parent=None)
 
-    # Add edges with weight based on inter-annotation contacts
     inter_annotation_contacts = []
     for annotation_i in unique_annotations:
         for annotation_j in unique_annotations:
@@ -428,19 +460,15 @@ def basic_visualization():
                 G.add_edge(annotation_i, annotation_j, weight=weight)
                 inter_annotation_contacts.append(weight)
 
-    # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(np.array(inter_annotation_contacts), 10, 300) 
+    edge_weights = generate_gradient_values(np.array(inter_annotation_contacts), 10, 300)
 
-    # Assign the gradient values as edge weights and set default edge color
     for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
         d['weight'] = weight
 
-    # Initial node positions using a force-directed layout with increased dispersion
     pos = nx.spring_layout(G, dim=2, k=5, iterations=50, weight='weight')
 
     cyto_elements = nx_to_cyto_elements(G, pos)
 
-    # Prepare data for bar chart with 3 traces
     inter_annotation_contact_sum = annotation_matrix.sum(axis=1) - np.diag(annotation_matrix.values)
     total_contig_coverage_sum = total_contig_coverage.values
     contig_counts = contig_information['Contig annotation'].value_counts()
@@ -453,15 +481,17 @@ def basic_visualization():
 
     bar_fig = create_bar_chart(data_dict)
 
+    logger.info('Basic visualization creation completed')
     return cyto_elements, bar_fig
 
 # Function to visualize intra-annotation relationships
 def intra_annotation_visualization(selected_annotation):
+    logger.info(f'Creating intra-annotation visualization for: {selected_annotation}')
     G = nx.Graph()
 
-    # Add nodes with size based on contig counts
     contig_counts = [len(contig_information[contig_information['Contig annotation'] == node]) for node in unique_annotations]
     node_sizes = generate_gradient_values(np.array(contig_counts), 10, 30)
+    indices = get_contig_indexes(selected_annotation)
 
     nodes_to_remove = []
     for annotation, size in zip(unique_annotations, node_sizes):
@@ -469,19 +499,17 @@ def intra_annotation_visualization(selected_annotation):
             contig_information['Contig annotation'] == annotation, 'type'
         ].values[0]
         
-        # Assign color based on the 'type'
         color = type_colors.get(contig_type, default_color)
 
         if annotation == selected_annotation:
-            G.add_node(annotation, size=size, color='#FFFFFF', border_color='#000', border_width=2, parent=None)  # White for selected node
+            G.add_node(annotation, size=size, color='#FFFFFF', border_color='#000', border_width=2, parent=None)
         else:
-            num_connected_contigs = len(contig_information[(contig_information['Contig annotation'] == annotation) & (dense_matrix[:, get_contig_indexes(selected_annotation)].sum(axis=1) > 0)])
+            num_connected_contigs = len(contig_information[(contig_information['Contig annotation'] == annotation) & (dense_matrix[:, indices].sum(axis=1) > 0)])
             if num_connected_contigs == 0:
                 nodes_to_remove.append(annotation)
             else:
-                G.add_node(annotation, size=size, color=color, parent=None)  # Red for viral, blue for non-viral
+                G.add_node(annotation, size=size, color=color, parent=None)
 
-    # Add edges with weight based on inter-annotation contacts
     inter_annotation_contacts = []
     for annotation_i in unique_annotations:
         for annotation_j in unique_annotations:
@@ -490,17 +518,14 @@ def intra_annotation_visualization(selected_annotation):
                 G.add_edge(annotation_i, annotation_j, weight=weight)
                 inter_annotation_contacts.append(weight)
 
-    # Remove nodes not connected to selected annotation
     for node in nodes_to_remove:
         G.remove_node(node)
 
-    # Generate gradient values for the edge weights
     edge_weights = generate_gradient_values(np.array(inter_annotation_contacts), 10, 100)
 
     edges_to_remove = []
     inter_annotation_contacts = []
 
-    # Collect edge weights and identify edges to remove
     for edge in G.edges(data=True):
         if edge[0] == selected_annotation or edge[1] == selected_annotation:
             weight = annotation_matrix.at[selected_annotation, edge[1]] if edge[0] == selected_annotation else annotation_matrix.at[edge[0], selected_annotation]
@@ -508,22 +533,17 @@ def intra_annotation_visualization(selected_annotation):
         else:
             edges_to_remove.append((edge[0], edge[1]))
 
-    # Remove edges not connected to selected_annotation
     for edge in edges_to_remove:
         G.remove_edge(edge[0], edge[1])
-    # Assign the gradient values as edge weights and set default edge color
     for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
         if edge[0] == selected_annotation or edge[1] == selected_annotation:
             d['weight'] = weight
-
-    # Calculate k_value based on the number of contigs of the selected annotation
-    num_contigs = len(get_contig_indexes(selected_annotation))
+    
+    num_contigs = len(indices)
     k_value = sqrt(num_contigs)
 
     new_pos = nx.spring_layout(G, pos={selected_annotation: (0, 0)}, fixed=[selected_annotation], k=k_value, iterations=50, weight='weight')
 
-    # Get and arrange contigs within the selected annotation node
-    indices = get_contig_indexes(selected_annotation)
     contigs = contig_information.loc[indices, 'Contig name']
     inter_contig_edges = set()
 
@@ -535,18 +555,15 @@ def intra_annotation_visualization(selected_annotation):
 
     contig_positions = arrange_contigs(contigs, inter_contig_edges, distance=1, center_position=new_pos[selected_annotation])
 
-    # Add contig nodes and edges to the graph G
     for contig, (x, y) in contig_positions.items():
         G.add_node(contig, size=1, color='#7030A0' if contig in inter_contig_edges else '#00B050', parent=selected_annotation)
         new_pos[contig] = (new_pos[selected_annotation][0] + x, new_pos[selected_annotation][1] + y)
 
     cyto_elements = nx_to_cyto_elements(G, new_pos)
 
-    # Prepare data for bar chart
     contig_contact_counts = contig_information[contig_information['Contig annotation'] != selected_annotation]['Contig annotation'].value_counts()
     inter_annotation_contacts = annotation_matrix.loc[selected_annotation].drop(selected_annotation)
 
-    # Filter out contigs that are not in the graph
     filtered_contig_counts = contig_contact_counts[contig_contact_counts.index.isin(G.nodes)]
     filtered_inter_annotation_contacts = inter_annotation_contacts[inter_annotation_contacts.index.isin(G.nodes)]
 
@@ -557,10 +574,12 @@ def intra_annotation_visualization(selected_annotation):
 
     bar_fig = create_bar_chart(data_dict)
 
+    logger.info('Intra-annotation visualization creation completed')
     return cyto_elements, bar_fig
 
 # Function to visualize inter-annotation relationships
 def inter_annotation_visualization(selected_annotation, secondary_annotation):
+    logger.info(f'Creating inter-annotation visualization for: {selected_annotation} and {secondary_annotation}')
     if not selected_annotation or not secondary_annotation:
         cyto_elements, bar_fig = basic_visualization()
         return cyto_elements, bar_fig
@@ -592,55 +611,52 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation):
                 interannotation_contacts.append({
                     'name': f"{contig_information.at[i, 'Contig name']} - {contig_information.at[j, 'Contig name']}",
                     'value': contact_value,
-                    'color': 'green'  # Set green color for the bars
+                    'color': 'green'
                 })
                 contig_contact_counts.append({
                     'name': contig_information.at[i, 'Contig name'],
                     'annotation': selected_annotation,
                     'count': 1,
-                    'color': '#C00000'  # Set red color for the bars
+                    'color': '#C00000'
                 })
                 contig_contact_counts.append({
                     'name': contig_information.at[j, 'Contig name'],
                     'annotation': secondary_annotation,
                     'count': 1,
-                    'color': '#0070C0'  # Set blue color for the bars
+                    'color': '#0070C0'
                 })
                 inter_contig_contacts.append({
                     'name': contig_information.at[i, 'Contig name'],
                     'value': contact_value,
-                    'color': '#C00000'  # Set red color for the bars
+                    'color': '#C00000'
                 })
                 inter_contig_contacts.append({
                     'name': contig_information.at[j, 'Contig name'],
                     'value': contact_value,
-                    'color': '#0070C0'  # Set blue color for the bars
+                    'color': '#0070C0'
                 })
 
     contig_positions_row = arrange_contigs(inter_contigs_row, list(), distance=1, center_position=new_pos[row_contig])
     contig_positions_col = arrange_contigs(inter_contigs_col, list(), distance=1, center_position=new_pos[col_contig])
 
-    # Add contig nodes to the graph G
     for contig, (x, y) in contig_positions_row.items():
-        G.add_node(contig, color='#C00000', parent=row_contig)  # Red for primary
+        G.add_node(contig, color='#C00000', parent=row_contig)
         new_pos[contig] = (x, y)
 
     for contig, (x, y) in contig_positions_col.items():
-        G.add_node(contig, color='#0070C0', parent=col_contig)  # Blue for secondary
+        G.add_node(contig, color='#0070C0', parent=col_contig)
         new_pos[contig] = (x, y)
 
-    # Add edges between contigs
     for i in row_indices:
         for j in col_indices:
             contact_value = dense_matrix[i, j]
             if contact_value != 0:
                 G.add_edge(contig_information.at[i, 'Contig name'], contig_information.at[j, 'Contig name'], weight=contact_value)
 
-    invisible_edges = [(u, v) for u, v in G.edges]  # Mark all contig edges as invisible
+    invisible_edges = [(u, v) for u, v in G.edges]
 
     cyto_elements = nx_to_cyto_elements(G, new_pos, list(), invisible_edges)
 
-    # Prepare data for bar chart
     interannotation_contacts_df = pd.DataFrame(interannotation_contacts)
 
     contig_contact_counts_df = pd.DataFrame(contig_contact_counts)
@@ -657,22 +673,21 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation):
 
     bar_fig = create_bar_chart(data_dict)
 
+    logger.info('Inter-annotation visualization creation completed')
     return cyto_elements, bar_fig
 
 # Function to visualize contig relationships
 def contig_visualization(selected_annotation, selected_contig):
+    logger.info(f'Creating contig visualization for contig: {selected_contig}')
     if not selected_contig:
         cyto_elements, bar_fig = basic_visualization()
         return cyto_elements, bar_fig
 
-    # Find the index of the selected contig
     selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
     selected_annotation = contig_information.loc[selected_contig_index, 'Contig annotation']
 
-    # Get all indices that have contact with the selected contig
     contacts_indices = dense_matrix[selected_contig_index].nonzero()[0]
     
-    # Remove self-contact
     contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
     
     contacts_annotation = contig_information.loc[contacts_indices, 'Contig annotation']
@@ -680,48 +695,44 @@ def contig_visualization(selected_annotation, selected_contig):
     
     G = nx.Graph()
 
-    # Use a categorical color scale
     color_scale = px.colors.qualitative.Dark24 + px.colors.qualitative.Light24
 
-    # Rank annotation based on the number of contigs with contact to the selected contig
     annotation_contact_counts = contacts_annotation.value_counts()
     annotation_contact_ranks = annotation_contact_counts.rank(method='first').astype(int)
     max_rank = annotation_contact_ranks.max()
+    
+    # Fetch contig indexes for all unique annotations at once
+    unique_annotations = contacts_annotation.unique().tolist()
+    annotation_indexes_dict = get_contig_indexes(unique_annotations)
 
-    # Add annotation nodes and their positions
     for annotation in contacts_annotation.unique():
         annotation_rank = annotation_contact_ranks[annotation]
         gradient_color = color_scale[int((annotation_rank / max_rank) * (len(color_scale) - 1))]
-        G.add_node(annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)  # White color for nodes, gradient color for border
+        G.add_node(annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
 
-
-    # Set k value to avoid overlap and generate positions for the graph nodes
     k_value = sqrt(len(G.nodes))
     pos = nx.spring_layout(G, k=k_value, iterations=50, weight='weight')
 
-    # Add contig nodes to the graph
     for annotation in contacts_annotation.unique():
         annotation_contigs = contacts_contigs[contacts_annotation == annotation]
         contig_positions = arrange_contigs(annotation_contigs, [], distance=2, center_position=pos[annotation],selected_contig=selected_contig if annotation == selected_annotation else None)
         for contig, (x, y) in contig_positions.items():
-            G.add_node(contig, size=1 if contig != selected_contig else 5, color='black' if contig == selected_contig else G.nodes[annotation]['border_color'], parent=annotation)  # Same color as annotation, black for selected contig
+            G.add_node(contig, size=1 if contig != selected_contig else 5, color='black' if contig == selected_contig else G.nodes[annotation]['border_color'], parent=annotation)
             if contig != selected_contig:
                 G.add_edge(selected_contig, contig, weight=dense_matrix[selected_contig_index, contig_information[contig_information['Contig name'] == contig].index[0]])
-            pos[contig] = (x, y)  # Use positions directly from arrange_contigs
+            pos[contig] = (x, y)
 
-    # Ensure the selected contig node is positioned above all other contigs
     pos[selected_contig] = pos[selected_annotation]
 
     cyto_elements = nx_to_cyto_elements(G, pos)
     
-    # Prepare data for bar chart
     contig_contact_values = dense_matrix[selected_contig_index, contacts_indices]
     contig_data = pd.DataFrame({'name': contacts_contigs, 'value': contig_contact_values, 'color': [G.nodes[contig]['color'] for contig in contacts_contigs]})
 
     annotation_contact_values = []
     contig_contact_counts_per_annotation = [] 
-    for annotation in contacts_annotation.unique():
-        annotation_indexes = get_contig_indexes(annotation)
+    for annotation in unique_annotations:
+        annotation_indexes = annotation_indexes_dict[annotation]  # Use the pre-fetched indexes
         contact_value = dense_matrix[selected_contig_index, annotation_indexes].sum()
         annotation_contact_values.append(contact_value)
         contig_contact_counts_per_annotation.append(len(annotation_indexes))  # Count the number of contigs per annotation
@@ -732,23 +743,22 @@ def contig_visualization(selected_annotation, selected_contig):
     data_dict = {
         'Contig Contacts': contig_data,
         'Annotation Contacts': annotation_data,
-        'Contig Contact Counts': contig_contact_counts_data  # New trace
+        'Contig Contact Counts': contig_contact_counts_data
     }
 
     bar_fig = create_bar_chart(data_dict)
 
+    logger.info('Contig visualization creation completed')
     return cyto_elements, bar_fig
 
 def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, table_data, contig_info_table_data):
-    # Initialize the return values
+    logger.info(f'Synchronizing selections for triggered_id: {triggered_id}')
     selected_annotation = None
     selected_contig = None
     secondary_annotation = None
 
-    # If a node in the network is selected
     if triggered_id == 'cyto-graph' and selected_node_data:
         selected_node_id = selected_node_data[0]['id']
-        # Check if the selected node is a contig or a annotation
         if selected_node_id in contig_information['Contig name'].values:
             contig_info = contig_information[contig_information['Contig name'] == selected_node_id].iloc[0]
             selected_annotation = contig_info['Contig annotation']
@@ -756,27 +766,25 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
         else:
             selected_annotation = selected_node_id
 
-    # If an edge in the network is selected
     elif triggered_id == 'cyto-graph' and selected_edge_data:
         source_annotation = selected_edge_data[0]['source']
         target_annotation = selected_edge_data[0]['target']
         selected_annotation = source_annotation
         secondary_annotation = target_annotation
 
-    # If a row in the contig-info-table is selected
     elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
         selected_row = contig_info_selected_rows[0]
         if 'Annotation' in selected_row and 'Contig' in selected_row:
             selected_annotation = selected_row['Annotation']
             selected_contig = selected_row['Contig']
 
-    # If a cell in the contact-table is selected
     elif triggered_id == 'contact-table' and contact_table_active_cell:
         row_annotation = table_data[contact_table_active_cell['row']]['Annotation']
         col_annotation = contact_table_active_cell['column_id'] if contact_table_active_cell['column_id'] != 'Annotation' else None
         selected_annotation = row_annotation
         secondary_annotation = col_annotation
 
+    logger.info(f'Selection sync results - Annotation: {selected_annotation}, Contig: {selected_contig}, Secondary Annotation: {secondary_annotation}')
     return selected_annotation, selected_contig, secondary_annotation
 
 # Initialize the Dash app
@@ -790,6 +798,7 @@ contig_info_path = '../1_Data_Processing/output/contig_info_final.csv'
 raw_contact_matrix_path= '../1_Data_Processing/output/contact_matrix_final.npz'
 
 # Load the data
+logger.info('Loading data')
 contig_information_intact = pd.read_csv(contig_info_path)
 contact_matrix_data = np.load(raw_contact_matrix_path)
 data = contact_matrix_data['data']
@@ -798,41 +807,42 @@ indptr = contact_matrix_data['indptr']
 shape = contact_matrix_data['shape']
 sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
 dense_matrix = sparse_matrix.toarray()
+logger.info('Data loading completed')
 
-# Calculate the total intra-annotation contacts and inter-annotation contacts
 contig_information = contig_information_intact.copy()
 
-# Set the 'Family' column as the 'Contig annotation'
 contig_information['Contig annotation'] = contig_information['family']
 
-# Remove other taxonomy columns
 taxonomy_columns = ['domain', 'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
 contig_information = contig_information.drop(columns=taxonomy_columns)
 
 unique_annotations = contig_information['Contig annotation'].unique()
 type_colors = {
-    'chromosome': '#0000FF',# Blue
-    'phage': '#FF0000',# Red
-    'plasmid': '#00FF00'# Green
+    'chromosome': '#0000FF',
+    'phage': '#FF0000',
+    'plasmid': '#00FF00'
 }
 default_color = '#808080' 
 annotation_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
 
+# Get contig indexes for all unique annotations at once
+contig_indexes_dict = get_contig_indexes(unique_annotations)
+
+# Use the pre-fetched indexes for calculating contacts
 for annotation_i in unique_annotations:
     for annotation_j in unique_annotations:
-        contacts = dense_matrix[
-            get_contig_indexes(annotation_i)
-        ][:,
-            get_contig_indexes(annotation_j)
-        ].sum()
-        annotation_matrix.at[annotation_i, annotation_j] = contacts
+        logging.info(f"Processing pair ({annotation_i}, {annotation_j})")
+        
+        indexes_i = contig_indexes_dict[annotation_i]
+        indexes_j = contig_indexes_dict[annotation_j]
+        sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
+            
+        annotation_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
 
-# Copy annotation_matrix and add a column for annotation names for display
 annotation_matrix_display = annotation_matrix.copy()
 annotation_matrix_display = annotation_matrix_display.astype(int)
 annotation_matrix_display.insert(0, 'Annotation', annotation_matrix_display.index)
 
-# Extract and rename the necessary columns for the new matrix
 matrix_columns = {
     'Contig name': 'Contig',
     'domain': 'Domain',
@@ -849,29 +859,22 @@ matrix_columns = {
     'Hi-C contacts mapped to the same contigs': 'Intra-contig contact'
 }
 
-# Set the global graph G
 cyto_elements, bar_fig = basic_visualization()
 treemap_fig = taxonomy_visualization(contig_information_intact)
 
 contig_matrix_display = contig_information_intact[list(matrix_columns.keys())].rename(columns=matrix_columns)
 
-# Add a "Visibility" column to the contig_matrix_display DataFrame
-contig_matrix_display['Visibility'] = 1  # Default value to 1 (visible)
+contig_matrix_display['Visibility'] = 1
 
-# Extract colors for contigs and annotation
 contig_colors, annotation_colors = get_contig_and_annotation_colors(contig_information, cyto_elements)
 
-# Apply the updated function in your Dash layout
 styleConditions = styling_contig_table(contig_colors, annotation_colors)
 
-# Convert your DataFrame to a list of dictionaries
 contig_data_dict = contig_matrix_display.to_dict('records')
 
-# Define the column definitions for AG Grid
 column_defs = [
-    # Section 1: Taxonomy Columns
     {
-        "headerName": "Taxonomy",  # Parent group header for Section 1
+        "headerName": "Taxonomy",
         "children": [
             {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120},
             {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
@@ -884,9 +887,8 @@ column_defs = [
             {"headerName": "Domain", "field": "Domain", "width": 140, "wrapHeaderText": True}
         ]
     },
-    # Section 2: Other Columns
     {
-        "headerName": "Other Information",  # Parent group header for Section 2
+        "headerName": "Other Information",
         "children": [
             {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
             {"headerName": "Contig length", "field": "Contig length", "width": 140, "wrapHeaderText": True},
@@ -897,7 +899,6 @@ column_defs = [
     }
 ]
 
-# Define the default column definitions
 default_col_def = {
     "sortable": True,
     "filter": True,
@@ -907,7 +908,6 @@ default_col_def = {
     }
 }
 
-# Base stylesheet for Cytoscape
 base_stylesheet = [
     {
         'selector': 'node',
@@ -920,7 +920,7 @@ base_stylesheet = [
             'border-color': 'data(border_color)',
             'border-width': 'data(border_width)',
             'parent': 'data(parent)',
-            'display': 'data(visible)'  # Use the visibility attribute
+            'display': 'data(visible)'
         }
     },
     {
@@ -929,7 +929,7 @@ base_stylesheet = [
             'width': 'data(width)',
             'line-color': 'data(color)',
             'opacity': 0.6,
-            'display': 'data(visible)'  # Use the visibility attribute
+            'display': 'data(visible)'
         }
     }
 ]
@@ -962,7 +962,6 @@ help_modal = html.Div([
     ], id="modal", size="lg", is_open=False)
 ])
 
-# Use the styling functions in the Dash layout
 app.layout = html.Div([
     dcc.Store(id='unique-annotations-store', data=[]),
     dcc.Store(id='contig-information-store', data=[]),
@@ -996,7 +995,7 @@ app.layout = html.Div([
                 {'label': 'Genus', 'value': 'genus'},
                 {'label': 'Species', 'value': 'species'},
             ],
-            value='Family',  # Default value
+            value='Family',
             placeholder="Select Taxonomy Level",
             style={'width': '300px', 'display': 'inline-block'}
         ),
@@ -1012,14 +1011,14 @@ app.layout = html.Div([
             options=[{'label': annotation, 'value': annotation} for annotation in unique_annotations],
             value=None,
             placeholder="Select a secondary annotation",
-            style={'width': '300px', 'display': 'none'}  # Hide by default
+            style={'width': '300px', 'display': 'none'}
         ),
         dcc.Dropdown(
             id='contig-selector',
             options=[],
             value=None,
             placeholder="Select a contig",
-            style={'width': '300px', 'display': 'none'}  # Hide by default
+            style={'width': '300px', 'display': 'none'}
         ),
         html.Button("Confirm Selection", id="confirm-btn", style={**common_style}),
     ], style={
@@ -1033,10 +1032,10 @@ app.layout = html.Div([
         'width': '100%',
         'z-index': '1000',
         'background-color': 'llite',
-        'padding': '10px',  # Add padding to ensure content does not overlap with page content
-        'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'  # Add a shadow
+        'padding': '10px',
+        'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'
     }),
-    html.Div(style={'height': '60px'}),  # Add a placeholder div to account for the fixed header height
+    html.Div(style={'height': '60px'}),
     html.Div([
         html.Div([
             dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
@@ -1055,7 +1054,7 @@ app.layout = html.Div([
                 style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'},
                 dashGridOptions={
                     'headerPinned': 'top',
-                    'rowSelection': 'single'  # Enable single row selection
+                    'rowSelection': 'single'
                 }
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
@@ -1066,10 +1065,10 @@ app.layout = html.Div([
                 elements=[],
                 stylesheet=base_stylesheet,
                 style={'height': '80vh', 'width': '48vw', 'display': 'none'},
-                layout={'name': 'preset'},  # Use preset to keep the initial positions
+                layout={'name': 'preset'},
                 zoom=1,
                 userZoomingEnabled=True,
-                wheelSensitivity=0.1  # Reduce the wheel sensitivity
+                wheelSensitivity=0.1
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
     html.Div([
@@ -1093,9 +1092,9 @@ app.layout = html.Div([
             style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
             style_data_conditional=styling_annotation_table(annotation_matrix_display),
             style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
-            style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
-            fixed_rows={'headers': True},  # Freeze the first row
-            fixed_columns={'headers': True, 'data': 1}  # Freeze the first column
+            style_header={'whiteSpace': 'normal', 'height': 'auto'},
+            fixed_rows={'headers': True},
+            fixed_columns={'headers': True, 'data': 1}
         )
     ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
     help_modal
@@ -1120,6 +1119,7 @@ app.layout = html.Div([
     prevent_initial_call=True
 )
 def sync_selectors(visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data, contact_table_data, contig_info_table_data):
+    logger.info('Syncing selectors')
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
@@ -1127,14 +1127,13 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
         triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, contact_table_data, contig_info_table_data
     )
 
-    # Initialize styles
     secondary_annotation_style = {'display': 'none'}
     contig_selector_style = {'display': 'none'}
     taxonomy_level_style = {'display': 'none'}
     annotation_selector_style = {'display': 'none'}
 
     if visualization_type == 'taxonomy_hierarchy':
-        taxonomy_level_style = {'width': '300px', 'display': 'inline-block'}  # Show Taxonomy Level Selector
+        taxonomy_level_style = {'width': '300px', 'display': 'inline-block'}
     else:
         taxonomy_level_style = {'display': 'none'}
 
@@ -1151,6 +1150,7 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
                 visualization_type = 'intra_annotation'
                 annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
 
+    logger.info(f'Updated selectors - Visualization type: {visualization_type}, Selected annotation: {selected_annotation}, Secondary annotation: {secondary_annotation}, Selected contig: {selected_contig}')
     return (visualization_type, taxonomy_level_style, selected_annotation, annotation_selector_style, 
             secondary_annotation, secondary_annotation_style, selected_contig, contig_selector_style)
 
@@ -1160,18 +1160,17 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
     Input('taxonomy-level-selector', 'value')
 )
 def update_contig_information(taxonomy_level):
-    # Copy the intact contig information
+    logger.info(f'Updating contig information for taxonomy level: {taxonomy_level}')
     contig_information = contig_information_intact.copy()
     
-    # Use the selected taxonomy level as the 'Contig annotation'
     contig_information['Contig annotation'] = contig_information[taxonomy_level]
 
-    # Remove other taxonomy columns
     taxonomy_columns = ['domain', 'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
     contig_information = contig_information.drop(columns=taxonomy_columns)
     contig_information_data = contig_information.to_dict('records')
 
     unique_annotations = contig_information['Contig annotation'].unique()
+    logger.info(f'Updated contig information, unique annotations found: {len(unique_annotations)}')
     return unique_annotations, contig_information_data
 
 @app.callback(
@@ -1190,30 +1189,35 @@ def update_contig_information(taxonomy_level):
     prevent_initial_call=True
 )
 def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, secondary_annotation, selected_contig, table_data):
+    logger.info('update_visualization triggered')
+    logger.info(f'Visualization type: {visualization_type}')
+    logger.info(f'Selected annotation: {selected_annotation}')
+    logger.info(f'Secondary annotation: {secondary_annotation}')
+    logger.info(f'Selected contig: {selected_contig}')
+
     global current_visualization_mode
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    logger.info(f'Triggered by: {triggered_id}')
 
-    # Initialize default values for cyto_elements and bar_fig
     cyto_elements, bar_fig = basic_visualization()
-
-    # Initialize default styles for treemap and cyto graph
+    
     treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'block'}
     cyto_style = {'display': 'none'}
 
     if triggered_id == 'reset-btn' or not selected_annotation:
-        # Reset all selections to show the original plot and all contigs
+        logger.info('Resetting visualization to default')
         current_visualization_mode = {
             'visualization_type': 'taxonomy_hierarchy',
             'selected_annotation': None,
             'secondary_annotation': None,
             'selected_contig': None
         }
-        # Set the treemap as visible by default
         treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'block'}
         cyto_style = {'display': 'none'}
     elif triggered_id == 'confirm-btn':
-        # Update the current visualization mode with selected values
+        logger.info('Updating visualization based on user selection')
         current_visualization_mode['visualization_type'] = visualization_type
         current_visualization_mode['selected_annotation'] = selected_annotation
         current_visualization_mode['secondary_annotation'] = secondary_annotation
@@ -1228,18 +1232,21 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             
             if visualization_type == 'inter_annotation':
                 if selected_annotation and secondary_annotation:
+                    logger.info('Performing inter-annotation visualization')
                     cyto_elements, bar_fig = inter_annotation_visualization(selected_annotation, secondary_annotation)
 
             elif visualization_type == 'intra_annotation':
+                logger.info('Performing intra-annotation visualization')
                 cyto_elements, bar_fig = intra_annotation_visualization(selected_annotation)
 
             elif visualization_type == 'contig':
+                logger.info('Performing contig visualization')
                 cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig)
                 
             elif visualization_type == 'basic':
+                logger.info('Performing basic visualization')
                 cyto_elements, bar_fig = basic_visualization()
 
-    # Update column definitions with style conditions
     contig_colors, annotation_colors = get_contig_and_annotation_colors(contig_information, cyto_elements)
     styleConditions = styling_contig_table(contig_colors, annotation_colors)
     column_defs_updated = column_defs.copy()
@@ -1248,6 +1255,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             col_def['cellStyle'] = {}
         col_def['cellStyle'].update({"styleConditions": styleConditions})
 
+    logger.info('Visualization update complete')
     return cyto_elements, bar_fig, column_defs_updated, treemap_style, cyto_style
 
 @app.callback(
@@ -1259,6 +1267,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     prevent_initial_call=True
 )
 def update_selected_styles(selected_annotation, secondary_annotation, selected_contig):
+    logger.info('Updating selected styles')
     selected_nodes = []
     selected_edges = []
     hover_info = "No selection"
@@ -1275,44 +1284,39 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_c
 
         if current_visualization_mode['visualization_type'] == 'inter_annotation':
             if contig_info['Contig annotation'] == current_visualization_mode['secondary_annotation']:
-                # Find contigs from the selected annotation that have contact with the selected contig
                 selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
                 selected_annotation_indices = get_contig_indexes(current_visualization_mode['selected_annotation'])
                 connected_contigs = []
 
                 for j in selected_annotation_indices:
-                    if dense_matrix[j, selected_contig_index] != 0:  # Check contact from selected annotation to the selected contig
+                    if dense_matrix[j, selected_contig_index] != 0:
                         connected_contig = contig_information.at[j, 'Contig name']
                         connected_contigs.append(connected_contig)
 
-                # Add the connected contigs and edges to the lists
                 selected_nodes.extend(connected_contigs)
                 for contig in connected_contigs:
-                    selected_edges.append((contig, selected_contig))  # Edge goes from the connected contig to the selected contig
+                    selected_edges.append((contig, selected_contig))
 
             else:
-                # Find the contigs in the secondary annotation that have contact with the selected contig
                 selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
                 secondary_annotation_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'])
                 connected_contigs = []
 
                 for j in secondary_annotation_indices:
-                    if dense_matrix[selected_contig_index, j] != 0:  # Check contact from selected contig to secondary annotation
+                    if dense_matrix[selected_contig_index, j] != 0:
                         connected_contig = contig_information.at[j, 'Contig name']
                         connected_contigs.append(connected_contig)
 
-                # Add the connected contigs and edges to the lists
                 selected_nodes.extend(connected_contigs)
                 for contig in connected_contigs:
-                    selected_edges.append((selected_contig, contig))  # Edge goes from selected contig to the connected contig
+                    selected_edges.append((selected_contig, contig))
 
     elif selected_annotation:
         selected_nodes.append(selected_annotation)
         hover_info = f"Annotation: {selected_annotation}"
 
-    # Add selection styles for the selected nodes and edges
     stylesheet = add_selection_styles(selected_nodes, selected_edges)
-
+    logger.info(f'Updated styles - Nodes: {selected_nodes}, Edges: {selected_edges}')
     return stylesheet, hover_info
 
 @app.callback(
@@ -1325,14 +1329,13 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_c
     [State('contig-info-table', 'rowData')]
 )
 def update_filter_model_and_row_count(selected_annotation, secondary_annotation, filter_value, contig_data):
+    logger.info('Updating filter model and row count')
     filter_model = {}
     filtered_data = contig_data
     
-    # Set the default visibility to 1
     for row in filtered_data:
         row['Visibility'] = 1
         
-    # Update the filter model based on selected annotation and secondary annotation
     if selected_annotation and not secondary_annotation:
         filter_model['Annotation'] = {
             "filterType": "text",
@@ -1372,7 +1375,6 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
     else:
         filter_model = {}
 
-    # Set visibility based on the current visualization mode
     if current_visualization_mode['visualization_type'] == 'intra_annotation':
         if current_visualization_mode['selected_annotation']:
             for row in filtered_data:
@@ -1412,7 +1414,6 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
                 if row['Contig'] not in connected_contigs and row['Contig'] != current_visualization_mode['selected_contig']:
                     row['Visibility'] = 0
 
-    # Apply filter if the checkbox is checked
     if 'filter' in filter_value:
         filter_model['Visibility'] = {
             "filterType": "number",
@@ -1427,6 +1428,7 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
         }
 
     row_count_text = f"Total Number of Rows: {len([row for row in filtered_data if row['Visibility'] == 1])}"
+    logger.info(f'Updated row count: {row_count_text}')
     return filtered_data, filter_model, row_count_text
 
 @app.callback(
@@ -1435,12 +1437,12 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
     [State('visualization-selector', 'value')]
 )
 def populate_contig_selector(selected_annotation, visualization_type):
+    logger.info(f'Populating contig selector for annotation: {selected_annotation}')
     if visualization_type == 'contig' and selected_annotation:
         contigs = contig_information.loc[get_contig_indexes(selected_annotation), 'Contig name']
         return [{'label': contig, 'value': contig} for contig in contigs]
     return []
 
-# Dash callback to use ChatGPT
 @app.callback(
     Output('gpt-answer', 'children'),
     [Input('interpret-button', 'n_clicks')],
@@ -1448,12 +1450,17 @@ def populate_contig_selector(selected_annotation, visualization_type):
     prevent_initial_call=True
 )
 def interpret_data(n_clicks, query):
+    logger.info('interpret_data triggered')
     if n_clicks > 0 and query:
+        logger.info(f'Query received: {query}')
         try:
             interpretation = get_chatgpt_response(query)
+            logger.info('Received response from ChatGPT')
             return f"Interpretation:\n{interpretation}"
         except Exception as e:
+            logger.error(f'Error while getting response from ChatGPT: {str(e)}')
             return f"Error: {str(e)}"
+    logger.info('No query provided or n_clicks is 0')
     return "No query provided."
 
 if __name__ == '__main__':
