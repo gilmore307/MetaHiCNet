@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 num_threads = 4 * os.cpu_count()
 
 # Function to get contig indexes based on annotation in a specific part of the dataframe
-def get_contig_indexes(annotations, contig_information):
+def get_contig_indexes(annotations):
     # Ensure annotations is a list even if a single annotation is provided
     if isinstance(annotations, str):
         annotations = [annotations]
@@ -189,7 +189,7 @@ def styling_annotation_table(matrix_df):
     return styles
 
 # Function to style contig info table
-def styling_contig_table(contig_information_display, contig_information, contig_colors, annotation_colors):
+def styling_contig_table(contig_colors, annotation_colors):
     columns = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
     styles = []
     for col in columns:
@@ -256,7 +256,7 @@ def styling_contig_table(contig_information_display, contig_information, contig_
     return styles
 
 # Function to get contig colors from Cytoscape elements or use annotation color if not found
-def get_contig_and_annotation_colors(contig_information, cyto_elements):
+def get_contig_and_annotation_colors(cyto_elements):
     contig_colors = {}
     annotation_colors = {}
 
@@ -323,7 +323,7 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
     return {**inner_positions, **outer_positions}
 
 # Function to visualize annotation relationship
-def basic_visualization(contact_matrix, contig_information, unique_annotations):
+def basic_visualization():
     G = nx.Graph()
 
     # Add nodes with size based on total contig coverage
@@ -376,13 +376,13 @@ def basic_visualization(contact_matrix, contig_information, unique_annotations):
     return cyto_elements, bar_fig
 
 # Function to visualize intra-annotation relationships
-def intra_annotation_visualization(contact_matrix, selected_annotation, contig_information, unique_annotations):
+def intra_annotation_visualization(selected_annotation):
     G = nx.Graph()
 
     # Add nodes with size based on contig counts
     contig_counts = [len(contig_information[contig_information['Contig annotation'] == node]) for node in unique_annotations]
     node_sizes = generate_gradient_values(np.array(contig_counts), 10, 30)
-    indices = get_contig_indexes(selected_annotation, contig_information)
+    indices = get_contig_indexes(selected_annotation)
 
     nodes_to_remove = []
     for annotation, size in zip(unique_annotations, node_sizes):
@@ -478,7 +478,7 @@ def intra_annotation_visualization(contact_matrix, selected_annotation, contig_i
     return cyto_elements, bar_fig
 
 # Function to visualize inter-annotation relationships
-def inter_annotation_visualization(selected_annotation, secondary_annotation, contig_information, unique_annotations):
+def inter_annotation_visualization(selected_annotation, secondary_annotation):
 
     row_contig = selected_annotation
     col_contig = secondary_annotation
@@ -489,8 +489,8 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation, co
 
     new_pos = {row_contig: (-0.2, 0), col_contig: (0.2, 0)}
 
-    row_indices = get_contig_indexes(row_contig, contig_information)
-    col_indices = get_contig_indexes(col_contig, contig_information)
+    row_indices = get_contig_indexes(row_contig)
+    col_indices = get_contig_indexes(col_contig)
     inter_contigs_row = set()
     inter_contigs_col = set()
 
@@ -575,7 +575,7 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation, co
     return cyto_elements, bar_fig
 
 # Function to visualize contig relationships
-def contig_visualization(selected_annotation, selected_contig, contig_information):
+def contig_visualization(selected_annotation, selected_contig):
 
     # Find the index of the selected contig
     selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
@@ -602,7 +602,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
     
     # Fetch contig indexes for all unique annotations at once
     unique_annotations = contacts_annotation.unique().tolist()
-    annotation_indexes_dict = get_contig_indexes(unique_annotations, contig_information)
+    annotation_indexes_dict = get_contig_indexes(unique_annotations)
 
     # Add annotation nodes and their positions
     for annotation in contacts_annotation.unique():
@@ -656,12 +656,18 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
     return cyto_elements, bar_fig
 
 def prepare_data(contig_information_intact, dense_matrix):
+    global contig_information
+    global contig_information_display
+    global unique_annotations
+    global contact_matrix
+    global contact_matrix_display
 
     contig_information = contig_information_intact.copy()
     unique_annotations = contig_information['Contig annotation'].unique()
+    print(unique_annotations)
 
     contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
-    contig_indexes_dict = get_contig_indexes(unique_annotations, contig_information)
+    contig_indexes_dict = get_contig_indexes(unique_annotations)
 
     # Use the pre-fetched indexes for calculating contacts
     for annotation_i in unique_annotations:
@@ -911,12 +917,6 @@ app.layout = html.Div([
     [Input('some_trigger_element', 'n_clicks')]  # Adjust this input to whatever triggers the data loading
 )
 def store_data(n_clicks):
-    global contig_information
-    global contig_information_display
-    global unique_annotations
-    global contact_matrix
-    global contact_matrix_display
-    
     contig_information, contig_information_display, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix)
     return
 
@@ -1056,7 +1056,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     logger.info(f"Triggered by {triggered_id}, current mode: {visualization_type}, selected_annotation: {selected_annotation}, selected_contig: {selected_contig}")
     
     # Initialize default values for cyto_elements and bar_fig
-    cyto_elements, bar_fig = basic_visualization(contact_matrix, contig_information, unique_annotations)
+    cyto_elements, bar_fig = basic_visualization()
 
     if triggered_id == 'reset-btn' or not selected_annotation:
         # Reset all selections to show the original plot and all contigs
@@ -1075,17 +1075,17 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
 
         if visualization_type == 'inter_annotation':
             if selected_annotation and secondary_annotation:
-                cyto_elements, bar_fig = inter_annotation_visualization(selected_annotation, secondary_annotation, contig_information, unique_annotations)
+                cyto_elements, bar_fig = inter_annotation_visualization(selected_annotation, secondary_annotation)
 
         elif visualization_type == 'intra_annotation':
-            cyto_elements, bar_fig = intra_annotation_visualization(contact_matrix, selected_annotation, contig_information, unique_annotations)
+            cyto_elements, bar_fig = intra_annotation_visualization(selected_annotation)
 
         elif visualization_type == 'contig':
-            cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig, contig_information)
+            cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig)
 
     # Update column definitions with style conditions
-    contig_colors, annotation_colors = get_contig_and_annotation_colors(contig_information, cyto_elements)
-    styleConditions = styling_contig_table(contig_information_display, contig_information, contig_colors, annotation_colors)
+    contig_colors, annotation_colors = get_contig_and_annotation_colors(cyto_elements)
+    styleConditions = styling_contig_table(contig_colors, annotation_colors)
     column_defs_updated = column_defs.copy()
     for col_def in column_defs_updated:
         if 'cellStyle' not in col_def:
@@ -1120,7 +1120,7 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_c
             if contig_info['Contig annotation'] == current_visualization_mode['secondary_annotation']:
                 # Find contigs from the selected annotation that have contact with the selected contig
                 selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
-                selected_annotation_indices = get_contig_indexes(current_visualization_mode['selected_annotation'], contig_information)
+                selected_annotation_indices = get_contig_indexes(current_visualization_mode['selected_annotation'])
                 connected_contigs = []
 
                 for j in selected_annotation_indices:
@@ -1136,7 +1136,7 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_c
             else:
                 # Find the contigs in the secondary annotation that have contact with the selected contig
                 selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
-                secondary_annotation_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'], contig_information)
+                secondary_annotation_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'])
                 connected_contigs = []
 
                 for j in secondary_annotation_indices:
@@ -1224,8 +1224,8 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
 
     elif current_visualization_mode['visualization_type'] == 'inter_annotation':
         if current_visualization_mode['selected_annotation'] and current_visualization_mode['secondary_annotation']:
-            row_indices = get_contig_indexes(current_visualization_mode['selected_annotation'], contig_information)
-            col_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'], contig_information)
+            row_indices = get_contig_indexes(current_visualization_mode['selected_annotation'])
+            col_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'])
             inter_contigs_row = set()
             inter_contigs_col = set()
 
@@ -1295,7 +1295,7 @@ def update_dropdowns(selected_annotation, visualization_type):
 
     # Only show contig options if visualization type is 'contig'
     if visualization_type == 'contig' and selected_annotation:
-        contigs = contig_information.loc[get_contig_indexes(selected_annotation, contig_information), 'Contig name']
+        contigs = contig_information.loc[get_contig_indexes(selected_annotation), 'Contig name']
         contig_options = [{'label': contig, 'value': contig} for contig in contigs]
 
     return annotation_options, secondary_annotation_options, contig_options
