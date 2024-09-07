@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 num_threads = 4 * os.cpu_count()
 
 # Function to get contig indexes based on annotation in a specific part of the dataframe
-def get_contig_indexes(annotations):
+def get_contig_indexes(annotations, contig_information):
     # Ensure annotations is a list even if a single annotation is provided
     if isinstance(annotations, str):
         annotations = [annotations]
@@ -43,7 +43,6 @@ def get_contig_indexes(annotations):
             try:
                 annotation, indexes = future.result()
                 contig_indexes[annotation] = indexes
-                logger.info(f'Completed fetching contig indexes for annotation: {annotation}')
             except Exception as e:
                 logger.error(f'Error fetching contig indexes for annotation: {annotation}, error: {e}')
         
@@ -170,9 +169,9 @@ def get_chatgpt_response(prompt):
     return response.choices[0].message.content
 
 # Function to style annotation contact table using Blugrn color scheme
-def styling_annotation_table(matrix_df):
+def styling_annotation_table(contact_matrix_display):
     styles = []
-    numeric_df = matrix_df.select_dtypes(include=[np.number])
+    numeric_df = contact_matrix_display.select_dtypes(include=[np.number])
     log_max_value = np.log1p(numeric_df.values.max())
     for i in range(len(numeric_df)):
         for j in range(len(numeric_df.columns)):
@@ -189,9 +188,11 @@ def styling_annotation_table(matrix_df):
     return styles
 
 # Function to style contig info table
-def styling_contig_table(contig_colors, annotation_colors):
+def styling_contig_table(contig_colors, annotation_colors, unique_annotations):
+    taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
     columns = ['Restriction sites', 'Contig length', 'Contig coverage', 'Intra-contig contact']
     styles = []
+    
     for col in columns:
         numeric_df = contig_information_display[[col]].select_dtypes(include=[np.number])
         col_min = np.log1p(numeric_df.values.min())
@@ -240,23 +241,23 @@ def styling_contig_table(contig_colors, annotation_colors):
         )
 
     # Add style conditions for the "Annotation" column
-    for annotation in contig_information_display['Annotation'].unique():
-        annotation_color = annotation_colors.get(annotation, '#FFFFFF')  # Default to white if annotation color is not found
+
+    for annotation in unique_annotations:
+        annotation_color = annotation_colors.get(annotation, '#FFFFFF')
         annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
-        styles.append(
-            {
-                "condition": f"params.colDef.field == 'Annotation' && params.value == '{annotation}'",
+        for taxonomy_column in taxonomy_columns:
+            styles.append({
+                "condition": f"params.colDef.field == '{taxonomy_column}' && params.value == '{annotation}'",
                 "style": {
                     'backgroundColor': annotation_color_with_opacity,
                     'color': 'black'
                 }
-            }
-        )
+            })
 
     return styles
 
 # Function to get contig colors from Cytoscape elements or use annotation color if not found
-def get_contig_and_annotation_colors(cyto_elements):
+def get_contig_and_annotation_colors(cyto_elements, contig_information):
     contig_colors = {}
     annotation_colors = {}
 
@@ -267,9 +268,9 @@ def get_contig_and_annotation_colors(cyto_elements):
 
     # Get annotation colors based on viral status
     for annotation in contig_information['Contig annotation'].unique():
-        is_viral = str(contig_information.loc[contig_information['Contig annotation'] == annotation, 'Is Viral'].values[0])
-        annotation_colors[annotation] = is_viral_colors.get(is_viral, '#FFFFFF')  # Default to white if annotation color is not found
-
+        contig_type = contig_information[contig_information['Contig annotation'] == annotation]['type'].values[0]
+        annotation_colors[annotation] = type_colors.get(contig_type, default_color)
+        
     return contig_colors, annotation_colors
 
 # Function to arrange contigs
@@ -322,8 +323,92 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 
     return {**inner_positions, **outer_positions}
 
+def taxonomy_visualization():
+    logger.info('Creating taxonomy visualization')
+    level_mapping = {
+        'life': 9,
+        'domain': 8,
+        'kingdom': 7,
+        'phylum': 6,
+        'class': 5,
+        'order': 4,
+        'family': 3,
+        'genus': 2,
+        'species': 1
+    }
+
+    records = []
+    existing_annotations = set()
+    
+    records.append({
+        "annotation": "Life",
+        "parent": "",
+        "level": 9,
+        "level_name": "Life",
+        "type": "life",
+        "total coverage": 0,
+        "border_color": "black"
+    })
+    existing_annotations.add("Life")
+    
+    for _, row in contig_information_intact.iterrows():
+        for level, level_num in level_mapping.items():
+            if level == 'life':
+                continue
+                
+            annotation = f"{level}_{row[level]}"
+            parent = "Life" if level_num == 8 else f"{list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]}_{row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]]}"
+            
+            if annotation not in existing_annotations:
+                records.append({
+                    "annotation": annotation,
+                    "parent": parent,
+                    "level": level_num,
+                    "level_name": level.capitalize(),
+                    "type": row["type"],
+                    "total coverage": row["Contig coverage"],
+                    "border_color": type_colors.get(row["type"], "gray")
+                })
+                existing_annotations.add(annotation)
+            else:
+                for rec in records:
+                    if rec['annotation'] == annotation:
+                        rec['total coverage'] += row['Contig coverage']
+                        break
+
+    hierarchy_df = pd.DataFrame(records)
+
+    hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
+
+    fig = px.treemap(
+        hierarchy_df,
+        names='annotation',
+        parents='parent',
+        values='scaled_coverage',
+        color='level',
+        color_continuous_scale='Sunset'
+    )
+
+    fig.update_traces(
+        marker=dict(
+            line=dict(width=2, color=hierarchy_df['border_color'])
+        ),
+        customdata=hierarchy_df[['level_name']],
+        hovertemplate='<b>%{label}</b><br>Level: %{customdata[0]}<br>Coverage: %{value}'
+    )
+
+    fig.update_layout(
+        coloraxis_showscale=False,
+        title="Taxonomy Tree Diagram",
+        font_size=15,
+        autosize=True
+    )
+
+    logger.info('Taxonomy visualization creation completed')
+    return fig
+
 # Function to visualize annotation relationship
-def basic_visualization():
+def basic_visualization(contig_information, unique_annotations, contact_matrix):
     G = nx.Graph()
 
     # Add nodes with size based on total contig coverage
@@ -332,24 +417,30 @@ def basic_visualization():
 
     node_colors = {}
     for annotation, size in zip(total_contig_coverage.index, node_sizes):
-        is_viral = contig_information.loc[
-            contig_information['Contig annotation'] == annotation, 'Is Viral'
+        contig_type = contig_information.loc[
+            contig_information['Contig annotation'] == annotation, 'type'
         ].values[0]
-        color = is_viral_colors[str(is_viral)]
+        color = type_colors.get(contig_type, default_color)
         node_colors[annotation] = color
-        G.add_node(annotation, size=size, color=color, parent=None)  # Removed border attributes
+        G.add_node(annotation, size=size, color=color, parent=None)
 
     # Add edges with weight based on inter-annotation contacts
-    inter_annotation_contacts = []
-    for annotation_i in unique_annotations:
-        for annotation_j in unique_annotations:
-            if annotation_i != annotation_j and contact_matrix.at[annotation_i, annotation_j] > 0:
-                weight = contact_matrix.at[annotation_i, annotation_j]
+    non_zero_count = np.count_nonzero(np.triu(contact_matrix.values, k=1))  # Count non-zero values in the upper triangle
+
+    inter_annotation_contacts = np.empty(non_zero_count)  # Preallocate the array
+
+    index = 0  # Track the position to insert
+    for i, annotation_i in enumerate(unique_annotations):
+        for j, annotation_j in enumerate(unique_annotations[i + 1:], start=i + 1):
+            weight = contact_matrix.at[annotation_i, annotation_j]
+            if weight > 0:
                 G.add_edge(annotation_i, annotation_j, weight=weight)
-                inter_annotation_contacts.append(weight)
+                inter_annotation_contacts[index] = weight
+                index += 1
+
 
     # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(np.array(inter_annotation_contacts), 10, 300) 
+    edge_weights = generate_gradient_values(inter_annotation_contacts, 10, 300) 
 
     # Assign the gradient values as edge weights and set default edge color
     for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
@@ -376,20 +467,21 @@ def basic_visualization():
     return cyto_elements, bar_fig
 
 # Function to visualize intra-annotation relationships
-def intra_annotation_visualization(selected_annotation):
+def intra_annotation_visualization(selected_annotation, contig_information, unique_annotations, contact_matrix):
     G = nx.Graph()
 
     # Add nodes with size based on contig counts
     contig_counts = [len(contig_information[contig_information['Contig annotation'] == node]) for node in unique_annotations]
     node_sizes = generate_gradient_values(np.array(contig_counts), 10, 30)
-    indices = get_contig_indexes(selected_annotation)
+    indices = get_contig_indexes(selected_annotation, contig_information)
 
     nodes_to_remove = []
     for annotation, size in zip(unique_annotations, node_sizes):
-        is_viral = contig_information.loc[
-            contig_information['Contig annotation'] == annotation, 'Is Viral'
+        contig_type = contig_information.loc[
+            contig_information['Contig annotation'] == annotation, 'type'
         ].values[0]
-        color = is_viral_colors[str(is_viral)]
+        
+        color = type_colors.get(contig_type, default_color)
 
         if annotation == selected_annotation:
             G.add_node(annotation, size=size, color='#FFFFFF', border_color='#000', border_width=2, parent=None)  # White for selected node
@@ -478,7 +570,7 @@ def intra_annotation_visualization(selected_annotation):
     return cyto_elements, bar_fig
 
 # Function to visualize inter-annotation relationships
-def inter_annotation_visualization(selected_annotation, secondary_annotation):
+def inter_annotation_visualization(selected_annotation, secondary_annotation, contig_information):
 
     row_contig = selected_annotation
     col_contig = secondary_annotation
@@ -489,8 +581,8 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation):
 
     new_pos = {row_contig: (-0.2, 0), col_contig: (0.2, 0)}
 
-    row_indices = get_contig_indexes(row_contig)
-    col_indices = get_contig_indexes(col_contig)
+    row_indices = get_contig_indexes(row_contig, contig_information)
+    col_indices = get_contig_indexes(col_contig, contig_information)
     inter_contigs_row = set()
     inter_contigs_col = set()
 
@@ -575,7 +667,7 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation):
     return cyto_elements, bar_fig
 
 # Function to visualize contig relationships
-def contig_visualization(selected_annotation, selected_contig):
+def contig_visualization(selected_annotation, selected_contig, contig_information, unique_annotations):
 
     # Find the index of the selected contig
     selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
@@ -602,7 +694,7 @@ def contig_visualization(selected_annotation, selected_contig):
     
     # Fetch contig indexes for all unique annotations at once
     unique_annotations = contacts_annotation.unique().tolist()
-    annotation_indexes_dict = get_contig_indexes(unique_annotations)
+    annotation_indexes_dict = get_contig_indexes(unique_annotations, contig_information)
 
     # Add annotation nodes and their positions
     for annotation in contacts_annotation.unique():
@@ -655,25 +747,30 @@ def contig_visualization(selected_annotation, selected_contig):
 
     return cyto_elements, bar_fig
 
-def prepare_data(contig_information_intact, dense_matrix):
+def prepare_data(contig_information_intact, dense_matrix, taxonomy_level = 'family'):
     global contig_information
-    global contig_information_display
     global unique_annotations
     global contact_matrix
     global contact_matrix_display
+    
+    if taxonomy_level is None:
+        taxonomy_level = 'family'
+    else:
+        taxonomy_level = taxonomy_level.lower()
 
     contig_information = contig_information_intact.copy()
+    contig_information['Contig annotation'] = contig_information[taxonomy_level]
+    taxonomy_columns = ['domain', 'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+    contig_information = contig_information.drop(columns=taxonomy_columns)
+    
     unique_annotations = contig_information['Contig annotation'].unique()
-    print(unique_annotations)
 
     contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
-    contig_indexes_dict = get_contig_indexes(unique_annotations)
+    contig_indexes_dict = get_contig_indexes(unique_annotations, contig_information)
 
     # Use the pre-fetched indexes for calculating contacts
     for annotation_i in unique_annotations:
-        for annotation_j in unique_annotations:
-            logging.info(f"Processing pair ({annotation_i}, {annotation_j})")
-        
+        for annotation_j in unique_annotations:   
             indexes_i = contig_indexes_dict[annotation_i]
             indexes_j = contig_indexes_dict[annotation_j]
             sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
@@ -682,22 +779,8 @@ def prepare_data(contig_information_intact, dense_matrix):
 
     contact_matrix_display = contact_matrix.astype(int).copy()  # Convert to int for display
     contact_matrix_display.insert(0, 'Annotation', contact_matrix_display.index)  # Add the 'Annotation' column
-    
-    matrix_columns = {
-        'Contig name': 'Contig',
-        'Contig annotation': 'Annotation',
-        'Number of restriction sites': 'Restriction sites',
-        'Contig length': 'Contig length',
-        'Contig coverage': 'Contig coverage',
-        'Hi-C contacts mapped to the same contigs': 'Intra-contig contact'
-    }
 
-    contig_information_display = contig_information[list(matrix_columns.keys())].rename(columns=matrix_columns)
-
-    # Add a "Visibility" column to the contig_information_display DataFrame
-    contig_information_display['Visibility'] = 1  # Default value to 1 (visible)
-
-    return contig_information, contig_information_display, unique_annotations, contact_matrix, contact_matrix_display
+    return contig_information, unique_annotations, contact_matrix, contact_matrix_display
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -706,10 +789,11 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 client = OpenAI(api_key='')
 
 # File paths for the current environment
-contig_info_path = '../0_Documents/contig_information.csv'
-raw_contact_matrix_path= '../0_Documents/raw_contact_matrix.npz'
+contig_info_path = '../1_Data_Processing/output/contig_info_final.csv'
+raw_contact_matrix_path= '../1_Data_Processing/output/contact_matrix_final.npz'
 
 # Load the data
+logger.info('Loading data')
 contig_information_intact = pd.read_csv(contig_info_path)
 contact_matrix_data = np.load(raw_contact_matrix_path)
 data = contact_matrix_data['data']
@@ -719,20 +803,65 @@ shape = contact_matrix_data['shape']
 sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
 dense_matrix = sparse_matrix.toarray()
 
-contig_information, contig_information_display, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix)
+matrix_columns = {
+    'Contig name': 'Contig',
+    'domain': 'Domain',
+    'kingdom': 'Kingdom',
+    'phylum': 'Phylum',
+    'class': 'Class',
+    'order': 'Order',
+    'family': 'Family',
+    'genus': 'Genus',
+    'species': 'Species',
+    'Number of restriction sites': 'Restriction sites',
+    'Contig length': 'Contig length',
+    'Contig coverage': 'Contig coverage',
+    'Hi-C contacts mapped to the same contigs': 'Intra-contig contact'
+}
+contig_information_display = contig_information_intact[list(matrix_columns.keys())].rename(columns=matrix_columns)
+# Add a "Visibility" column to the contig_information_display DataFrame
+contig_information_display['Visibility'] = 1  # Default value to 1 (visible)
 
-is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
+logger.info('Data loading completed')  
+
+contig_information, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix)
+  
+type_colors = {
+    'chromosome': '#0000FF',
+    'phage': '#FF0000',
+    'plasmid': '#00FF00'
+}
+default_color = '#808080' 
 
 # Define the column definitions for AG Grid
 column_defs = [
-    {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120},
-    {"headerName": "Annotation", "field": "Annotation", "pinned": 'left', "width": 140},
-    {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
-    {"headerName": "Contig length", "field": "Contig length", "width": 140, "wrapHeaderText": True},
-    {"headerName": "Contig coverage", "field": "Contig coverage", "width": 140, "wrapHeaderText": True},
-    {"headerName": "Intra-contig contact", "field": "Intra-contig contact", "width": 140, "wrapHeaderText": True},
-    {"headerName": "Visibility", "field": "Visibility",  "hide": True}
+    {
+        "headerName": "Taxonomy Information",
+        "children": [
+            {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120},
+            {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Genus", "field": "Genus", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Family", "field": "Family", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Order", "field": "Order", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Class", "field": "Class", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Phylum", "field": "Phylum", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Kingdom", "field": "Kingdom", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Domain", "field": "Domain", "width": 140, "wrapHeaderText": True}
+        ]
+    },
+    {
+        "headerName": "Contact Information",
+        "children": [
+            {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Contig length", "field": "Contig length", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Contig coverage", "field": "Contig coverage", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Intra-contig contact", "field": "Intra-contig contact", "width": 140, "wrapHeaderText": True},
+            {"headerName": "Visibility", "field": "Visibility", "hide": True} 
+        ]
+    }
 ]
+
+# Define the default column definitions
 
 # Base stylesheet for Cytoscape
 base_stylesheet = [
@@ -763,6 +892,7 @@ base_stylesheet = [
 
 current_visualization_mode = {
     'visualization_type': None,
+    'taxonomy_level': None,
     'selected_annotation': None,
     'secondary_annotation': None,
     'selected_contig': None
@@ -799,33 +929,51 @@ app.layout = html.Div([
         dcc.Dropdown(
             id='visualization-selector',
             options=[
+                {'label': 'Taxonomy Hierarchy', 'value': 'taxonomy_hierarchy'},
+                {'label': 'Community', 'value': 'basic'},
                 {'label': 'Intra-annotation', 'value': 'intra_annotation'},
                 {'label': 'Inter-annotation', 'value': 'inter_annotation'},
                 {'label': 'Contig', 'value': 'contig'}
             ],
-            value='intra_annotation',
+            value='taxonomy_hierarchy',
             style={'width': '300px', 'display': 'inline-block'}
+        ),
+        dcc.Dropdown(
+            id='taxonomy-level-selector',
+            options=[
+                {'label': 'Domain', 'value': 'domain'},
+                {'label': 'Kingdom', 'value': 'kingdom'},
+                {'label': 'Phylum', 'value': 'phylum'},
+                {'label': 'Class', 'value': 'class'},
+                {'label': 'Order', 'value': 'order'},
+                {'label': 'Family', 'value': 'family'},
+                {'label': 'Genus', 'value': 'genus'},
+                {'label': 'Species', 'value': 'species'},
+            ],
+            value='Family',
+            placeholder="Select Taxonomy Level",
+            style={}
         ),
         dcc.Dropdown(
             id='annotation-selector',
             options=[],
             value=None,
             placeholder="Select a annotation",
-            style={'width': '300px', 'display': 'inline-block'}
+            style={}
         ),
         dcc.Dropdown(
             id='secondary-annotation-selector',
             options=[],
             value=None,
             placeholder="Select a secondary annotation",
-            style={'width': '300px', 'display': 'none'}  # Hide by default
+            style={}
         ),
         dcc.Dropdown(
             id='contig-selector',
             options=[],
             value=None,
             placeholder="Select a contig",
-            style={'width': '300px', 'display': 'none'}  # Hide by default
+            style={}
         ),
         html.Button("Confirm Selection", id="confirm-btn", style={**common_style}),
     ], style={
@@ -857,14 +1005,7 @@ app.layout = html.Div([
                 id='contig-info-table',
                 columnDefs=column_defs,
                 rowData=contig_information_display.to_dict('records'),
-                defaultColDef={
-                    "sortable": True,
-                    "filter": True,
-                    "resizable": True,
-                    "cellStyle": {
-                        "styleConditions": []
-                    }
-                },
+                defaultColDef={},
                 style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'},
                 dashGridOptions={
                     'headerPinned': 'top',
@@ -873,6 +1014,7 @@ app.layout = html.Div([
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
+            dcc.Graph(id='treemap-graph', figure=go.Figure(), style={}),
             cyto.Cytoscape(
                 id='cyto-graph',
                 elements=[],
@@ -900,10 +1042,10 @@ app.layout = html.Div([
     html.Div([
         dash_table.DataTable(
             id='contact-table',
-            columns=[{"name": col, "id": col} for col in contact_matrix_display.columns],
-            data=contact_matrix_display.to_dict('records'),
+            columns=[],
+            data=[],
             style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
-            style_data_conditional=styling_annotation_table(contact_matrix_display),
+            style_data_conditional=[],
             style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
             style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
             fixed_rows={'headers': True},  # Freeze the first row
@@ -914,26 +1056,29 @@ app.layout = html.Div([
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
 @app.callback(
-    [Input('some_trigger_element', 'n_clicks')]  # Adjust this input to whatever triggers the data loading
-)
-def store_data(n_clicks):
-    contig_information, contig_information_display, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix)
-    return
-
-@app.callback(
     [Output('contact-table', 'columns'),
      Output('contact-table', 'data'),
      Output('contact-table', 'style_data_conditional')],
-    [Input('some_trigger_element', 'n_clicks')]
+    [Input('taxonomy-level-selector', 'value')]
 )
-def update_contact_table(n_clicks):
-        
+def update_data(taxonomy_level):
+    
+    contig_information, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix, taxonomy_level)    
+    
+    global current_visualization_mode
+    
+    current_visualization_mode = {
+        'visualization_type': 'taxonomy_hierarchy',
+        'taxonomy_level': taxonomy_level,
+        'selected_annotation': None,
+        'secondary_annotation': None,
+        'selected_contig': None
+    }
+    
     # Generate table columns based on the DataFrame's columns
     table_columns = [{"name": col, "id": col} for col in contact_matrix_display.columns]
-
     # Convert the DataFrame into a list of dictionaries (format required by Dash tables)
-    table_data = contact_matrix_display.to_dict
-
+    table_data = contact_matrix_display.to_dict('records')
     # Generate the conditional styling based on the stored data
     style_conditions = styling_annotation_table(contact_matrix_display)
         
@@ -941,7 +1086,9 @@ def update_contact_table(n_clicks):
 
 @app.callback(
     [Output('visualization-selector', 'value'),
+     Output('taxonomy-level-selector', 'style'),
      Output('annotation-selector', 'value'),
+     Output('annotation-selector', 'style'),
      Output('secondary-annotation-selector', 'value'),
      Output('secondary-annotation-selector', 'style'),
      Output('contig-selector', 'value'),
@@ -953,50 +1100,51 @@ def update_contact_table(n_clicks):
      Input('contig-info-table', 'selectedRows'),
      Input('cyto-graph', 'selectedNodeData'),
      Input('cyto-graph', 'selectedEdgeData')],
-    [State('contact-table', 'data')]
+     prevent_initial_call=True
 )
-def sync_selectors(visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data, contact_table_data):
+def sync_selectors(visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     selected_annotation, secondary_annotation, selected_contig = synchronize_selections(
-        triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, contact_table_data
-    )
+        triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell)
+    
+    taxonomy_level_style = {'display': 'none'}
+    annotation_selector_style = {'display': 'none'}
+    secondary_annotation_style = {'display': 'none'}
+    contig_selector_style = {'display': 'none'}
 
     # If a contig is selected in the network or contig table
     if selected_contig:
         visualization_type = 'contig'
-        secondary_annotation_style = {'display': 'none'}
+        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
         contig_selector_style = {'width': '300px', 'display': 'inline-block'}
-        return visualization_type, selected_annotation, None, secondary_annotation_style, selected_contig, contig_selector_style, None, []
 
     # If a annotation is selected in the network or annotation table
     if selected_annotation and not selected_contig:
         if secondary_annotation:
             visualization_type = 'inter_annotation'
+            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
             secondary_annotation_style = {'width': '300px', 'display': 'inline-block'}
-            contig_selector_style = {'display': 'none'}
         else:
             visualization_type = 'intra_annotation'
-            secondary_annotation_style = {'display': 'none'}
-            contig_selector_style = {'display': 'none'}
-        return visualization_type, selected_annotation, secondary_annotation, secondary_annotation_style, None, contig_selector_style, None, []
+            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
 
     # Default cases based on visualization_type
-    if visualization_type == 'inter_annotation':
+    if visualization_type == 'taxonomy_hierarchy':
+        taxonomy_level_style = {'width': '300px', 'display': 'inline-block'}
+    elif visualization_type == 'intra_annotation':
+        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
+    elif visualization_type == 'inter_annotation':
+        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
         secondary_annotation_style = {'width': '300px', 'display': 'inline-block'}
-        contig_selector_style = {'display': 'none'}
-        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
     elif visualization_type == 'contig':
-        secondary_annotation_style = {'display': 'none'}
+        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
         contig_selector_style = {'width': '300px', 'display': 'inline-block'}
-        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
-    else:
-        secondary_annotation_style = {'display': 'none'}
-        contig_selector_style = {'display': 'none'}
-        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
-    
-def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, table_data):
+
+    return visualization_type, taxonomy_level_style, selected_annotation, annotation_selector_style, secondary_annotation, secondary_annotation_style, selected_contig, contig_selector_style, None, []
+ 
+def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell):
     # Initialize the return values
     selected_annotation = None
     selected_contig = None
@@ -1029,8 +1177,10 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
 
     # If a cell in the contact-table is selected
     elif triggered_id == 'contact-table' and contact_table_active_cell:
-        row_annotation = table_data[contact_table_active_cell['row']]['Annotation']
-        col_annotation = contact_table_active_cell['column_id'] if contact_table_active_cell['column_id'] != 'Annotation' else None
+        row_id = contact_table_active_cell['row']
+        column_id = contact_table_active_cell['column_id']
+        row_annotation = contact_matrix_display.iloc[row_id]['Annotation']
+        col_annotation = column_id if column_id != 'Annotation' else None
         selected_annotation = row_annotation
         secondary_annotation = col_annotation
 
@@ -1040,7 +1190,9 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
 @app.callback(
     [Output('cyto-graph', 'elements'),
      Output('bar-chart', 'figure'),
-     Output('contig-info-table', 'columnDefs')],
+     Output('treemap-graph', 'figure'),
+     Output('treemap-graph', 'style'),
+     Output('contig-info-table', 'defaultColDef')],
     [Input('reset-btn', 'n_clicks'),
      Input('confirm-btn', 'n_clicks')],
     [State('visualization-selector', 'value'),
@@ -1050,22 +1202,31 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
      State('contact-table', 'data')]
 )
 def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, secondary_annotation, selected_contig, table_data):
+    logger.info('update_visualization triggered')
+    logger.info(f'Visualization type: {visualization_type}')
+    logger.info(f'Selected annotation: {selected_annotation}')
+    logger.info(f'Secondary annotation: {secondary_annotation}')
+    logger.info(f'Selected contig: {selected_contig}')
+    
     global current_visualization_mode
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    logger.info(f"Triggered by {triggered_id}, current mode: {visualization_type}, selected_annotation: {selected_annotation}, selected_contig: {selected_contig}")
     
     # Initialize default values for cyto_elements and bar_fig
-    cyto_elements, bar_fig = basic_visualization()
 
+    cyto_elements, bar_fig = basic_visualization(contig_information, unique_annotations, contact_matrix)
+    treemap_fig = taxonomy_visualization()
+    
     if triggered_id == 'reset-btn' or not selected_annotation:
         # Reset all selections to show the original plot and all contigs
         current_visualization_mode = {
-            'visualization_type': None,
+            'visualization_type': 'taxonomy_hierarchy',
             'selected_annotation': None,
             'secondary_annotation': None,
             'selected_contig': None
         }
+        treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+        
     elif triggered_id == 'confirm-btn':
         # Update the current visualization mode with selected values
         current_visualization_mode['visualization_type'] = visualization_type
@@ -1073,33 +1234,42 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         current_visualization_mode['secondary_annotation'] = secondary_annotation
         current_visualization_mode['selected_contig'] = selected_contig
 
-        if visualization_type == 'inter_annotation':
-            if selected_annotation and secondary_annotation:
-                cyto_elements, bar_fig = inter_annotation_visualization(selected_annotation, secondary_annotation)
-
+        if visualization_type == 'taxonomy_hierarchy':
+            treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+        elif visualization_type == 'basic':
+            treemap_style = {'display': 'none'}
         elif visualization_type == 'intra_annotation':
-            cyto_elements, bar_fig = intra_annotation_visualization(selected_annotation)
-
+            cyto_elements, bar_fig = intra_annotation_visualization(selected_annotation, contig_information, unique_annotations, contact_matrix)
+            treemap_style = {'display': 'none'}
+        elif visualization_type == 'inter_annotation':
+            if selected_annotation and secondary_annotation:
+                cyto_elements, bar_fig = inter_annotation_visualization(selected_annotation, secondary_annotation, contig_information)
+                treemap_style = {'display': 'none'}
         elif visualization_type == 'contig':
-            cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig)
+            cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig, contig_information, unique_annotations)
+            treemap_style = {'display': 'none'}
 
     # Update column definitions with style conditions
-    contig_colors, annotation_colors = get_contig_and_annotation_colors(cyto_elements)
-    styleConditions = styling_contig_table(contig_colors, annotation_colors)
-    column_defs_updated = column_defs.copy()
-    for col_def in column_defs_updated:
-        if 'cellStyle' not in col_def:
-            col_def['cellStyle'] = {}
-        col_def['cellStyle'].update({"styleConditions": styleConditions})
+    contig_colors, annotation_colors = get_contig_and_annotation_colors(cyto_elements, contig_information)
+    styleConditions = styling_contig_table(contig_colors, annotation_colors, unique_annotations)
+    default_col_def = {
+        "sortable": True,
+        "filter": True,
+        "resizable": True,
+        "cellStyle": {
+            "styleConditions": styleConditions
+        }
+    }
 
-    return cyto_elements, bar_fig, column_defs_updated
+    return cyto_elements, bar_fig, treemap_fig, treemap_style, default_col_def
 
 @app.callback(
     [Output('cyto-graph', 'stylesheet'),
      Output('hover-info', 'children')],
     [Input('annotation-selector', 'value'),
      Input('secondary-annotation-selector', 'value'),
-     Input('contig-selector', 'value')]
+     Input('contig-selector', 'value')],
+     prevent_initial_call=True
 )
 def update_selected_styles(selected_annotation, secondary_annotation, selected_contig):
     selected_nodes = []
@@ -1120,7 +1290,7 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_c
             if contig_info['Contig annotation'] == current_visualization_mode['secondary_annotation']:
                 # Find contigs from the selected annotation that have contact with the selected contig
                 selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
-                selected_annotation_indices = get_contig_indexes(current_visualization_mode['selected_annotation'])
+                selected_annotation_indices = get_contig_indexes(current_visualization_mode['selected_annotation'], contig_information)
                 connected_contigs = []
 
                 for j in selected_annotation_indices:
@@ -1136,7 +1306,7 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_c
             else:
                 # Find the contigs in the secondary annotation that have contact with the selected contig
                 selected_contig_index = contig_information[contig_information['Contig name'] == selected_contig].index[0]
-                secondary_annotation_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'])
+                secondary_annotation_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'], contig_information)
                 connected_contigs = []
 
                 for j in secondary_annotation_indices:
@@ -1165,9 +1335,10 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_c
     [Input('annotation-selector', 'value'),
      Input('secondary-annotation-selector', 'value'),
      Input('visibility-filter', 'value')],
-    [State('contig-info-table', 'rowData')]
+    [State('taxonomy-level-selector', 'value'),
+     State('contig-info-table', 'rowData')]
 )
-def update_filter_model_and_row_count(selected_annotation, secondary_annotation, filter_value, contig_data):
+def update_filter_model_and_row_count(selected_annotation, secondary_annotation, filter_value, taxonomy_level, contig_data):
     filter_model = {}
     filtered_data = contig_data
     
@@ -1177,7 +1348,7 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
         
     # Update the filter model based on selected annotation and secondary annotation
     if selected_annotation and not secondary_annotation:
-        filter_model['Annotation'] = {
+        filter_model[taxonomy_level] = {
             "filterType": "text",
             "operator": "OR",
             "conditions": [
@@ -1189,11 +1360,11 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
             ]
         }
         for row in filtered_data:
-            if row['Annotation'] != selected_annotation:
+            if row[taxonomy_level] != selected_annotation:
                 row['Visibility'] = 2
 
     elif selected_annotation and secondary_annotation:
-        filter_model['Annotation'] = {
+        filter_model[taxonomy_level] = {
             "filterType": "text",
             "operator": "OR",
             "conditions": [
@@ -1210,7 +1381,7 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
             ]
         }
         for row in filtered_data:
-            if row['Annotation'] not in [selected_annotation, secondary_annotation]:
+            if row[taxonomy_level] not in [selected_annotation, secondary_annotation]:
                 row['Visibility'] = 2
     else:
         filter_model = {}
@@ -1219,13 +1390,13 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
     if current_visualization_mode['visualization_type'] == 'intra_annotation':
         if current_visualization_mode['selected_annotation']:
             for row in filtered_data:
-                if row['Annotation'] != current_visualization_mode['selected_annotation']:
+                if row[taxonomy_level] != current_visualization_mode['selected_annotation']:
                     row['Visibility'] = 0
 
     elif current_visualization_mode['visualization_type'] == 'inter_annotation':
         if current_visualization_mode['selected_annotation'] and current_visualization_mode['secondary_annotation']:
-            row_indices = get_contig_indexes(current_visualization_mode['selected_annotation'])
-            col_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'])
+            row_indices = get_contig_indexes(current_visualization_mode['selected_annotation'], contig_information)
+            col_indices = get_contig_indexes(current_visualization_mode['secondary_annotation'], contig_information)
             inter_contigs_row = set()
             inter_contigs_col = set()
 
@@ -1277,7 +1448,8 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
      Output('secondary-annotation-selector', 'options'),
      Output('contig-selector', 'options')],
     [Input('annotation-selector', 'value')],
-    [State('visualization-selector', 'value')]  # Only use the value as a state, not as a trigger
+    [State('visualization-selector', 'value')],
+    prevent_initial_call=True
 )
 def update_dropdowns(selected_annotation, visualization_type):
     # Initialize empty lists for options
@@ -1295,7 +1467,7 @@ def update_dropdowns(selected_annotation, visualization_type):
 
     # Only show contig options if visualization type is 'contig'
     if visualization_type == 'contig' and selected_annotation:
-        contigs = contig_information.loc[get_contig_indexes(selected_annotation), 'Contig name']
+        contigs = contig_information.loc[get_contig_indexes(selected_annotation, contig_information), 'Contig name']
         contig_options = [{'label': contig, 'value': contig} for contig in contigs]
 
     return annotation_options, secondary_annotation_options, contig_options
