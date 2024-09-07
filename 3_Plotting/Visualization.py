@@ -804,11 +804,11 @@ help_modal = html.Div([
 
 # Use the styling functions in the Dash layout
 app.layout = html.Div([
-    dcc.Store(id='contig_information_store'),
-    dcc.Store(id='unique_annotations_store'),
-    dcc.Store(id='annotation_matrix_store'),
-    dcc.Store(id='annotation_matrix_display_store'),
-    dcc.Store(id='contig_information_display_store'),
+    dcc.Store(id='contig_information_store', data=contig_information.to_dict()),
+    dcc.Store(id='contig_information_display_store', data=contig_information_display.to_dict()),
+    dcc.Store(id='annotation_matrix_store', data=unique_annotations.tolist()),
+    dcc.Store(id='annotation_matrix_display_store', data=annotation_matrix.to_dict()),
+    dcc.Store(id='unique_annotations_store', data=annotation_matrix_display.to_dict()),
     html.Div([
         html.Button("Download Selected Item", id="download-btn", style={**common_style}),
         html.Button("Reset Selection", id="reset-btn", style={**common_style}),
@@ -944,7 +944,87 @@ def store_data(n_clicks):
         annotation_matrix_display.to_dict()
     )
 
-def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, table_data, contig_info_table_data):
+@app.callback(
+    [Output('contact-table', 'columns'),
+     Output('contact-table', 'data'),
+     Output('contact-table', 'style_data_conditional')],
+    [Input('annotation_matrix_display_store', 'data')]
+)
+def update_contact_table(annotation_matrix_display_data):
+
+    # Convert the data back into a DataFrame
+    annotation_matrix_display_df = pd.DataFrame(annotation_matrix_display_data)
+        
+    # Generate table columns based on the DataFrame's columns
+    table_columns = [{"name": col, "id": col} for col in annotation_matrix_display_df.columns]
+
+    # Convert the DataFrame into a list of dictionaries (format required by Dash tables)
+    table_data = annotation_matrix_display_data
+
+    # Generate the conditional styling based on the stored data
+    style_conditions = styling_annotation_table(annotation_matrix_display_df)
+        
+    return table_columns, table_data, style_conditions
+
+@app.callback(
+    [Output('visualization-selector', 'value'),
+     Output('annotation-selector', 'value'),
+     Output('secondary-annotation-selector', 'value'),
+     Output('secondary-annotation-selector', 'style'),
+     Output('contig-selector', 'value'),
+     Output('contig-selector', 'style'),
+     Output('contact-table', 'active_cell'),
+     Output('contig-info-table', 'selectedRows')],
+    [Input('visualization-selector', 'value'),
+     Input('contact-table', 'active_cell'),
+     Input('contig-info-table', 'selectedRows'),
+     Input('cyto-graph', 'selectedNodeData'),
+     Input('cyto-graph', 'selectedEdgeData')],
+    [State('contact-table', 'data')],
+    prevent_initial_call=True
+)
+def sync_selectors(visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data, contact_table_data):
+    ctx = callback_context
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    selected_annotation, secondary_annotation, selected_contig = synchronize_selections(
+        triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, contact_table_data
+    )
+
+    # If a contig is selected in the network or contig table
+    if selected_contig:
+        visualization_type = 'contig'
+        secondary_annotation_style = {'display': 'none'}
+        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+        return visualization_type, selected_annotation, None, secondary_annotation_style, selected_contig, contig_selector_style, None, []
+
+    # If a annotation is selected in the network or annotation table
+    if selected_annotation and not selected_contig:
+        if secondary_annotation:
+            visualization_type = 'inter_annotation'
+            secondary_annotation_style = {'width': '300px', 'display': 'inline-block'}
+            contig_selector_style = {'display': 'none'}
+        else:
+            visualization_type = 'intra_annotation'
+            secondary_annotation_style = {'display': 'none'}
+            contig_selector_style = {'display': 'none'}
+        return visualization_type, selected_annotation, secondary_annotation, secondary_annotation_style, None, contig_selector_style, None, []
+
+    # Default cases based on visualization_type
+    if visualization_type == 'inter_annotation':
+        secondary_annotation_style = {'width': '300px', 'display': 'inline-block'}
+        contig_selector_style = {'display': 'none'}
+        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
+    elif visualization_type == 'contig':
+        secondary_annotation_style = {'display': 'none'}
+        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
+    else:
+        secondary_annotation_style = {'display': 'none'}
+        contig_selector_style = {'display': 'none'}
+        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
+    
+def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, table_data):
     # Initialize the return values
     selected_annotation = None
     selected_contig = None
@@ -983,64 +1063,6 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
         secondary_annotation = col_annotation
 
     return selected_annotation, secondary_annotation, selected_contig
-@app.callback(
-    [Output('visualization-selector', 'value'),
-     Output('annotation-selector', 'value'),
-     Output('secondary-annotation-selector', 'value'),
-     Output('secondary-annotation-selector', 'style'),
-     Output('contig-selector', 'value'),
-     Output('contig-selector', 'style'),
-     Output('contact-table', 'active_cell'),
-     Output('contig-info-table', 'selectedRows')],
-    [Input('visualization-selector', 'value'),
-     Input('contact-table', 'active_cell'),
-     Input('contig-info-table', 'selectedRows'),
-     Input('cyto-graph', 'selectedNodeData'),
-     Input('cyto-graph', 'selectedEdgeData')],
-    [State('contact-table', 'data'),
-     State('contig-info-table', 'rowData')],
-    prevent_initial_call=True
-)
-def sync_selectors(visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data, contact_table_data, contig_info_table_data):
-    ctx = callback_context
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    selected_annotation, secondary_annotation, selected_contig = synchronize_selections(
-        triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, contact_table_data, contig_info_table_data
-    )
-
-    # If a contig is selected in the network or contig table
-    if selected_contig:
-        visualization_type = 'contig'
-        secondary_annotation_style = {'display': 'none'}
-        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
-        return visualization_type, selected_annotation, None, secondary_annotation_style, selected_contig, contig_selector_style, None, []
-
-    # If a annotation is selected in the network or annotation table
-    if selected_annotation and not selected_contig:
-        if secondary_annotation:
-            visualization_type = 'inter_annotation'
-            secondary_annotation_style = {'width': '300px', 'display': 'inline-block'}
-            contig_selector_style = {'display': 'none'}
-        else:
-            visualization_type = 'intra_annotation'
-            secondary_annotation_style = {'display': 'none'}
-            contig_selector_style = {'display': 'none'}
-        return visualization_type, selected_annotation, secondary_annotation, secondary_annotation_style, None, contig_selector_style, None, []
-
-    # Default cases based on visualization_type
-    if visualization_type == 'inter_annotation':
-        secondary_annotation_style = {'width': '300px', 'display': 'inline-block'}
-        contig_selector_style = {'display': 'none'}
-        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
-    elif visualization_type == 'contig':
-        secondary_annotation_style = {'display': 'none'}
-        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
-        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
-    else:
-        secondary_annotation_style = {'display': 'none'}
-        contig_selector_style = {'display': 'none'}
-        return visualization_type, None, None, secondary_annotation_style, None, contig_selector_style, None, []
 
 # Callback to update the visualizationI want to 
 @app.callback(
@@ -1281,15 +1303,35 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
     return filtered_data, filter_model, row_count_text
 
 @app.callback(
-    Output('contig-selector', 'options'),
-    [Input('annotation-selector', 'value')],
-    [State('visualization-selector', 'value')]
+    [Output('annotation-selector', 'options'),
+     Output('secondary-annotation-selector', 'options'),
+     Output('contig-selector', 'options')],
+    [Input('unique_annotations_store', 'data'),
+     Input('contig_information_store', 'data'),
+     Input('annotation-selector', 'value')],
+    [State('visualization-selector', 'value')]  # Only use the value as a state, not as a trigger
 )
-def populate_contig_selector(selected_annotation, visualization_type):
+def update_dropdowns(unique_annotations_data, contig_information_data, selected_annotation, visualization_type):
+    contig_information = pd.DataFrame(contig_information_data)
+    # Initialize empty lists for options
+    annotation_options = []
+    secondary_annotation_options = []
+    contig_options = []
+
+    annotation_options = [{'label': annotation, 'value': annotation} for annotation in unique_annotations_data]
+        
+    # Only show secondary annotation options if visualization type is 'inter_annotation'
+    if visualization_type == 'inter_annotation':
+        secondary_annotation_options = annotation_options  # Same options for secondary annotation dropdown
+    else:
+        secondary_annotation_options = []  # Hide secondary annotation dropdown if not in inter_annotation mode
+
+    # Only show contig options if visualization type is 'contig'
     if visualization_type == 'contig' and selected_annotation:
         contigs = contig_information.loc[get_contig_indexes(selected_annotation, contig_information), 'Contig name']
-        return [{'label': contig, 'value': contig} for contig in contigs]
-    return []
+        contig_options = [{'label': contig, 'value': contig} for contig in contigs]
+
+    return annotation_options, secondary_annotation_options, contig_options
 
 # Dash callback to use ChatGPT
 @app.callback(
