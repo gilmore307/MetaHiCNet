@@ -323,7 +323,7 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
     return {**inner_positions, **outer_positions}
 
 # Function to visualize annotation relationship
-def basic_visualization(annotation_matrix, contig_information, unique_annotations):
+def basic_visualization(contact_matrix, contig_information, unique_annotations):
     G = nx.Graph()
 
     # Add nodes with size based on total contig coverage
@@ -343,8 +343,8 @@ def basic_visualization(annotation_matrix, contig_information, unique_annotation
     inter_annotation_contacts = []
     for annotation_i in unique_annotations:
         for annotation_j in unique_annotations:
-            if annotation_i != annotation_j and annotation_matrix.at[annotation_i, annotation_j] > 0:
-                weight = annotation_matrix.at[annotation_i, annotation_j]
+            if annotation_i != annotation_j and contact_matrix.at[annotation_i, annotation_j] > 0:
+                weight = contact_matrix.at[annotation_i, annotation_j]
                 G.add_edge(annotation_i, annotation_j, weight=weight)
                 inter_annotation_contacts.append(weight)
 
@@ -361,7 +361,7 @@ def basic_visualization(annotation_matrix, contig_information, unique_annotation
     cyto_elements = nx_to_cyto_elements(G, pos)
 
     # Prepare data for bar chart with 3 traces
-    inter_annotation_contact_sum = annotation_matrix.sum(axis=1) - np.diag(annotation_matrix.values)
+    inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
     total_contig_coverage_sum = total_contig_coverage.values
     contig_counts = contig_information['Contig annotation'].value_counts()
 
@@ -376,7 +376,7 @@ def basic_visualization(annotation_matrix, contig_information, unique_annotation
     return cyto_elements, bar_fig
 
 # Function to visualize intra-annotation relationships
-def intra_annotation_visualization(annotation_matrix, selected_annotation, contig_information, unique_annotations):
+def intra_annotation_visualization(contact_matrix, selected_annotation, contig_information, unique_annotations):
     G = nx.Graph()
 
     # Add nodes with size based on contig counts
@@ -404,8 +404,8 @@ def intra_annotation_visualization(annotation_matrix, selected_annotation, conti
     inter_annotation_contacts = []
     for annotation_i in unique_annotations:
         for annotation_j in unique_annotations:
-            if annotation_i != annotation_j and annotation_matrix.at[annotation_i, annotation_j] > 0:
-                weight = annotation_matrix.at[annotation_i, annotation_j]
+            if annotation_i != annotation_j and contact_matrix.at[annotation_i, annotation_j] > 0:
+                weight = contact_matrix.at[annotation_i, annotation_j]
                 G.add_edge(annotation_i, annotation_j, weight=weight)
                 inter_annotation_contacts.append(weight)
 
@@ -422,7 +422,7 @@ def intra_annotation_visualization(annotation_matrix, selected_annotation, conti
     # Collect edge weights and identify edges to remove
     for edge in G.edges(data=True):
         if edge[0] == selected_annotation or edge[1] == selected_annotation:
-            weight = annotation_matrix.at[selected_annotation, edge[1]] if edge[0] == selected_annotation else annotation_matrix.at[edge[0], selected_annotation]
+            weight = contact_matrix.at[selected_annotation, edge[1]] if edge[0] == selected_annotation else contact_matrix.at[edge[0], selected_annotation]
             inter_annotation_contacts.append(weight)
         else:
             edges_to_remove.append((edge[0], edge[1]))
@@ -462,7 +462,7 @@ def intra_annotation_visualization(annotation_matrix, selected_annotation, conti
 
     # Prepare data for bar chart
     contig_contact_counts = contig_information[contig_information['Contig annotation'] != selected_annotation]['Contig annotation'].value_counts()
-    inter_annotation_contacts = annotation_matrix.loc[selected_annotation].drop(selected_annotation)
+    inter_annotation_contacts = contact_matrix.loc[selected_annotation].drop(selected_annotation)
 
     # Filter out contigs that are not in the graph
     filtered_contig_counts = contig_contact_counts[contig_contact_counts.index.isin(G.nodes)]
@@ -660,7 +660,7 @@ def prepare_data(contig_information_intact, dense_matrix):
     contig_information = contig_information_intact.copy()
     unique_annotations = contig_information['Contig annotation'].unique()
 
-    annotation_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
+    contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
     contig_indexes_dict = get_contig_indexes(unique_annotations, contig_information)
 
     # Use the pre-fetched indexes for calculating contacts
@@ -672,10 +672,10 @@ def prepare_data(contig_information_intact, dense_matrix):
             indexes_j = contig_indexes_dict[annotation_j]
             sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
             
-            annotation_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
+            contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
 
-    annotation_matrix_display = annotation_matrix.astype(int).copy()  # Convert to int for display
-    annotation_matrix_display.insert(0, 'Annotation', annotation_matrix_display.index)  # Add the 'Annotation' column
+    contact_matrix_display = contact_matrix.astype(int).copy()  # Convert to int for display
+    contact_matrix_display.insert(0, 'Annotation', contact_matrix_display.index)  # Add the 'Annotation' column
     
     matrix_columns = {
         'Contig name': 'Contig',
@@ -691,7 +691,7 @@ def prepare_data(contig_information_intact, dense_matrix):
     # Add a "Visibility" column to the contig_information_display DataFrame
     contig_information_display['Visibility'] = 1  # Default value to 1 (visible)
 
-    return contig_information, contig_information_display, unique_annotations, annotation_matrix, annotation_matrix_display
+    return contig_information, contig_information_display, unique_annotations, contact_matrix, contact_matrix_display
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -713,7 +713,7 @@ shape = contact_matrix_data['shape']
 sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
 dense_matrix = sparse_matrix.toarray()
 
-contig_information, contig_information_display, unique_annotations, annotation_matrix, annotation_matrix_display = prepare_data(contig_information_intact, dense_matrix)
+contig_information, contig_information_display, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix)
 
 is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
 
@@ -785,11 +785,6 @@ help_modal = html.Div([
 
 # Use the styling functions in the Dash layout
 app.layout = html.Div([
-    dcc.Store(id='contig_information_store', data=contig_information.to_dict()),
-    dcc.Store(id='contig_information_display_store', data=contig_information_display.to_dict()),
-    dcc.Store(id='annotation_matrix_store', data=unique_annotations.tolist()),
-    dcc.Store(id='annotation_matrix_display_store', data=annotation_matrix.to_dict()),
-    dcc.Store(id='unique_annotations_store', data=annotation_matrix_display.to_dict()),
     html.Div([
         html.Button("Download Selected Item", id="download-btn", style={**common_style}),
         html.Button("Reset Selection", id="reset-btn", style={**common_style}),
@@ -899,10 +894,10 @@ app.layout = html.Div([
     html.Div([
         dash_table.DataTable(
             id='contact-table',
-            columns=[{"name": col, "id": col} for col in annotation_matrix_display.columns],
-            data=annotation_matrix_display.to_dict('records'),
+            columns=[{"name": col, "id": col} for col in contact_matrix_display.columns],
+            data=contact_matrix_display.to_dict('records'),
             style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
-            style_data_conditional=styling_annotation_table(annotation_matrix_display),
+            style_data_conditional=styling_annotation_table(contact_matrix_display),
             style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
             style_header={'whiteSpace': 'normal', 'height': 'auto'},  # Allow headers to wrap
             fixed_rows={'headers': True},  # Freeze the first row
@@ -913,44 +908,34 @@ app.layout = html.Div([
 ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
 
 @app.callback(
-    [Output('contig_information_store', 'data'),
-     Output('contig_information_display_store', 'data'),
-     Output('unique_annotations_store', 'data'),
-     Output('annotation_matrix_store', 'data'),
-     Output('annotation_matrix_display_store', 'data')],
     [Input('some_trigger_element', 'n_clicks')]  # Adjust this input to whatever triggers the data loading
 )
 def store_data(n_clicks):
-    contig_information, contig_information_display, unique_annotations, annotation_matrix, annotation_matrix_display = prepare_data(contig_information_intact, dense_matrix)
-
-    # Return these values to the respective dcc.Store components
-    return (
-        contig_information.to_dict(),
-        contig_information_display.to_dict(),
-        unique_annotations.tolist(),
-        annotation_matrix.to_dict(),
-        annotation_matrix_display.to_dict()
-    )
+    global contig_information
+    global contig_information_display
+    global unique_annotations
+    global contact_matrix
+    global contact_matrix_display
+    
+    contig_information, contig_information_display, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix)
+    return
 
 @app.callback(
     [Output('contact-table', 'columns'),
      Output('contact-table', 'data'),
      Output('contact-table', 'style_data_conditional')],
-    [Input('annotation_matrix_display_store', 'data')]
+    [Input('some_trigger_element', 'n_clicks')]
 )
-def update_contact_table(annotation_matrix_display_data):
-
-    # Convert the data back into a DataFrame
-    annotation_matrix_display_df = pd.DataFrame(annotation_matrix_display_data)
+def update_contact_table(n_clicks):
         
     # Generate table columns based on the DataFrame's columns
-    table_columns = [{"name": col, "id": col} for col in annotation_matrix_display_df.columns]
+    table_columns = [{"name": col, "id": col} for col in contact_matrix_display.columns]
 
     # Convert the DataFrame into a list of dictionaries (format required by Dash tables)
-    table_data = annotation_matrix_display_data
+    table_data = contact_matrix_display.to_dict
 
     # Generate the conditional styling based on the stored data
-    style_conditions = styling_annotation_table(annotation_matrix_display_df)
+    style_conditions = styling_annotation_table(contact_matrix_display)
         
     return table_columns, table_data, style_conditions
 
@@ -1062,21 +1047,16 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
      State('annotation-selector', 'value'),
      State('secondary-annotation-selector', 'value'),
      State('contig-selector', 'value'),
-     State('contact-table', 'data'),
-     State('contig_information_store', 'data'),
-     State('annotation_matrix_store', 'data'),
-     State('contig_information_display_store', 'data'),
-     State('unique_annotations_store', 'data')]
+     State('contact-table', 'data')]
 )
-def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, secondary_annotation, selected_contig, table_data,
-                         contig_information_data, annotation_matrix_data, contig_information_display_data, unique_annotations_data):
+def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, secondary_annotation, selected_contig, table_data):
     global current_visualization_mode
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
     logger.info(f"Triggered by {triggered_id}, current mode: {visualization_type}, selected_annotation: {selected_annotation}, selected_contig: {selected_contig}")
-
+    
     # Initialize default values for cyto_elements and bar_fig
-    cyto_elements, bar_fig = basic_visualization(annotation_matrix, contig_information, unique_annotations)
+    cyto_elements, bar_fig = basic_visualization(contact_matrix, contig_information, unique_annotations)
 
     if triggered_id == 'reset-btn' or not selected_annotation:
         # Reset all selections to show the original plot and all contigs
@@ -1098,7 +1078,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
                 cyto_elements, bar_fig = inter_annotation_visualization(selected_annotation, secondary_annotation, contig_information, unique_annotations)
 
         elif visualization_type == 'intra_annotation':
-            cyto_elements, bar_fig = intra_annotation_visualization(annotation_matrix, selected_annotation, contig_information, unique_annotations)
+            cyto_elements, bar_fig = intra_annotation_visualization(contact_matrix, selected_annotation, contig_information, unique_annotations)
 
         elif visualization_type == 'contig':
             cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig, contig_information)
@@ -1296,19 +1276,16 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
     [Output('annotation-selector', 'options'),
      Output('secondary-annotation-selector', 'options'),
      Output('contig-selector', 'options')],
-    [Input('unique_annotations_store', 'data'),
-     Input('contig_information_store', 'data'),
-     Input('annotation-selector', 'value')],
+    [Input('annotation-selector', 'value')],
     [State('visualization-selector', 'value')]  # Only use the value as a state, not as a trigger
 )
-def update_dropdowns(unique_annotations_data, contig_information_data, selected_annotation, visualization_type):
-    contig_information = pd.DataFrame(contig_information_data)
+def update_dropdowns(selected_annotation, visualization_type):
     # Initialize empty lists for options
     annotation_options = []
     secondary_annotation_options = []
     contig_options = []
 
-    annotation_options = [{'label': annotation, 'value': annotation} for annotation in unique_annotations_data]
+    annotation_options = [{'label': annotation, 'value': annotation} for annotation in unique_annotations]
         
     # Only show secondary annotation options if visualization type is 'inter_annotation'
     if visualization_type == 'inter_annotation':
