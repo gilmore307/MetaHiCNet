@@ -717,15 +717,6 @@ contig_information, contig_information_display, unique_annotations, annotation_m
 
 is_viral_colors = {'True': '#F4B084', 'False': '#8EA9DB'}  # Red for viral, blue for non-viral
 
-# Set the global graph G
-cyto_elements, bar_fig = basic_visualization(annotation_matrix, contig_information, unique_annotations)
-
-# Extract colors for contigs and annotation
-contig_colors, annotation_colors = get_contig_and_annotation_colors(contig_information, cyto_elements)
-
-# Apply the updated function in your Dash layout
-styleConditions = styling_contig_table(contig_information_display, contig_information, contig_colors, annotation_colors)
-
 # Define the column definitions for AG Grid
 column_defs = [
     {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120},
@@ -736,16 +727,6 @@ column_defs = [
     {"headerName": "Intra-contig contact", "field": "Intra-contig contact", "width": 140, "wrapHeaderText": True},
     {"headerName": "Visibility", "field": "Visibility",  "hide": True}
 ]
-
-# Define the default column definitions
-default_col_def = {
-    "sortable": True,
-    "filter": True,
-    "resizable": True,
-    "cellStyle": {
-        "styleConditions": styleConditions
-    }
-}
 
 # Base stylesheet for Cytoscape
 base_stylesheet = [
@@ -826,14 +807,14 @@ app.layout = html.Div([
         ),
         dcc.Dropdown(
             id='annotation-selector',
-            options=[{'label': annotation, 'value': annotation} for annotation in unique_annotations],
+            options=[],
             value=None,
             placeholder="Select a annotation",
             style={'width': '300px', 'display': 'inline-block'}
         ),
         dcc.Dropdown(
             id='secondary-annotation-selector',
-            options=[{'label': annotation, 'value': annotation} for annotation in unique_annotations],
+            options=[],
             value=None,
             placeholder="Select a secondary annotation",
             style={'width': '300px', 'display': 'none'}  # Hide by default
@@ -863,7 +844,7 @@ app.layout = html.Div([
     html.Div(style={'height': '60px'}),  # Add a placeholder div to account for the fixed header height
     html.Div([
         html.Div([
-            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
+            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=go.Figure(), style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
             html.Div(id='row-count', style={'margin': '0px', 'height': '2vh', 'display': 'inline-block'}),
             dcc.Checklist(
                 id='visibility-filter',
@@ -875,7 +856,14 @@ app.layout = html.Div([
                 id='contig-info-table',
                 columnDefs=column_defs,
                 rowData=contig_information_display.to_dict('records'),
-                defaultColDef=default_col_def,
+                defaultColDef={
+                    "sortable": True,
+                    "filter": True,
+                    "resizable": True,
+                    "cellStyle": {
+                        "styleConditions": []
+                    }
+                },
                 style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'},
                 dashGridOptions={
                     'headerPinned': 'top',
@@ -886,7 +874,7 @@ app.layout = html.Div([
         html.Div([
             cyto.Cytoscape(
                 id='cyto-graph',
-                elements=cyto_elements,
+                elements=[],
                 stylesheet=base_stylesheet,
                 style={'height': '80vh', 'width': '48vw', 'display': 'inline-block'},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
@@ -980,8 +968,7 @@ def update_contact_table(annotation_matrix_display_data):
      Input('contig-info-table', 'selectedRows'),
      Input('cyto-graph', 'selectedNodeData'),
      Input('cyto-graph', 'selectedEdgeData')],
-    [State('contact-table', 'data')],
-    prevent_initial_call=True
+    [State('contact-table', 'data')]
 )
 def sync_selectors(visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data, contact_table_data):
     ctx = callback_context
@@ -1075,10 +1062,14 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
      State('annotation-selector', 'value'),
      State('secondary-annotation-selector', 'value'),
      State('contig-selector', 'value'),
-     State('contact-table', 'data')],
-    prevent_initial_call=True
+     State('contact-table', 'data'),
+     State('contig_information_store', 'data'),
+     State('annotation_matrix_store', 'data'),
+     State('contig_information_display_store', 'data'),
+     State('unique_annotations_store', 'data')]
 )
-def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, secondary_annotation, selected_contig, table_data):
+def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, secondary_annotation, selected_contig, table_data,
+                         contig_information_data, annotation_matrix_data, contig_information_display_data, unique_annotations_data):
     global current_visualization_mode
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
@@ -1128,8 +1119,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
      Output('hover-info', 'children')],
     [Input('annotation-selector', 'value'),
      Input('secondary-annotation-selector', 'value'),
-     Input('contig-selector', 'value')],
-    prevent_initial_call=True
+     Input('contig-selector', 'value')]
 )
 def update_selected_styles(selected_annotation, secondary_annotation, selected_contig):
     selected_nodes = []
