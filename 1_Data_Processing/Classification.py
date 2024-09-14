@@ -162,13 +162,13 @@ combined_data = combined_data.sort_values(by='Contig name').reset_index(drop=Tru
 
 
 prefix_to_tier = {
-    'd__': 'domain',
-    'p__': 'phylum',
-    'c__': 'class',
-    'o__': 'order',
-    'f__': 'family',
-    'g__': 'genus',
-    's__': 'species'
+    'd__': 'Domain',
+    'p__': 'Phylum',
+    'c__': 'Class',
+    'o__': 'Order',
+    'f__': 'Family',
+    'g__': 'Genus',
+    's__': 'Species'
 }
 
 def split_classification(classification):
@@ -184,17 +184,15 @@ def split_classification(classification):
     
     return pd.Series(result)
 
-tiers = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+tiers = ['Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
 combined_data[tiers] = combined_data['classification'].apply(split_classification)
 combined_data.loc[combined_data['classification'].isna(), 'type'] = 'Unmapped'
 
-tiers = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
-
 def fill_unspecified(row):
     if row['type'] == 'phage':
-        row['domain'] = 'Virus'
-        row['phylum'] = 'Virus'
-        row['class'] = 'Virus'
+        row['Domain'] = 'Virus'
+        row['Phylum'] = 'Virus'
+        row['Class'] = 'Virus'
         
     last_non_blank = ""
 
@@ -209,9 +207,9 @@ def fill_unspecified(row):
 
 combined_data = combined_data.apply(fill_unspecified, axis=1)
 combined_data = combined_data.drop(columns=['Bin', 'classification'])
-combined_data['kingdom'] = combined_data['domain'] 
+combined_data['Kingdom'] = combined_data['Domain'] 
 cols = combined_data.columns.tolist()
-cols.insert(cols.index('domain') + 1, cols.pop(cols.index('kingdom')))
+cols.insert(cols.index('Domain') + 1, cols.pop(cols.index('Kingdom')))
 combined_data = combined_data[cols]
 
 # **10. Remove unmapped contig**

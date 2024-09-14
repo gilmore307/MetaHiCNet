@@ -262,9 +262,10 @@ def get_contig_and_annotation_colors(cyto_elements, contig_information):
     annotation_colors = {}
 
     # Extract colors from Cytoscape elements
-    for element in cyto_elements:
-        if 'data' in element and 'color' in element['data'] and 'id' in element['data']:
-            contig_colors[element['data']['id']] = element['data']['color']
+    if cyto_elements:
+        for element in cyto_elements:
+            if 'data' in element and 'color' in element['data'] and 'id' in element['data']:
+                contig_colors[element['data']['id']] = element['data']['color']
 
     # Get annotation colors based on viral status
     for annotation in contig_information['Contig annotation'].unique():
@@ -326,15 +327,15 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 def taxonomy_visualization():
     logger.info('Creating taxonomy visualization')
     level_mapping = {
-        'life': 9,
-        'domain': 8,
-        'kingdom': 7,
-        'phylum': 6,
-        'class': 5,
-        'order': 4,
-        'family': 3,
-        'genus': 2,
-        'species': 1
+        'Life': 9,
+        'Domain': 8,
+        'Kingdom': 7,
+        'Phylum': 6,
+        'Class': 5,
+        'Order': 4,
+        'Family': 3,
+        'Genus': 2,
+        'Species': 1
     }
 
     records = []
@@ -345,7 +346,7 @@ def taxonomy_visualization():
         "parent": "",
         "level": 9,
         "level_name": "Life",
-        "type": "life",
+        "type": "Life",
         "total coverage": 0,
         "border_color": "black"
     })
@@ -353,7 +354,7 @@ def taxonomy_visualization():
     
     for _, row in contig_information_intact.iterrows():
         for level, level_num in level_mapping.items():
-            if level == 'life':
+            if level == 'Life':
                 continue
                 
             annotation = f"{level}_{row[level]}"
@@ -405,7 +406,31 @@ def taxonomy_visualization():
     )
 
     logger.info('Taxonomy visualization creation completed')
-    return fig
+    
+    # Prepare data for bar chart with 3 traces
+    total_contig_coverage = contig_information.groupby('Contig annotation')['Contig coverage'].sum().reindex(unique_annotations)
+    inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
+    total_contig_coverage_sum = total_contig_coverage.values
+    contig_counts = contig_information['Contig annotation'].value_counts()
+    
+    node_colors = {}
+    for annotation in total_contig_coverage.index:
+        contig_type = contig_information.loc[
+            contig_information['Contig annotation'] == annotation, 'type'
+        ].values[0]
+        color = type_colors.get(contig_type, default_color)
+        node_colors[annotation] = color
+        
+
+    data_dict = {
+        'Total Inter-Annotation Contact': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
+        'Total Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_contig_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
+        'Contig Number': pd.DataFrame({'name': unique_annotations, 'value': contig_counts, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
+    }
+
+    bar_fig = create_bar_chart(data_dict)
+    
+    return fig, bar_fig
 
 # Function to visualize annotation relationship
 def basic_visualization(contig_information, unique_annotations, contact_matrix):
@@ -503,7 +528,8 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
 
     # Remove nodes not connected to selected annotation
     for node in nodes_to_remove:
-        G.remove_node(node)
+        if node in G:
+            G.remove_node(node)
 
     # Generate gradient values for the edge weights
     edge_weights = generate_gradient_values(np.array(inter_annotation_contacts), 10, 100)
@@ -747,20 +773,18 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     return cyto_elements, bar_fig
 
-def prepare_data(contig_information_intact, dense_matrix, taxonomy_level = 'family'):
+def prepare_data(contig_information_intact, dense_matrix, taxonomy_level = 'Family'):
     global contig_information
     global unique_annotations
     global contact_matrix
     global contact_matrix_display
     
     if taxonomy_level is None:
-        taxonomy_level = 'family'
-    else:
-        taxonomy_level = taxonomy_level.lower()
+        taxonomy_level = 'Family'
 
     contig_information = contig_information_intact.copy()
     contig_information['Contig annotation'] = contig_information[taxonomy_level]
-    taxonomy_columns = ['domain', 'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+    taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
     contig_information = contig_information.drop(columns=taxonomy_columns)
     
     unique_annotations = contig_information['Contig annotation'].unique()
@@ -803,16 +827,20 @@ shape = contact_matrix_data['shape']
 sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
 dense_matrix = sparse_matrix.toarray()
 
+if dense_matrix.shape[0] != contig_information_intact.shape[0]:
+    logger.info(f'Dimention dismatch: {dense_matrix.shape[0]}, {contig_information_intact.shape[0]}')
+    dense_matrix = dense_matrix[:contig_information_intact.shape[0], :contig_information_intact.shape[0]]
+
 matrix_columns = {
     'Contig name': 'Contig',
-    'domain': 'Domain',
-    'kingdom': 'Kingdom',
-    'phylum': 'Phylum',
-    'class': 'Class',
-    'order': 'Order',
-    'family': 'Family',
-    'genus': 'Genus',
-    'species': 'Species',
+    'Domain': 'Domain',
+    'Kingdom': 'Kingdom',
+    'Phylum': 'Phylum',
+    'Class': 'Class',
+    'Order': 'Order',
+    'Family': 'Family',
+    'Genus': 'Genus',
+    'Species': 'Species',
     'Number of restriction sites': 'Restriction sites',
     'Contig length': 'Contig length',
     'Contig coverage': 'Contig coverage',
@@ -941,14 +969,14 @@ app.layout = html.Div([
         dcc.Dropdown(
             id='taxonomy-level-selector',
             options=[
-                {'label': 'Domain', 'value': 'domain'},
-                {'label': 'Kingdom', 'value': 'kingdom'},
-                {'label': 'Phylum', 'value': 'phylum'},
-                {'label': 'Class', 'value': 'class'},
-                {'label': 'Order', 'value': 'order'},
-                {'label': 'Family', 'value': 'family'},
-                {'label': 'Genus', 'value': 'genus'},
-                {'label': 'Species', 'value': 'species'},
+                {'label': 'Domain', 'value': 'Domain'},
+                {'label': 'Kingdom', 'value': 'Kingdom'},
+                {'label': 'Phylum', 'value': 'Phylum'},
+                {'label': 'Class', 'value': 'Class'},
+                {'label': 'Order', 'value': 'Order'},
+                {'label': 'Family', 'value': 'Family'},
+                {'label': 'Genus', 'value': 'Genus'},
+                {'label': 'Species', 'value': 'Species'},
             ],
             value='Family',
             placeholder="Select Taxonomy Level",
@@ -1014,12 +1042,12 @@ app.layout = html.Div([
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
-            dcc.Graph(id='treemap-graph', figure=go.Figure(), style={}),
+            dcc.Graph(id='treemap-graph', figure=go.Figure(), style={'height': '80vh', 'width': '48vw', 'display': 'block'}),
             cyto.Cytoscape(
                 id='cyto-graph',
                 elements=[],
                 stylesheet=base_stylesheet,
-                style={'height': '80vh', 'width': '48vw', 'display': 'inline-block'},
+                style={'height': '80vh', 'width': '48vw', 'display': 'block'},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
                 zoom=1,
                 userZoomingEnabled=True,
@@ -1095,24 +1123,34 @@ def update_data(taxonomy_level):
      Output('contig-selector', 'style'),
      Output('contact-table', 'active_cell'),
      Output('contig-info-table', 'selectedRows')],
-    [Input('visualization-selector', 'value'),
+    [Input('reset-btn', 'n_clicks'),
+     Input('visualization-selector', 'value'),
      Input('contact-table', 'active_cell'),
      Input('contig-info-table', 'selectedRows'),
      Input('cyto-graph', 'selectedNodeData'),
      Input('cyto-graph', 'selectedEdgeData')],
+     State('taxonomy-level-selector', 'value'),
      prevent_initial_call=True
 )
-def sync_selectors(visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data):
+def sync_selectors(reset_clicks,visualization_type, contact_table_active_cell, contig_info_selected_rows, selected_node_data, selected_edge_data, taxonomy_level):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     selected_annotation, secondary_annotation, selected_contig = synchronize_selections(
-        triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell)
+        triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, taxonomy_level )
     
     taxonomy_level_style = {'display': 'none'}
     annotation_selector_style = {'display': 'none'}
     secondary_annotation_style = {'display': 'none'}
     contig_selector_style = {'display': 'none'}
+    
+    # Reset all the selections
+    if triggered_id == 'reset-btn':
+        visualization_type = 'taxonomy_hierarchy'
+        selected_annotation = None
+        secondary_annotation = None
+        selected_contig = None
+        
 
     # If a contig is selected in the network or contig table
     if selected_contig:
@@ -1144,11 +1182,12 @@ def sync_selectors(visualization_type, contact_table_active_cell, contig_info_se
 
     return visualization_type, taxonomy_level_style, selected_annotation, annotation_selector_style, secondary_annotation, secondary_annotation_style, selected_contig, contig_selector_style, None, []
  
-def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell):
+def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, contig_info_selected_rows, contact_table_active_cell, taxonomy_level ):
     # Initialize the return values
     selected_annotation = None
-    selected_contig = None
     secondary_annotation = None
+    selected_contig = None
+    
 
     # If a node in the network is selected
     if triggered_id == 'cyto-graph' and selected_node_data:
@@ -1170,9 +1209,10 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
 
     # If a row in the contig-info-table is selected
     elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
+        print(contig_info_selected_rows)
         selected_row = contig_info_selected_rows[0]
-        if 'Annotation' in selected_row and 'Contig' in selected_row:
-            selected_annotation = selected_row['Annotation']
+        if taxonomy_level in selected_row and 'Contig' in selected_row:
+            selected_annotation = selected_row[taxonomy_level]
             selected_contig = selected_row['Contig']
 
     # If a cell in the contact-table is selected
@@ -1183,6 +1223,8 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
         col_annotation = column_id if column_id != 'Annotation' else None
         selected_annotation = row_annotation
         secondary_annotation = col_annotation
+    
+    logger.info(f'Current selected: {selected_annotation}, {secondary_annotation}, {selected_contig}')
 
     return selected_annotation, secondary_annotation, selected_contig
 
@@ -1199,7 +1241,8 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
      State('annotation-selector', 'value'),
      State('secondary-annotation-selector', 'value'),
      State('contig-selector', 'value'),
-     State('contact-table', 'data')]
+     State('contact-table', 'data')],
+     prevent_initial_call=True
 )
 def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, secondary_annotation, selected_contig, table_data):
     logger.info('update_visualization triggered')
@@ -1212,19 +1255,17 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
-    # Initialize default values for cyto_elements and bar_fig
-
-    cyto_elements, bar_fig = basic_visualization(contig_information, unique_annotations, contact_matrix)
-    treemap_fig = taxonomy_visualization()
     
     if triggered_id == 'reset-btn' or not selected_annotation:
-        # Reset all selections to show the original plot and all contigs
+        # Reset to show the original plot
         current_visualization_mode = {
             'visualization_type': 'taxonomy_hierarchy',
             'selected_annotation': None,
             'secondary_annotation': None,
             'selected_contig': None
         }
+        treemap_fig, bar_fig = taxonomy_visualization()
+        cyto_elements = None
         treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
         
     elif triggered_id == 'confirm-btn':
@@ -1235,8 +1276,11 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         current_visualization_mode['selected_contig'] = selected_contig
 
         if visualization_type == 'taxonomy_hierarchy':
+            treemap_fig, bar_fig = taxonomy_visualization()
+            cyto_elements = None
             treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
         elif visualization_type == 'basic':
+            cyto_elements, bar_fig = basic_visualization(contig_information, unique_annotations, contact_matrix)
             treemap_style = {'display': 'none'}
         elif visualization_type == 'intra_annotation':
             cyto_elements, bar_fig = intra_annotation_visualization(selected_annotation, contig_information, unique_annotations, contact_matrix)
@@ -1261,6 +1305,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         }
     }
 
+    logger.info('Current visulization made: ', current_visualization_mode)
     return cyto_elements, bar_fig, treemap_fig, treemap_style, default_col_def
 
 @app.callback(
