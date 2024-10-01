@@ -109,10 +109,10 @@ file_path = 'input/contig_info.csv'
 contig_data = pd.read_csv(file_path)
 new_column_names = [
     "Contig name",
-    "Number of restriction sites",
+    "Restriction sites",
     "Contig length",
     "Contig coverage",
-    "Hi-C contacts mapped to the same contigs"
+    "Intra-contig contact"
 ]
 contig_data.columns = new_column_names
 
@@ -261,10 +261,10 @@ filtered_data['Binning information'] = filtered_data.apply(
 
 grouped_data = filtered_data.groupby('Binning information').agg({
     'Contig name': lambda x: ', '.join(x),
-    'Number of restriction sites': 'sum',
+    'Restriction sites': 'sum',
     'Contig length': 'sum',
     'Contig coverage': 'sum',
-    'Hi-C contacts mapped to the same contigs': 'sum',
+    'Intra-contig contact': 'sum',
     'type': 'first',
     'Domain': 'first',
     'Kingdom': 'first',
