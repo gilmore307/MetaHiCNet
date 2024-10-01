@@ -17,15 +17,30 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+class DashLoggerHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.logs = []  # Store logs in a list
 
-# Number of threads to use: 4 * CPU core count
-num_threads = 4 * os.cpu_count()
+    def emit(self, record):
+        # This is the method that is called for each log message
+        log_entry = self.format(record)
+        self.logs.append(log_entry)  # Add log message to the list
+
+    def get_logs(self):
+        # Return the logs as a string (joining the list)
+        return '\n'.join(self.logs)
+
+    def clear_logs(self):
+        # Clear the log list
+        self.logs.clear()
+
 
 # Function to get contig indexes based on annotation in a specific part of the dataframe
 def get_contig_indexes(annotations, contig_information):
+    # Number of threads to use: 4 * CPU core count
+    num_threads = 4 * os.cpu_count()
+    
     # Ensure annotations is a list even if a single annotation is provided
     if isinstance(annotations, str):
         annotations = [annotations]
@@ -326,8 +341,12 @@ def arrange_contigs(contigs, inter_contig_edges, distance, selected_contig=None,
 
 def taxonomy_visualization():
     logger.info('Creating taxonomy visualization')
+    
+    host_data = contig_information_intact[contig_information_intact['type'].isin(['chromosome', 'plasmid'])]
+    virus_data = contig_information_intact[contig_information_intact['type'] == 'phage']
+    
     level_mapping = {
-        'Life': 9,
+        'Community': 9,
         'Domain': 8,
         'Kingdom': 7,
         'Phylum': 6,
@@ -342,23 +361,24 @@ def taxonomy_visualization():
     existing_annotations = set()
     
     records.append({
-        "annotation": "Life",
+        "annotation": "Community",
         "parent": "",
         "level": 9,
-        "level_name": "Life",
-        "type": "Life",
+        "level_name": "Community",
+        "type": "Community",
         "total coverage": 0,
-        "border_color": "black"
+        "border_color": "black",
+        "Bin": contig_information_intact['Bin'].unique()  # Add Bin attribute as an empty list for Community
     })
-    existing_annotations.add("Life")
+    existing_annotations.add("Community")
     
-    for _, row in contig_information_intact.iterrows():
+    for _, row in host_data.iterrows():
         for level, level_num in level_mapping.items():
-            if level == 'Life':
+            if level == 'Community':
                 continue
                 
             annotation = f"{level}_{row[level]}"
-            parent = "Life" if level_num == 8 else f"{list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]}_{row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]]}"
+            parent = "Community" if level_num == 8 else f"{list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]}_{row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]]}"
             
             if annotation not in existing_annotations:
                 records.append({
@@ -367,19 +387,52 @@ def taxonomy_visualization():
                     "level": level_num,
                     "level_name": level.capitalize(),
                     "type": row["type"],
-                    "total coverage": row["Contig coverage"],
-                    "border_color": type_colors.get(row["type"], "gray")
+                    "total coverage": row['Contig coverage'],
+                    "border_color": type_colors.get(row["type"], "gray"),
+                    "Bin": [row["Bin"]]
                 })
                 existing_annotations.add(annotation)
             else:
                 for rec in records:
                     if rec['annotation'] == annotation:
                         rec['total coverage'] += row['Contig coverage']
+                        rec['Bin'].append(row['Bin']) 
+                        break
+                   
+    for _, row in virus_data.iterrows():
+        for level, level_num in level_mapping.items():
+            if level not in ['Class', 'Order', 'Family']:
+                continue
+                
+            annotation = 'Virus' if level_num == 5 else f"{level}_{row[level]}"
+            parent = (
+                "Community" if level_num == 5
+                else 'Virus' if level_num == 4
+                else f"{list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]}_{row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]]}"
+            )
+            
+            if annotation not in existing_annotations:
+                records.append({
+                    "annotation": annotation,
+                    "parent": parent,
+                    "level": level_num,
+                    "level_name": level.capitalize(),
+                    "type": row["type"],
+                    "total coverage": row['Contig coverage'],
+                    "border_color": type_colors.get(row["type"], "gray"),
+                    "Bin": [row["Bin"]]
+                })
+                existing_annotations.add(annotation)
+            else:
+                for rec in records:
+                    if rec['annotation'] == annotation:
+                        rec['total coverage'] += row['Contig coverage']
+                        rec['Bin'].append(row['Bin'])
                         break
 
     hierarchy_df = pd.DataFrame(records)
-
     hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
+    hierarchy_df.loc[hierarchy_df['type'] == 'phage', 'scaled_coverage'] *= 20
 
     fig = px.treemap(
         hierarchy_df,
@@ -394,15 +447,15 @@ def taxonomy_visualization():
         marker=dict(
             line=dict(width=2, color=hierarchy_df['border_color'])
         ),
-        customdata=hierarchy_df[['level_name']],
-        hovertemplate='<b>%{label}</b><br>Level: %{customdata[0]}<br>Coverage: %{value}'
+        customdata=hierarchy_df[['level_name', 'Bin']],  # Add Bin to the hover data
+        hovertemplate='<b>%{label}</b><br>Level: %{customdata[0]}<br>Coverage: %{value}<br>Bins: %{customdata[1]}'
     )
 
     fig.update_layout(
         coloraxis_showscale=False,
-        title="Taxonomy Tree Diagram",
-        font_size=15,
-        autosize=True
+        font_size=20,
+        autosize=True,
+        margin=dict(t=30, b=0, l=0, r=0)
     )
 
     logger.info('Taxonomy visualization creation completed')
@@ -472,7 +525,7 @@ def basic_visualization(contig_information, unique_annotations, contact_matrix):
         d['weight'] = weight
 
     # Initial node positions using a force-directed layout with increased dispersion
-    pos = nx.spring_layout(G, dim=2, k=5, iterations=50, weight='weight')
+    pos = nx.spring_layout(G, dim=2, k=10, iterations=50, weight='weight')
 
     cyto_elements = nx_to_cyto_elements(G, pos)
 
@@ -809,6 +862,18 @@ def prepare_data(contig_information_intact, dense_matrix, taxonomy_level = 'Fami
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
+# Create a logger and add the custom Dash logger handler
+logger = logging.getLogger(__name__)
+dash_logger_handler = DashLoggerHandler()
+dash_logger_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+dash_logger_handler.setFormatter(formatter)
+logger.addHandler(dash_logger_handler)
+logger.setLevel(logging.INFO)
+
+# Example of logging messages
+logger.info("App started")
+
 # Set OpenAI API key
 client = OpenAI(api_key='')
 
@@ -833,6 +898,7 @@ if dense_matrix.shape[0] != contig_information_intact.shape[0]:
 
 matrix_columns = {
     'Contig name': 'Contig',
+    'Bin': 'Bin',
     'Domain': 'Domain',
     'Kingdom': 'Kingdom',
     'Phylum': 'Phylum',
@@ -864,9 +930,15 @@ default_color = '#808080'
 # Define the column definitions for AG Grid
 column_defs = [
     {
-        "headerName": "Taxonomy Information",
+        "headerName": "Bin",
         "children": [
             {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120},
+            {"headerName": "Bin", "field": "Bin", "width": 120}
+        ]
+    },
+    {        
+         "headerName": "Taxonomy",
+         "children": [   
             {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
             {"headerName": "Genus", "field": "Genus", "width": 140, "wrapHeaderText": True},
             {"headerName": "Family", "field": "Family", "width": 140, "wrapHeaderText": True},
@@ -947,11 +1019,19 @@ help_modal = html.Div([
     ], id="modal", size="lg", is_open=False)
 ])
 
+logger.info('Generating default visulization') 
+treemap_fig, bar_fig = taxonomy_visualization()
+
 # Use the styling functions in the Dash layout
 app.layout = html.Div([
+    dcc.Interval(
+        id='interval-component',
+        interval=1*1000,  # in milliseconds (every 1 second)
+        n_intervals=0
+        ),
     html.Div([
-        html.Button("Download Selected Item", id="download-btn", style={**common_style}),
-        html.Button("Reset Selection", id="reset-btn", style={**common_style}),
+        html.Button("Download Current View", id="download-btn", style={**common_style}),
+        html.Button("Reset", id="reset-btn", style={**common_style}),
         html.Button("Help", id="open-help", style={**common_style}),
         dcc.Download(id="download-dataframe-csv"),
         dcc.Dropdown(
@@ -1021,7 +1101,7 @@ app.layout = html.Div([
     html.Div(style={'height': '60px'}),  # Add a placeholder div to account for the fixed header height
     html.Div([
         html.Div([
-            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=go.Figure(), style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
+            dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=bar_fig, style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
             html.Div(id='row-count', style={'margin': '0px', 'height': '2vh', 'display': 'inline-block'}),
             dcc.Checklist(
                 id='visibility-filter',
@@ -1042,12 +1122,12 @@ app.layout = html.Div([
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
         html.Div([
-            dcc.Graph(id='treemap-graph', figure=go.Figure(), style={'height': '80vh', 'width': '48vw', 'display': 'block'}),
+            dcc.Graph(id='treemap-graph', figure=treemap_fig, style={'height': '80vh', 'width': '48vw', 'display': 'inline-block'}),
             cyto.Cytoscape(
                 id='cyto-graph',
                 elements=[],
                 stylesheet=base_stylesheet,
-                style={'height': '80vh', 'width': '48vw', 'display': 'block'},
+                style={},
                 layout={'name': 'preset'},  # Use preset to keep the initial positions
                 zoom=1,
                 userZoomingEnabled=True,
@@ -1055,7 +1135,7 @@ app.layout = html.Div([
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
     html.Div([
-        html.Div(id='hover-info', style={'height': '50vh', 'width': '20vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'}),
+        html.Div(id='hover-info', style={'height': '20vh', 'width': '20vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'}),
             html.Div([
                 dcc.Textarea(
                     id='chatgpt-input',
@@ -1064,8 +1144,20 @@ app.layout = html.Div([
                 ),
                 html.Button('Interpret Data', id='interpret-button', n_clicks=0, style={'width': '100%', 'display': 'inline-block'})
             ], style={'width': '20vw', 'display': 'inline-block'}),
-            html.Div(id='gpt-answer', style={'height': '15vh', 'width': '20vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'})
+            html.Div(id='gpt-answer', 
+                     style={'height': '45vh', 
+                            'width': '20vw', 
+                            'whiteSpace': 'pre-wrap',
+                            'font-size': '8px',
+                            'background-color': 'white', 
+                            'padding': '5px', 
+                            'border': '1px solid #ccc', 
+                            'margin-top': '3px',
+                            'overflowY': 'auto' }
+            ),
+            dcc.Store(id='scroll-trigger', data=False)
         ], style={'display': 'inline-block', 'vertical-align': 'top', 'margin-left': '20px'}),
+        
     ], style={'width': '100%', 'display': 'flex'}),
     html.Div([
         dash_table.DataTable(
@@ -1224,13 +1316,14 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
         selected_annotation = row_annotation
         secondary_annotation = col_annotation
     
-    logger.info(f'Current selected: {selected_annotation}, {secondary_annotation}, {selected_contig}')
+    logger.info(f'Current selected: \n{selected_annotation}, \n{secondary_annotation}, \n{selected_contig}')
 
     return selected_annotation, secondary_annotation, selected_contig
 
 # Callback to update the visualizationI want to 
 @app.callback(
     [Output('cyto-graph', 'elements'),
+     Output('cyto-graph', 'style'),
      Output('bar-chart', 'figure'),
      Output('treemap-graph', 'figure'),
      Output('treemap-graph', 'style'),
@@ -1255,9 +1348,9 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
-    
-    if triggered_id == 'reset-btn' or not selected_annotation:
+    if triggered_id == 'reset-btn':
         # Reset to show the original plot
+        logger.info('reset to show taxonomy_hierarchy visulization')
         current_visualization_mode = {
             'visualization_type': 'taxonomy_hierarchy',
             'selected_annotation': None,
@@ -1265,9 +1358,10 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             'selected_contig': None
         }
         treemap_fig, bar_fig = taxonomy_visualization()
-        cyto_elements = None
         treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-        
+        cyto_elements = []
+        cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+
     elif triggered_id == 'confirm-btn':
         # Update the current visualization mode with selected values
         current_visualization_mode['visualization_type'] = visualization_type
@@ -1276,22 +1370,36 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         current_visualization_mode['selected_contig'] = selected_contig
 
         if visualization_type == 'taxonomy_hierarchy':
+            logger.info('show taxonomy_hierarchy visulization')
             treemap_fig, bar_fig = taxonomy_visualization()
-            cyto_elements = None
             treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-        elif visualization_type == 'basic':
+            cyto_elements = []
+            cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+        elif visualization_type == 'basic' or not selected_annotation:
+            logger.info('show basic visulization')
             cyto_elements, bar_fig = basic_visualization(contig_information, unique_annotations, contact_matrix)
-            treemap_style = {'display': 'none'}
+            treemap_fig = go.Figure()
+            treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
         elif visualization_type == 'intra_annotation':
+            logger.info('show intra_annotation visulization')
             cyto_elements, bar_fig = intra_annotation_visualization(selected_annotation, contig_information, unique_annotations, contact_matrix)
-            treemap_style = {'display': 'none'}
+            treemap_fig = go.Figure()
+            treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
         elif visualization_type == 'inter_annotation':
+            logger.info('show inter_annotation visulization')
             if selected_annotation and secondary_annotation:
                 cyto_elements, bar_fig = inter_annotation_visualization(selected_annotation, secondary_annotation, contig_information)
-                treemap_style = {'display': 'none'}
+                treemap_fig = go.Figure()
+                treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+                cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
         elif visualization_type == 'contig':
+            logger.info('show contig visulization')
             cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig, contig_information, unique_annotations)
-            treemap_style = {'display': 'none'}
+            treemap_fig = go.Figure()
+            treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
 
     # Update column definitions with style conditions
     contig_colors, annotation_colors = get_contig_and_annotation_colors(cyto_elements, contig_information)
@@ -1304,9 +1412,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             "styleConditions": styleConditions
         }
     }
-
-    logger.info('Current visulization made: ', current_visualization_mode)
-    return cyto_elements, bar_fig, treemap_fig, treemap_style, default_col_def
+    return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, default_col_def
 
 @app.callback(
     [Output('cyto-graph', 'stylesheet'),
@@ -1520,18 +1626,34 @@ def update_dropdowns(selected_annotation, visualization_type):
 # Dash callback to use ChatGPT
 @app.callback(
     Output('gpt-answer', 'children'),
-    [Input('interpret-button', 'n_clicks')],
-    [State('chatgpt-input', 'value')],
-    prevent_initial_call=True
+    [Input('interval-component', 'n_intervals'), 
+     Input('interpret-button', 'n_clicks')],
+    [State('chatgpt-input', 'value')]
 )
-def interpret_data(n_clicks, query):
-    if n_clicks > 0 and query:
-        try:
-            interpretation = get_chatgpt_response(query)
-            return f"Interpretation:\n{interpretation}"
-        except Exception as e:
-            return f"Error: {str(e)}"
-    return "No query provided."
+def update_logs_and_gpt(n, interpret_clicks, gpt_query):
+    # Capture logs
+    logs = dash_logger_handler.get_logs()
 
+    # If the interpret button is clicked, handle the GPT query
+    if interpret_clicks > 0 and gpt_query:
+        gpt_response = get_chatgpt_response(gpt_query)
+        logger.info(f"GPT Answer: {gpt_response}")  # Log GPT's answer
+
+    return logs if logs else "No logs yet"
+
+# Client-side callback to scroll to the bottom when 'scroll-trigger' is True
+app.clientside_callback(
+    """
+    function(scrollTrigger) {
+        if (scrollTrigger) {
+            var gptAnswerDiv = document.getElementById('gpt-answer');
+            gptAnswerDiv.scrollTop = gptAnswerDiv.scrollHeight;
+        }
+        return false;  // Reset the scroll-trigger
+    }
+    """,
+    Output('scroll-trigger', 'data'),
+    Input('scroll-trigger', 'data')
+)
 if __name__ == '__main__':
     app.run_server(debug=True)
