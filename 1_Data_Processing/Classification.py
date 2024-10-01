@@ -276,6 +276,22 @@ grouped_data = filtered_data.groupby('Binning information').agg({
     'Species': 'first'
 }).reset_index()
 
+# Define the prefixes for each column
+prefixes = {
+    'Domain': 'd__',
+    'Kingdom': 'k__',
+    'Phylum': 'p__',
+    'Class': 'c__',
+    'Order': 'o__',
+    'Family': 'f__',
+    'Genus': 'g__',
+    'Species': 's__'
+}
+
+# Apply the prefix to each relevant column
+for column, prefix in prefixes.items():
+    grouped_data[column] = grouped_data[column].apply(lambda x: f"{prefix}{x}" if pd.notna(x) else x)
+
 unique_annotations = filtered_data['Binning information'].unique()
 contig_indexes_dict = get_contig_indexes(unique_annotations, filtered_data)
 contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
