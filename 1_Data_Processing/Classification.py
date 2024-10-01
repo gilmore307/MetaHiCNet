@@ -278,14 +278,14 @@ grouped_data = filtered_data.groupby('Binning information').agg({
 
 # Define the prefixes for each column
 prefixes = {
-    'Domain': 'd__',
-    'Kingdom': 'k__',
-    'Phylum': 'p__',
-    'Class': 'c__',
-    'Order': 'o__',
-    'Family': 'f__',
-    'Genus': 'g__',
-    'Species': 's__'
+    'Domain': 'd_',
+    'Kingdom': 'k_',
+    'Phylum': 'p_',
+    'Class': 'c_',
+    'Order': 'o_',
+    'Family': 'f_',
+    'Genus': 'g_',
+    'Species': 's_'
 }
 
 # Apply the prefix to each relevant column
