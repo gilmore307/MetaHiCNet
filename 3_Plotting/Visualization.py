@@ -137,7 +137,7 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
 
     return cyto_stylesheet
 
-# Function to create bar chart
+# Function to handle empty DataFrames and log when no contact is found
 def create_bar_chart(data_dict):
     logger.info("Starting to create bar chart with data_dict")
     traces = []
@@ -146,13 +146,28 @@ def create_bar_chart(data_dict):
         logger.info(f"Creating bar trace for {trace_name}")
         bar_data = data_frame.sort_values(by='value', ascending=False)
         bar_colors = bar_data['color']
-        bar_trace = go.Bar(
-            x=bar_data['name'], 
-            y=bar_data['value'], 
-            name=trace_name, 
-            marker_color=bar_colors,
-            visible=True if idx == 0 else 'legendonly'
-        )
+
+        # Check if 'hover' column exists
+        if 'hover' in bar_data.columns:
+            hover_text = bar_data['hover']
+            bar_trace = go.Bar(
+                x=bar_data['name'], 
+                y=bar_data['value'], 
+                name=trace_name, 
+                marker_color=bar_colors,
+                visible=True if idx == 0 else 'legendonly',
+                hovertext=hover_text,
+                hoverinfo='text'
+            )
+        else:
+            bar_trace = go.Bar(
+                x=bar_data['name'], 
+                y=bar_data['value'], 
+                name=trace_name, 
+                marker_color=bar_colors,
+                visible=True if idx == 0 else 'legendonly'
+            )
+
         traces.append(bar_trace)
 
     logger.info("Bar traces created, now creating layout")
@@ -614,13 +629,35 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
 
     # Get and arrange bins within the selected annotation node
     bins = contig_information.loc[indices, 'Bin']
+    # Initialize required variables
+    bin_contact_values = []
+    bin_contact_colors = []
+    bin_contact_hovers = [] 
     inter_bin_edges = set()
-
+    
+    # Unified loop
     for i in indices:
+        bin_i = contig_information.at[i, 'Bin']
         for j in range(dense_matrix.shape[0]):
             if dense_matrix[i, j] != 0 and contig_information.at[j, 'Bin annotation'] != selected_annotation:
-                inter_bin_edges.add(contig_information.at[i, 'Bin'])
-                inter_bin_edges.add(contig_information.at[j, 'Bin'])
+                bin_j = contig_information.at[j, 'Bin']
+                contact_value = dense_matrix[i, j]
+    
+                # Add to bin contact values and colors
+                bin_contact_values.append((bin_i, bin_j, contact_value))
+    
+                # Get the color of annotation B (where B is the annotation of bin_j)
+                annotation_b = contig_information.at[j, 'Bin annotation']
+                bin_j_color = G.nodes[annotation_b]['color']
+                bin_contact_colors.append(bin_j_color)
+    
+                # Add hover information (annotation B and contact value)
+                hover_info = f"{annotation_b} - {bin_j}, Contact: {int(contact_value)}"
+                bin_contact_hovers.append(hover_info)
+    
+                # Add bins to inter_bin_edges
+                inter_bin_edges.add(bin_i)
+                inter_bin_edges.add(bin_j)
 
     bin_positions = arrange_bins(bins, inter_bin_edges, distance=1, center_position=new_pos[selected_annotation])
 
@@ -639,11 +676,30 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
     filtered_bin_counts = bin_contact_counts[bin_contact_counts.index.isin(G.nodes)]
     filtered_inter_annotation_contacts = inter_annotation_contacts[inter_annotation_contacts.index.isin(G.nodes)]
 
+    # Convert bin contact data to a DataFrame for visualization
+    bin_contact_df = pd.DataFrame(bin_contact_values, columns=['Bin 1', 'Bin 2', 'Contact Value'])
+
+    # Prepare data for the bar chart
     data_dict = {
-        'Bin Number': pd.DataFrame({'name': filtered_bin_counts.index, 'value': filtered_bin_counts.values, 'color': [G.nodes[annotation]['color'] for annotation in filtered_bin_counts.index]}),
-        'Inter-Annotation Contacts': pd.DataFrame({'name': filtered_inter_annotation_contacts.index, 'value': filtered_inter_annotation_contacts.values, 'color': [G.nodes[annotation]['color'] for annotation in filtered_inter_annotation_contacts.index]})
+        'Bin Number': pd.DataFrame({
+            'name': filtered_bin_counts.index, 
+            'value': filtered_bin_counts.values, 
+            'color': [G.nodes[annotation]['color'] for annotation in filtered_bin_counts.index]
+        }),
+        'Inter-Annotation Contacts': pd.DataFrame({
+            'name': filtered_inter_annotation_contacts.index, 
+            'value': filtered_inter_annotation_contacts.values, 
+            'color': [G.nodes[annotation]['color'] for annotation in filtered_inter_annotation_contacts.index]
+        }),
+        'Bin-to-Bin Contacts': pd.DataFrame({
+            'name': bin_contact_df['Bin 1'] + ' to ' + bin_contact_df['Bin 2'], 
+            'value': bin_contact_df['Contact Value'], 
+            'color': bin_contact_colors,  # Use annotation colors for bin-to-bin contacts
+            'hover': bin_contact_hovers  # Adding hover data here
+        })
     }
 
+    # Create the bar chart with the additional bin-to-bin contact trace
     bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, bar_fig
@@ -730,11 +786,30 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation, co
     interannotation_contacts_df = pd.DataFrame(interannotation_contacts)
 
     bin_contact_counts_df = pd.DataFrame(bin_contact_counts)
-    bin_contact_counts_summary = bin_contact_counts_df.groupby(['name', 'color']).size().reset_index(name='value')
+    
+    # Log if the DataFrame is empty
+    if bin_contact_counts_df.empty:
+        logger.warning(f"bin_contact_counts_df is empty. No data available between {selected_annotation} and {secondary_annotation}")
+        # Return empty chart or handle accordingly
+        return [], go.Figure()  # Return empty elements and figure
 
+    # Try grouping by 'name' and 'color' with error handling
+    try:
+        bin_contact_counts_summary = bin_contact_counts_df.groupby(['name', 'color']).size().reset_index(name='value')
+    except KeyError as e:
+        logger.error(f"KeyError in bin_contact_counts_df: {e}. DataFrame columns: {bin_contact_counts_df.columns}")
+        # Return empty chart or handle accordingly
+        return [], go.Figure()
+    
     inter_bin_contacts_df = pd.DataFrame(inter_bin_contacts)
-    inter_bin_contacts_summary = inter_bin_contacts_df.groupby(['name', 'color']).sum().reset_index()
 
+    try:
+        inter_bin_contacts_summary = inter_bin_contacts_df.groupby(['name', 'color']).sum().reset_index()
+    except KeyError as e:
+        logger.error(f"KeyError in inter_bin_contacts_df: {e}. DataFrame columns: {inter_bin_contacts_df.columns}")
+        # Return empty chart or handle accordingly
+        return [], go.Figure()
+    
     data_dict = {
         'Inter Bin Contacts': interannotation_contacts_df,
         'Bin Contacts Counts': bin_contact_counts_summary,
@@ -795,6 +870,14 @@ def bin_visualization(selected_annotation, selected_bin, contig_information, uni
             if bin != selected_bin:
                 G.add_edge(selected_bin, bin, weight=dense_matrix[selected_bin_index, contig_information[contig_information['Bin'] == bin].index[0]])
             pos[bin] = (x, y)  # Use positions directly from arrange_bins
+            
+    if selected_annotation not in pos:
+        logger.warning(f"Selected annotation '{selected_annotation}' not found in position dictionary. Assigning default position.")
+        pos[selected_annotation] = (0, 0)  # Assign a default or placeholder position
+
+    if selected_bin not in pos:
+        logger.warning(f"Selected bin '{selected_bin}' not found in position dictionary. Using annotation position.")
+        pos[selected_bin] = pos[selected_annotation]
 
     # Ensure the selected bin node is positioned above all other bins
     pos[selected_bin] = pos[selected_annotation]
@@ -1113,7 +1196,11 @@ app.layout = html.Div([
                 id='bin-info-table',
                 columnDefs=column_defs,
                 rowData=contig_information_display.to_dict('records'),
-                defaultColDef={},
+                defaultColDef={
+                        "sortable": True,
+                        "filter": True,
+                        "resizable": True
+                    },
                 style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'},
                 dashGridOptions={
                     'headerPinned': 'top',
@@ -1135,7 +1222,7 @@ app.layout = html.Div([
             )
         ], style={'display': 'inline-block', 'vertical-align': 'top'}),
     html.Div([
-        html.Div(id='hover-info', style={'height': '20vh', 'width': '20vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'}),
+        html.Div(id='hover-info', style={'height': '20vh', 'width': '19vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'}),
             html.Div([
                 dcc.Textarea(
                     id='chatgpt-input',
@@ -1143,10 +1230,10 @@ app.layout = html.Div([
                     style={'width': '100%', 'height': '15vh', 'display': 'inline-block'}
                 ),
                 html.Button('Interpret Data', id='interpret-button', n_clicks=0, style={'width': '100%', 'display': 'inline-block'})
-            ], style={'width': '20vw', 'display': 'inline-block'}),
+            ], style={'width': '19vw', 'display': 'inline-block'}),
             html.Div(id='gpt-answer', 
                      style={'height': '45vh', 
-                            'width': '20vw', 
+                            'width': '19vw', 
                             'whiteSpace': 'pre-wrap',
                             'font-size': '8px',
                             'background-color': 'white', 
@@ -1157,7 +1244,6 @@ app.layout = html.Div([
             ),
             dcc.Store(id='scroll-trigger', data=False)
         ], style={'display': 'inline-block', 'vertical-align': 'top', 'margin-left': '20px'}),
-        
     ], style={'width': '100%', 'display': 'flex'}),
     html.Div([
         dash_table.DataTable(
