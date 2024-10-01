@@ -392,8 +392,8 @@ def taxonomy_visualization():
             if level == 'Community':
                 continue
                 
-            annotation = f"{level}_{row[level]}"
-            parent = "Community" if level_num == 8 else f"{list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]}_{row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]]}"
+            annotation = row[level]
+            parent = "Community" if level_num == 8 else row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num + 1)]]
             
             if annotation not in existing_annotations:
                 records.append({
@@ -419,11 +419,11 @@ def taxonomy_visualization():
             if level not in ['Class', 'Order', 'Family']:
                 continue
                 
-            annotation = 'Virus' if level_num == 5 else f"{level}_{row[level]}"
+            annotation = 'Virus' if level_num == 5 else row[level]
             parent = (
                 "Community" if level_num == 5
                 else 'Virus' if level_num == 4
-                else f"{list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]}_{row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num+1)]]}"
+                else row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num + 1)]]
             )
             
             if annotation not in existing_annotations:
