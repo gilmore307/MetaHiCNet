@@ -88,12 +88,18 @@ def split_classification(classification):
     
     return pd.Series(result)
 
-def fill_unspecified(row):
+def adjust_taxonomy(row):
     if row['type'] == 'phage':
         row['Domain'] = 'Virus'
         row['Phylum'] = 'Virus'
         row['Class'] = 'Virus'
         row['Contig name'] = row['Contig name'] + "_v"
+        
+    if row['type'] == 'plasmid':
+        # Add suffix '_p' to all taxonomy levels for plasmids
+        for tier in tiers:
+            row[tier] = row[tier] + '_p'
+        row['Contig name'] = row['Contig name'] + "_p"
         
     last_non_blank = ""
 
@@ -226,15 +232,6 @@ plasmid_data = plasmid_data_filtered.drop(columns=['plasmid_ID','E-value', 'Bit 
 combined_data = pd.concat([chromosome_data, phage_data, plasmid_data, unmapped_data], ignore_index=True)
 combined_data = combined_data.sort_values(by='Contig name').reset_index(drop=True)
 
-bin_contact_matrix_path= 'input/Normalized_contact_matrix.npz'
-bin_contact_matrix_data = np.load(bin_contact_matrix_path)
-data = bin_contact_matrix_data['data']
-indices = bin_contact_matrix_data['indices']
-indptr = bin_contact_matrix_data['indptr']
-shape = bin_contact_matrix_data['shape']
-sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
-dense_matrix = sparse_matrix.toarray()
-
 prefix_to_tier = {
     'd__': 'Domain',
     'p__': 'Phylum',
@@ -248,7 +245,7 @@ prefix_to_tier = {
 tiers = ['Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
 combined_data[tiers] = combined_data['classification'].apply(split_classification)
 combined_data.loc[combined_data['classification'].isna(), 'type'] = 'Unmapped'
-combined_data = combined_data.apply(fill_unspecified, axis=1)
+combined_data = combined_data.apply(adjust_taxonomy, axis=1)
 combined_data = combined_data.drop(columns=['classification'])
 combined_data['Kingdom'] = combined_data['Domain'] 
 cols = combined_data.columns.tolist()
@@ -259,11 +256,25 @@ combined_data = combined_data[cols]
 remove_unmapped_choice = input("Do you want to remove unmapped contigs? (y/n): ").strip().lower()
 remove_unmapped = remove_unmapped_choice == 'y'
 
+bin_contact_matrix_path= 'input/Normalized_contact_matrix.npz'
+bin_contact_matrix_data = np.load(bin_contact_matrix_path)
+data = bin_contact_matrix_data['data']
+indices = bin_contact_matrix_data['indices']
+indptr = bin_contact_matrix_data['indptr']
+shape = bin_contact_matrix_data['shape']
+sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
+dense_matrix = sparse_matrix.toarray()
+
 if remove_unmapped:
-    unmapped_contigs = combined_data[combined_data['type'] == "Unmapped"].index
+    # Find the positions of unmapped contigs in combined_data
+    unmapped_contigs = combined_data[combined_data['type'] == "Unmapped"].index.tolist()
     filtered_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
-    contig_contact_matrix = np.delete(dense_matrix, unmapped_contigs, axis=0)
-    contig_contact_matrix = np.delete(contig_contact_matrix, unmapped_contigs, axis=1)
+    
+    # Create a mask of rows and columns to keep
+    keep_mask = np.ones(dense_matrix.shape[0], dtype=bool)
+    keep_mask[unmapped_contigs] = False
+
+    contig_contact_matrix = dense_matrix[keep_mask, :][:, keep_mask]
 else:
     filtered_data = combined_data.copy()
     contig_contact_matrix = dense_matrix.copy()
