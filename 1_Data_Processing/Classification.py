@@ -4,6 +4,7 @@ from plsdbapi import query
 from scipy.sparse import csc_matrix
 import os
 from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
 
 # **Helper Functions**
 def get_contig_indexes(annotations, contig_information):
@@ -92,6 +93,7 @@ def fill_unspecified(row):
         row['Domain'] = 'Virus'
         row['Phylum'] = 'Virus'
         row['Class'] = 'Virus'
+        row['Contig name'] = row['Contig name'] + "_v"
         
     last_non_blank = ""
 
@@ -102,6 +104,10 @@ def fill_unspecified(row):
             else:
                 row[tier] = f"Unspecified {last_non_blank}"
 
+    if row['type'] == 'Unmapped':
+        for tier in tiers:
+            row[tier] = "Unmapped"
+    
     return row
 
 # **1. contig_info.csv**
@@ -136,15 +142,15 @@ demo_vir_data['Start'] = demo_vir_data['Start'].astype(int)
 demo_vir_data['End'] = demo_vir_data['End'].astype(int)
 demo_vir_data['Length'] = demo_vir_data['End'] - demo_vir_data['Start']
 
-filtered_data = demo_vir_data.groupby("Contig", as_index=False).apply(filter_contigs).reset_index(drop=True)
+filtered_vir_data = demo_vir_data.groupby("Contig", as_index=False).apply(filter_contigs).reset_index(drop=True)
 
-filtered_data["Order"] = "o__" + filtered_data["Order"].astype(str)
-filtered_data["Order"] = filtered_data["Order"].apply(lambda x: "" if "no_order_" in x else x)
-filtered_data["Family"] = "f__" + filtered_data["Family"].astype(str)
-filtered_data["classification"] = filtered_data["Order"] + ";" + filtered_data["Family"]
-filtered_data.rename(columns={"Contig": "Contig name"}, inplace=True)
+filtered_vir_data["Order"] = "o__" + filtered_vir_data["Order"].astype(str)
+filtered_vir_data["Order"] = filtered_vir_data["Order"].apply(lambda x: "" if "no_order_" in x else x)
+filtered_vir_data["Family"] = "f__" + filtered_vir_data["Family"].astype(str)
+filtered_vir_data["classification"] = filtered_vir_data["Order"] + ";" + filtered_vir_data["Family"]
+filtered_vir_data.rename(columns={"Contig": "Contig name"}, inplace=True)
 
-demo_vir_data = filtered_data[["Contig name", "classification"]]
+demo_vir_data = filtered_vir_data[["Contig name", "classification"]]
 
 # **4. ppr_meta_result.csv**
 ppr_meta_file_path = 'input/ppr_meta_result.csv'
@@ -220,6 +226,14 @@ plasmid_data = plasmid_data_filtered.drop(columns=['plasmid_ID','E-value', 'Bit 
 combined_data = pd.concat([chromosome_data, phage_data, plasmid_data, unmapped_data], ignore_index=True)
 combined_data = combined_data.sort_values(by='Contig name').reset_index(drop=True)
 
+bin_contact_matrix_path= 'input/Normalized_contact_matrix.npz'
+bin_contact_matrix_data = np.load(bin_contact_matrix_path)
+data = bin_contact_matrix_data['data']
+indices = bin_contact_matrix_data['indices']
+indptr = bin_contact_matrix_data['indptr']
+shape = bin_contact_matrix_data['shape']
+sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
+dense_matrix = sparse_matrix.toarray()
 
 prefix_to_tier = {
     'd__': 'Domain',
@@ -234,7 +248,6 @@ prefix_to_tier = {
 tiers = ['Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
 combined_data[tiers] = combined_data['classification'].apply(split_classification)
 combined_data.loc[combined_data['classification'].isna(), 'type'] = 'Unmapped'
-
 combined_data = combined_data.apply(fill_unspecified, axis=1)
 combined_data = combined_data.drop(columns=['classification'])
 combined_data['Kingdom'] = combined_data['Domain'] 
@@ -242,22 +255,106 @@ cols = combined_data.columns.tolist()
 cols.insert(cols.index('Domain') + 1, cols.pop(cols.index('Kingdom')))
 combined_data = combined_data[cols]
 
-# **10. Remove unmapped contig**
-contact_matrix_path= 'input/Normalized_contact_matrix.npz'
-contact_matrix_data = np.load(contact_matrix_path)
-data = contact_matrix_data['data']
-indices = contact_matrix_data['indices']
-indptr = contact_matrix_data['indptr']
-shape = contact_matrix_data['shape']
-sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
-dense_matrix = sparse_matrix.toarray()
+# **10. Handle unmapped contigs**
+remove_unmapped_choice = input("Do you want to remove unmapped contigs? (y/n): ").strip().lower()
+remove_unmapped = remove_unmapped_choice == 'y'
+
+if remove_unmapped:
+    unmapped_contigs = combined_data[combined_data['type'] == "Unmapped"].index
+    filtered_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
+    contig_contact_matrix = np.delete(dense_matrix, unmapped_contigs, axis=0)
+    contig_contact_matrix = np.delete(contig_contact_matrix, unmapped_contigs, axis=1)
+else:
+    filtered_data = combined_data.copy()
+    contig_contact_matrix = dense_matrix.copy()
+
+# Generate 'Binning information'
+filtered_data['Binning information'] = filtered_data.apply(
+    lambda row: row['Bin'] if row['type'] in ['chromosome', 'Unmapped'] else row['Contig name'], axis=1
+)
+filtered_data = filtered_data.drop(columns=['Bin'])
+
+# Replace 'BIN' with 'MAG_' in 'Binning information'
+filtered_data['Binning information'] = filtered_data['Binning information'].str.replace('BIN', 'MAG_')
+
+# If 'Binning information' is NaN, replace it with 'Unbinned MAG'
+filtered_data['Binning information'] = filtered_data['Binning information'].fillna('Unbinned MAG')
 
 unmapped_contigs = combined_data[combined_data['type'] == "Unmapped"].index
-filtered_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
+final_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
 
-filtered_data['Binning information'] = filtered_data.apply(
-    lambda row: row['Bin'] if row['type'] == 'chromosome' else row['Contig name'], axis=1
-)
+# **11. Handle host-host interactions**
+remove_host_host_choice = input("Do you want to remove host-host interactions? (y/n): ").strip().lower()
+remove_host_host = remove_host_host_choice == 'y'
+
+unique_annotations = filtered_data['Binning information'].unique()
+contig_indexes_dict = get_contig_indexes(unique_annotations, filtered_data)
+bin_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
+
+host_annotations = filtered_data[filtered_data['type'] == 'chromosome']['Binning information'].unique().tolist()
+non_host_annotations = filtered_data[~filtered_data['type'].isin(['chromosome'])]['Binning information'].unique().tolist()
+
+bin_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
+
+if remove_host_host:
+    # Step 1: Process interactions between non-host annotations
+    for annotation_i in tqdm(non_host_annotations, desc="Processing non-host interactions"):
+        for annotation_j in non_host_annotations:
+            indexes_i = contig_indexes_dict[annotation_i]
+            indexes_j = contig_indexes_dict[annotation_j]
+            
+            # Extract the submatrix and sum the values
+            sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
+            bin_contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
+
+    # Step 2: Add interactions between host and non-host annotations
+    for annotation_i in tqdm(host_annotations, desc="Processing host-non-host interactions"):
+        for annotation_j in non_host_annotations:
+            indexes_i = contig_indexes_dict[annotation_i]
+            indexes_j = contig_indexes_dict[annotation_j]
+            
+            # Extract the submatrix and sum the values
+            sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
+            bin_contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
+
+            # Symmetric assignment for host-non-host
+            bin_contact_matrix.at[annotation_j, annotation_i] = sub_matrix.sum()
+
+    # Step 3: Add self-contact for host annotations
+    for annotation_i in host_annotations:
+        indexes_i = contig_indexes_dict[annotation_i]
+        
+        # Extract the submatrix and sum the values (self-contact)
+        sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_i)]
+        bin_contact_matrix.at[annotation_i, annotation_i] = sub_matrix.sum()
+
+else:
+    # Original method: process all interactions including host-host
+    for annotation_i in tqdm(unique_annotations, desc="Processing contact matrix"):
+        for annotation_j in unique_annotations:
+            indexes_i = contig_indexes_dict[annotation_i]
+            indexes_j = contig_indexes_dict[annotation_j]
+            
+            # Extract the submatrix and sum the values
+            sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
+            bin_contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
+
+
+# **12. Save outputs**           
+# Convert the DataFrame to a sparse matrix for saving
+bin_contact_matrix = csc_matrix(bin_contact_matrix)
+contig_contact_matrix = csc_matrix(contig_contact_matrix)
+
+# Extract the updated components
+bin_contact_data = bin_contact_matrix.data
+bin_contact_indices = bin_contact_matrix.indices
+bin_contact_indptr = bin_contact_matrix.indptr
+bin_contact_shape = bin_contact_matrix.shape
+
+contig_contact_data = contig_contact_matrix.data
+contig_contact_indices = contig_contact_matrix.indices
+contig_contact_indptr = contig_contact_matrix.indptr
+contig_contact_shape = contig_contact_matrix.shape
 
 grouped_data = filtered_data.groupby('Binning information').agg({
     'Contig name': lambda x: ', '.join(x),
@@ -292,30 +389,12 @@ prefixes = {
 for column, prefix in prefixes.items():
     grouped_data[column] = grouped_data[column].apply(lambda x: f"{prefix}{x}" if pd.notna(x) else x)
 
-unique_annotations = filtered_data['Binning information'].unique()
-contig_indexes_dict = get_contig_indexes(unique_annotations, filtered_data)
-contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
+grouped_data_path = 'output/bin_info_final.csv'
+filtered_data_path = 'output/contig_info_final.csv'
+bin_contact_matrix_path = 'output/bin_contact_matrix.npz'
+contig_contact_matrix_path = 'output/contig_contact_matrix.npz'
 
-# Calculate contact matrix using the new indexes
-for annotation_i in unique_annotations:
-    for annotation_j in unique_annotations:
-        indexes_i = contig_indexes_dict[annotation_i]
-        indexes_j = contig_indexes_dict[annotation_j]
-        
-        # Extract the submatrix and sum the values
-        sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
-        contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
-
-contact_matrix = csc_matrix(contact_matrix)
-
-# Extract the updated components
-updated_data = contact_matrix.data
-updated_indices = contact_matrix.indices
-updated_indptr = contact_matrix.indptr
-updated_shape = contact_matrix.shape
-
-grouped_data_path = 'output/contig_info_final.csv'
-dense_matrix_path = 'output/contact_matrix_final.npz'
-
-np.savez_compressed(dense_matrix_path, data=updated_data, indices=updated_indices, indptr=updated_indptr, shape=updated_shape)
+np.savez_compressed(bin_contact_matrix_path, data=bin_contact_data, indices=bin_contact_indices, indptr=bin_contact_indptr, shape=bin_contact_shape)
+np.savez_compressed(contig_contact_matrix_path, data=contig_contact_data, indices=contig_contact_indices, indptr=contig_contact_indptr, shape=contig_contact_shape)
 grouped_data.to_csv(grouped_data_path, index=False)
+filtered_data.to_csv(filtered_data_path, index=False)
