@@ -45,12 +45,11 @@ def get_bin_indexes(annotations, contig_information):
     if isinstance(annotations, str):
         annotations = [annotations]
     
+    def fetch_indexes(annotation):
+        return annotation, contig_information[contig_information['Bin annotation'] == annotation].index
+
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = {}
-        for annotation in annotations:
-            futures[executor.submit(
-                lambda ann: (ann, contig_information[contig_information['Bin annotation'] == ann].index),
-                annotation)] = annotation
+        futures = {executor.submit(fetch_indexes, annotation): annotation for annotation in annotations}
         
         bin_indexes = {}
         for future in futures:
@@ -503,7 +502,7 @@ def taxonomy_visualization():
 
     return fig, bar_fig
 
-# Function to visualize annotation relationship
+#Function to visualize annotation relationship
 def basic_visualization(contig_information, unique_annotations, contact_matrix):
     G = nx.Graph()
 
@@ -520,32 +519,33 @@ def basic_visualization(contig_information, unique_annotations, contact_matrix):
         node_colors[annotation] = color
         G.add_node(annotation, size=size, color=color, parent=None)
 
-    # Add edges with weight based on inter-annotation contacts
-    non_zero_count = np.count_nonzero(np.triu(contact_matrix.values, k=1))  # Count non-zero values in the upper triangle
-
-    inter_annotation_contacts = np.empty(non_zero_count)  # Preallocate the array
-
-    index = 0  # Track the position to insert
+    # Collect all edge weights
+    edge_weights = []
+    invisible_edges = set()
+    
     for i, annotation_i in enumerate(unique_annotations):
         for j, annotation_j in enumerate(unique_annotations[i + 1:], start=i + 1):
             weight = contact_matrix.at[annotation_i, annotation_j]
             if weight > 0:
                 G.add_edge(annotation_i, annotation_j, weight=weight)
-                inter_annotation_contacts[index] = weight
-                index += 1
+                invisible_edges.add((annotation_i, annotation_j))
+                edge_weights.append(weight)
 
+    # Normalize edge weights using generate_gradient_values
+    if edge_weights:
+        normalized_weights = generate_gradient_values(np.array(edge_weights), 1, 3)
 
-    # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(inter_annotation_contacts, 50, 500) 
-
-    # Assign the gradient values as edge weights and set default edge color
-    for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
-        d['weight'] = weight
+        # Assign normalized weights back to edges
+        for (i, (u, v)) in enumerate(G.edges()):
+            G[u][v]['weight'] = normalized_weights[i]
 
     # Initial node positions using a force-directed layout with increased dispersion
-    pos = nx.spring_layout(G, dim=2, k=20, iterations=100, weight='weight')
+    n = len(G)
+    k = 1 /sqrt(n)
+    pos = nx.spring_layout(G, dim=2, k=k, iterations=200, weight='weight',scale=5.0)
 
-    cyto_elements = nx_to_cyto_elements(G, pos)
+    # Convert to Cytoscape elements
+    cyto_elements = nx_to_cyto_elements(G, pos, invisible_edges=invisible_edges)
 
     # Prepare data for bar chart with 3 traces
     inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
@@ -1554,6 +1554,14 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_b
     elif selected_annotation:
         selected_nodes.append(selected_annotation)
         hover_info = f"Annotation: {selected_annotation}"
+
+        if current_visualization_mode['visualization_type'] == 'basic':
+            # Only show edges connected to the selected node using the contact matrix
+            annotation_index = unique_annotations.tolist().index(selected_annotation)
+            for i, contact_value in enumerate(contact_matrix.iloc[annotation_index]):
+                if contact_value > 0:
+                    connected_annotation = unique_annotations[i]
+                    selected_edges.append((selected_annotation, connected_annotation))
 
     # Add selection styles for the selected nodes and edges
     stylesheet = add_selection_styles(selected_nodes, selected_edges)

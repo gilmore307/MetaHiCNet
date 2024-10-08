@@ -287,12 +287,44 @@ final_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
 remove_host_host_choice = input("Do you want to remove host-host interactions? (y/n): ").strip().lower()
 remove_host_host = remove_host_host_choice == 'y'
 
-unique_annotations = filtered_data['Binning information'].unique()
-contig_indexes_dict = get_contig_indexes(unique_annotations, filtered_data)
-bin_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
+grouped_data = filtered_data.groupby('Binning information').agg({
+    'Contig name': lambda x: ', '.join(x),
+    'Restriction sites': 'sum',
+    'Contig length': 'sum',
+    'Contig coverage': 'sum',
+    'Intra-contig contact': 'sum',
+    'type': 'first',
+    'Domain': 'first',
+    'Kingdom': 'first',
+    'Phylum': 'first',
+    'Class': 'first',
+    'Order': 'first',
+    'Family': 'first',
+    'Genus': 'first',
+    'Species': 'first'
+}).reset_index()
 
-host_annotations = filtered_data[filtered_data['type'] == 'chromosome']['Binning information'].unique().tolist()
-non_host_annotations = filtered_data[~filtered_data['type'].isin(['chromosome'])]['Binning information'].unique().tolist()
+# Define the prefixes for each column
+prefixes = {
+    'Domain': 'd_',
+    'Kingdom': 'k_',
+    'Phylum': 'p_',
+    'Class': 'c_',
+    'Order': 'o_',
+    'Family': 'f_',
+    'Genus': 'g_',
+    'Species': 's_'
+}
+
+# Apply the prefix to each relevant column
+for column, prefix in prefixes.items():
+    grouped_data[column] = grouped_data[column].apply(lambda x: f"{prefix}{x}" if pd.notna(x) else x)
+
+unique_annotations = grouped_data['Binning information']
+contig_indexes_dict = get_contig_indexes(unique_annotations, filtered_data)
+
+host_annotations = grouped_data[grouped_data['type'] == 'chromosome']['Binning information'].tolist()
+non_host_annotations = grouped_data[~grouped_data['type'].isin(['chromosome'])]['Binning information'].tolist()
 
 bin_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
 
@@ -355,39 +387,6 @@ contig_contact_data = contig_contact_matrix.data
 contig_contact_indices = contig_contact_matrix.indices
 contig_contact_indptr = contig_contact_matrix.indptr
 contig_contact_shape = contig_contact_matrix.shape
-
-grouped_data = filtered_data.groupby('Binning information').agg({
-    'Contig name': lambda x: ', '.join(x),
-    'Restriction sites': 'sum',
-    'Contig length': 'sum',
-    'Contig coverage': 'sum',
-    'Intra-contig contact': 'sum',
-    'type': 'first',
-    'Domain': 'first',
-    'Kingdom': 'first',
-    'Phylum': 'first',
-    'Class': 'first',
-    'Order': 'first',
-    'Family': 'first',
-    'Genus': 'first',
-    'Species': 'first'
-}).reset_index()
-
-# Define the prefixes for each column
-prefixes = {
-    'Domain': 'd_',
-    'Kingdom': 'k_',
-    'Phylum': 'p_',
-    'Class': 'c_',
-    'Order': 'o_',
-    'Family': 'f_',
-    'Genus': 'g_',
-    'Species': 's_'
-}
-
-# Apply the prefix to each relevant column
-for column, prefix in prefixes.items():
-    grouped_data[column] = grouped_data[column].apply(lambda x: f"{prefix}{x}" if pd.notna(x) else x)
 
 grouped_data_path = 'output/bin_info_final.csv'
 filtered_data_path = 'output/contig_info_final.csv'
