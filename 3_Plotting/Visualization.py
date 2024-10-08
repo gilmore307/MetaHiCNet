@@ -197,16 +197,28 @@ def get_chatgpt_response(prompt):
     max_tokens=150)
     return response.choices[0].message.content
 
+    # Function to add opacity to a hex color
+def add_opacity_to_color(hex_color, opacity):
+    if hex_color.startswith('#') and len(hex_color) == 7:
+        hex_color = hex_color.lstrip('#')
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})'
+    else:
+        # Return a default color if hex_color is invalid
+        return f'rgba(255, 255, 255, {opacity})'
+
 # Function to style annotation contact table using Blugrn color scheme
 def styling_annotation_table(contact_matrix_display):
     styles = []
     numeric_df = contact_matrix_display.select_dtypes(include=[np.number])
     log_max_value = np.log1p(numeric_df.values.max())
+    opacity = 0.6  # Set a fixed opacity for transparency
+
+    # Styling for numeric values in the table (excluding the "Annotation" column)
     for i in range(len(numeric_df)):
         for j in range(len(numeric_df.columns)):
             value = numeric_df.iloc[i, j]
             log_value = np.log1p(value)
-            opacity = 0.6  # Set a fixed opacity for transparency
             styles.append({
                 'if': {
                     'row_index': i,
@@ -214,7 +226,23 @@ def styling_annotation_table(contact_matrix_display):
                 },
                 'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'  # Set background color for the contact matrix.
             })
+
+    # Styling for the first column ("Annotation") based on type_colors
+    for i, annotation in enumerate(contact_matrix_display['Annotation']):
+        bin_type = contig_information.loc[contig_information['Bin annotation'] == annotation, 'type'].values[0]
+        annotation_color = type_colors.get(bin_type, default_color)
+        annotation_color_with_opacity = add_opacity_to_color(annotation_color, opacity)
+
+        styles.append({
+            'if': {
+                'row_index': i,
+                'column_id': 'Annotation'
+            },
+            'backgroundColor': annotation_color_with_opacity,
+        })
+
     return styles
+
 
 # Function to style bin info table
 def styling_bin_table(bin_colors, annotation_colors, unique_annotations):
@@ -244,16 +272,6 @@ def styling_bin_table(bin_colors, annotation_colors, unique_annotations):
                     'color': "white" if i > len(bounds) / 2.0 else "inherit"
                 }
             })
-
-    # Function to add opacity to a hex color
-    def add_opacity_to_color(hex_color, opacity):
-        if hex_color.startswith('#') and len(hex_color) == 7:
-            hex_color = hex_color.lstrip('#')
-            rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-            return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})'
-        else:
-            # Return a default color if hex_color is invalid
-            return f'rgba(255, 255, 255, {opacity})'
 
     # Add style conditions for the "Bin" column
     for bin in contig_information_display['Bin']:
@@ -540,9 +558,7 @@ def basic_visualization(contig_information, unique_annotations, contact_matrix):
             G[u][v]['weight'] = normalized_weights[i]
 
     # Initial node positions using a force-directed layout with increased dispersion
-    n = len(G)
-    k = 1 /sqrt(n)
-    pos = nx.spring_layout(G, dim=2, k=k, iterations=200, weight='weight',scale=5.0)
+    pos = nx.spring_layout(G, dim=2, k=1, iterations=200, weight='weight', scale=5.0)
 
     # Convert to Cytoscape elements
     cyto_elements = nx_to_cyto_elements(G, pos, invisible_edges=invisible_edges)
@@ -603,7 +619,7 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
             G.remove_node(node)
 
     # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(np.array(inter_annotation_contacts), 10, 100)
+    edge_weights = generate_gradient_values(np.array(inter_annotation_contacts), 10, 30)
 
     edges_to_remove = []
     inter_annotation_contacts = []
@@ -625,10 +641,9 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
             d['weight'] = weight
 
     # Calculate k_value based on the number of bins of the selected annotation
-    num_bins = len(indices)
-    k_value = sqrt(num_bins)
-
-    new_pos = nx.spring_layout(G, pos={selected_annotation: (0, 0)}, fixed=[selected_annotation], k=k_value, iterations=50, weight='weight')
+    n = len(indices)
+    k = sqrt(n)
+    new_pos = nx.spring_layout(G, pos={selected_annotation: (0, 0)}, fixed=[selected_annotation], k=k, iterations=200, weight='weight', scale=5.0)
 
     # Get and arrange bins within the selected annotation node
     bins = contig_information.loc[indices, 'Bin']
@@ -894,6 +909,9 @@ def bin_visualization(selected_annotation, selected_bin, contig_information, uni
     annotation_contact_values = []
     bin_contact_counts_per_annotation = [] 
     for annotation in unique_annotations:
+        print(annotation_indexes_dict.keys())  # Check what keys are available
+        print(f"Trying to access annotation: {annotation}")  # Check the annotation value
+
         annotation_indexes = annotation_indexes_dict[annotation]  # Use the pre-fetched indexes
         contact_value = bin_dense_matrix[selected_bin_index, annotation_indexes].sum()
         annotation_contact_values.append(contact_value)
