@@ -356,10 +356,10 @@ def arrange_bins(bins, inter_bin_edges, distance, selected_bin=None, center_posi
 
 def taxonomy_visualization():
     logger.info('Creating taxonomy visualization')
-    
+
     host_data = contig_information_intact[contig_information_intact['type'].isin(['chromosome', 'plasmid'])]
     virus_data = contig_information_intact[contig_information_intact['type'] == 'phage']
-    
+
     level_mapping = {
         'Community': 9,
         'Domain': 8,
@@ -374,7 +374,7 @@ def taxonomy_visualization():
 
     records = []
     existing_annotations = set()
-    
+
     records.append({
         "annotation": "Community",
         "parent": "",
@@ -383,18 +383,18 @@ def taxonomy_visualization():
         "type": "Community",
         "total coverage": 0,
         "border_color": "black",
-        "Bin": contig_information_intact['Bin'].unique()  # Add Bin attribute as an empty list for Community
+        "Bin": contig_information_intact['Bin'].unique()
     })
     existing_annotations.add("Community")
-    
+
     for _, row in host_data.iterrows():
         for level, level_num in level_mapping.items():
             if level == 'Community':
                 continue
-                
+
             annotation = row[level]
             parent = "Community" if level_num == 8 else row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num + 1)]]
-            
+
             if annotation not in existing_annotations:
                 records.append({
                     "annotation": annotation,
@@ -411,21 +411,21 @@ def taxonomy_visualization():
                 for rec in records:
                     if rec['annotation'] == annotation:
                         rec['total coverage'] += row['Bin coverage']
-                        rec['Bin'].append(row['Bin']) 
+                        rec['Bin'].append(row['Bin'])
                         break
-                   
+
     for _, row in virus_data.iterrows():
         for level, level_num in level_mapping.items():
             if level not in ['Class', 'Order', 'Family']:
                 continue
-                
+
             annotation = 'Virus' if level_num == 5 else row[level]
             parent = (
                 "Community" if level_num == 5
                 else 'Virus' if level_num == 4
                 else row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num + 1)]]
             )
-            
+
             if annotation not in existing_annotations:
                 records.append({
                     "annotation": annotation,
@@ -449,6 +449,14 @@ def taxonomy_visualization():
     hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
     hierarchy_df.loc[hierarchy_df['type'] == 'phage', 'scaled_coverage'] *= 20
 
+    # Limit the number of bins shown in hover to avoid long hover boxes
+    def format_bins(bin_list, max_bins=5):
+        if len(bin_list) > max_bins:
+            return ', '.join(bin_list[:max_bins]) + f"... (+{len(bin_list) - max_bins} more)"
+        return ', '.join(bin_list)
+
+    hierarchy_df['limited_bins'] = hierarchy_df['Bin'].apply(lambda bins: format_bins(bins))
+
     fig = px.treemap(
         hierarchy_df,
         names='annotation',
@@ -462,7 +470,7 @@ def taxonomy_visualization():
         marker=dict(
             line=dict(width=2, color=hierarchy_df['border_color'])
         ),
-        customdata=hierarchy_df[['level_name', 'Bin']],  # Add Bin to the hover data
+        customdata=hierarchy_df[['level_name', 'limited_bins']],  # Use limited bins for hover
         hovertemplate='<b>%{label}</b><br>Level: %{customdata[0]}<br>Coverage: %{value}<br>Bins: %{customdata[1]}'
     )
 
@@ -473,22 +481,17 @@ def taxonomy_visualization():
         margin=dict(t=30, b=0, l=0, r=0)
     )
 
-    logger.info('Taxonomy visualization creation completed')
-    
-    # Prepare data for bar chart with 3 traces
+    # Prepare data for bar chart with 3 traces (keep existing logic)
     total_bin_coverage = contig_information.groupby('Bin annotation')['Bin coverage'].sum().reindex(unique_annotations)
     inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
     total_bin_coverage_sum = total_bin_coverage.values
     bin_counts = contig_information['Bin annotation'].value_counts()
-    
+
     node_colors = {}
     for annotation in total_bin_coverage.index:
-        bin_type = contig_information.loc[
-            contig_information['Bin annotation'] == annotation, 'type'
-        ].values[0]
+        bin_type = contig_information.loc[contig_information['Bin annotation'] == annotation, 'type'].values[0]
         color = type_colors.get(bin_type, default_color)
         node_colors[annotation] = color
-        
 
     data_dict = {
         'Total Inter-Annotation Contact': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
@@ -497,7 +500,7 @@ def taxonomy_visualization():
     }
 
     bar_fig = create_bar_chart(data_dict)
-    
+
     return fig, bar_fig
 
 # Function to visualize annotation relationship
@@ -533,14 +536,14 @@ def basic_visualization(contig_information, unique_annotations, contact_matrix):
 
 
     # Generate gradient values for the edge weights
-    edge_weights = generate_gradient_values(inter_annotation_contacts, 10, 300) 
+    edge_weights = generate_gradient_values(inter_annotation_contacts, 50, 500) 
 
     # Assign the gradient values as edge weights and set default edge color
     for (u, v, d), weight in zip(G.edges(data=True), edge_weights):
         d['weight'] = weight
 
     # Initial node positions using a force-directed layout with increased dispersion
-    pos = nx.spring_layout(G, dim=2, k=10, iterations=50, weight='weight')
+    pos = nx.spring_layout(G, dim=2, k=20, iterations=100, weight='weight')
 
     cyto_elements = nx_to_cyto_elements(G, pos)
 
@@ -579,7 +582,7 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
         if annotation == selected_annotation:
             G.add_node(annotation, size=size, color='#FFFFFF', border_color='#000', border_width=2, parent=None)  # White for selected node
         else:
-            num_connected_bins = len(contig_information[(contig_information['Bin annotation'] == annotation) & (dense_matrix[:, indices].sum(axis=1) > 0)])
+            num_connected_bins = len(contig_information[(contig_information['Bin annotation'] == annotation) & (bin_dense_matrix[:, indices].sum(axis=1) > 0)])
             if num_connected_bins == 0:
                 nodes_to_remove.append(annotation)
             else:
@@ -638,10 +641,10 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
     # Unified loop
     for i in indices:
         bin_i = contig_information.at[i, 'Bin']
-        for j in range(dense_matrix.shape[0]):
-            if dense_matrix[i, j] != 0 and contig_information.at[j, 'Bin annotation'] != selected_annotation:
+        for j in range(bin_dense_matrix.shape[0]):
+            if bin_dense_matrix[i, j] != 0 and contig_information.at[j, 'Bin annotation'] != selected_annotation:
                 bin_j = contig_information.at[j, 'Bin']
-                contact_value = dense_matrix[i, j]
+                contact_value = bin_dense_matrix[i, j]
     
                 # Add to bin contact values and colors
                 bin_contact_values.append((bin_i, bin_j, contact_value))
@@ -727,7 +730,7 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation, co
 
     for i in row_indices:
         for j in col_indices:
-            contact_value = dense_matrix[i, j]
+            contact_value = bin_dense_matrix[i, j]
             if contact_value != 0:
                 inter_bins_row.add(contig_information.at[i, 'Bin'])
                 inter_bins_col.add(contig_information.at[j, 'Bin'])
@@ -774,7 +777,7 @@ def inter_annotation_visualization(selected_annotation, secondary_annotation, co
     # Add edges between bins
     for i in row_indices:
         for j in col_indices:
-            contact_value = dense_matrix[i, j]
+            contact_value = bin_dense_matrix[i, j]
             if contact_value != 0:
                 G.add_edge(contig_information.at[i, 'Bin'], contig_information.at[j, 'Bin'], weight=contact_value)
 
@@ -828,7 +831,7 @@ def bin_visualization(selected_annotation, selected_bin, contig_information, uni
     selected_annotation = contig_information.loc[selected_bin_index, 'Bin annotation']
 
     # Get all indices that have contact with the selected bin
-    contacts_indices = dense_matrix[selected_bin_index].nonzero()[0]
+    contacts_indices = bin_dense_matrix[selected_bin_index].nonzero()[0]
     
     # Remove self-contact
     contacts_indices = contacts_indices[contacts_indices != selected_bin_index]
@@ -868,7 +871,7 @@ def bin_visualization(selected_annotation, selected_bin, contig_information, uni
         for bin, (x, y) in bin_positions.items():
             G.add_node(bin, size=1 if bin != selected_bin else 5, color='black' if bin == selected_bin else G.nodes[annotation]['border_color'], parent=annotation)  # Same color as annotation, black for selected bin
             if bin != selected_bin:
-                G.add_edge(selected_bin, bin, weight=dense_matrix[selected_bin_index, contig_information[contig_information['Bin'] == bin].index[0]])
+                G.add_edge(selected_bin, bin, weight=bin_dense_matrix[selected_bin_index, contig_information[contig_information['Bin'] == bin].index[0]])
             pos[bin] = (x, y)  # Use positions directly from arrange_bins
             
     if selected_annotation not in pos:
@@ -885,14 +888,14 @@ def bin_visualization(selected_annotation, selected_bin, contig_information, uni
     cyto_elements = nx_to_cyto_elements(G, pos)
     
     # Prepare data for bar chart
-    bin_contact_values = dense_matrix[selected_bin_index, contacts_indices]
+    bin_contact_values = bin_dense_matrix[selected_bin_index, contacts_indices]
     bin_data = pd.DataFrame({'name': contacts_bins, 'value': bin_contact_values, 'color': [G.nodes[bin]['color'] for bin in contacts_bins]})
 
     annotation_contact_values = []
     bin_contact_counts_per_annotation = [] 
     for annotation in unique_annotations:
         annotation_indexes = annotation_indexes_dict[annotation]  # Use the pre-fetched indexes
-        contact_value = dense_matrix[selected_bin_index, annotation_indexes].sum()
+        contact_value = bin_dense_matrix[selected_bin_index, annotation_indexes].sum()
         annotation_contact_values.append(contact_value)
         bin_contact_counts_per_annotation.append(len(annotation_indexes))
 
@@ -909,7 +912,7 @@ def bin_visualization(selected_annotation, selected_bin, contig_information, uni
 
     return cyto_elements, bar_fig
 
-def prepare_data(contig_information_intact, dense_matrix, taxonomy_level = 'Family'):
+def prepare_data(contig_information_intact, bin_dense_matrix, taxonomy_level = 'Family'):
     global contig_information
     global unique_annotations
     global contact_matrix
@@ -933,7 +936,7 @@ def prepare_data(contig_information_intact, dense_matrix, taxonomy_level = 'Fami
         for annotation_j in unique_annotations:   
             indexes_i = bin_indexes_dict[annotation_i]
             indexes_j = bin_indexes_dict[annotation_j]
-            sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
+            sub_matrix = bin_dense_matrix[np.ix_(indexes_i, indexes_j)]
             
             contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
 
@@ -961,23 +964,19 @@ logger.info("App started")
 client = OpenAI(api_key='')
 
 # File paths for the current environment
-bin_info_path = '../1_Data_Processing/output/contig_info_final.csv'
-raw_contact_matrix_path= '../1_Data_Processing/output/contact_matrix_final.npz'
+bin_info_path = '../1_Data_Processing/output/bin_info_final.csv'
+bin_contact_matrix_path= '../1_Data_Processing/output/bin_contact_matrix.npz'
 
 # Load the data
 logger.info('Loading data')
 contig_information_intact = pd.read_csv(bin_info_path)
-contact_matrix_data = np.load(raw_contact_matrix_path)
-data = contact_matrix_data['data']
-indices = contact_matrix_data['indices']
-indptr = contact_matrix_data['indptr']
-shape = contact_matrix_data['shape']
-sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
-dense_matrix = sparse_matrix.toarray()
-
-if dense_matrix.shape[0] != contig_information_intact.shape[0]:
-    logger.info(f'Dimention dismatch: {dense_matrix.shape[0]}, {contig_information_intact.shape[0]}')
-    dense_matrix = dense_matrix[:contig_information_intact.shape[0], :contig_information_intact.shape[0]]
+bin_contact_matrix_data = np.load(bin_contact_matrix_path)
+data = bin_contact_matrix_data['data']
+indices = bin_contact_matrix_data['indices']
+indptr = bin_contact_matrix_data['indptr']
+shape = bin_contact_matrix_data['shape']
+bin_sparse_matrix = csc_matrix((data, indices, indptr), shape=shape)
+bin_dense_matrix = bin_sparse_matrix.toarray()
 
 matrix_columns = {
     'Binning information': 'Bin',
@@ -1002,7 +1001,7 @@ contig_information_display.loc[:, 'Visibility'] = 1  # Default value to 1 (visib
 
 logger.info('Data loading completed')  
 
-contig_information, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix)
+contig_information, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, bin_dense_matrix)
   
 type_colors = {
     'chromosome': '#0000FF',
@@ -1143,7 +1142,7 @@ app.layout = html.Div([
             ],
             value='Family',
             placeholder="Select Taxonomy Level",
-            style={}
+            style={'width': '300px', 'display': 'inline-block'}
         ),
         dcc.Dropdown(
             id='annotation-selector',
@@ -1269,7 +1268,7 @@ app.layout = html.Div([
 )
 def update_data(taxonomy_level):
     
-    contig_information, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, dense_matrix, taxonomy_level)    
+    contig_information, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(contig_information_intact, bin_dense_matrix, taxonomy_level)    
     
     global current_visualization_mode
     
@@ -1292,7 +1291,6 @@ def update_data(taxonomy_level):
 
 @app.callback(
     [Output('visualization-selector', 'value'),
-     Output('taxonomy-level-selector', 'style'),
      Output('annotation-selector', 'value'),
      Output('annotation-selector', 'style'),
      Output('secondary-annotation-selector', 'value'),
@@ -1317,7 +1315,6 @@ def sync_selectors(reset_clicks,visualization_type, contact_table_active_cell, b
     selected_annotation, secondary_annotation, selected_bin = synchronize_selections(
         triggered_id, selected_node_data, selected_edge_data, bin_info_selected_rows, contact_table_active_cell, taxonomy_level )
     
-    taxonomy_level_style = {'display': 'none'}
     annotation_selector_style = {'display': 'none'}
     secondary_annotation_style = {'display': 'none'}
     bin_selector_style = {'display': 'none'}
@@ -1347,9 +1344,7 @@ def sync_selectors(reset_clicks,visualization_type, contact_table_active_cell, b
             annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
 
     # Default cases based on visualization_type
-    if visualization_type == 'taxonomy_hierarchy':
-        taxonomy_level_style = {'width': '300px', 'display': 'inline-block'}
-    elif visualization_type == 'intra_annotation':
+    if visualization_type == 'intra_annotation':
         annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
     elif visualization_type == 'inter_annotation':
         annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
@@ -1358,7 +1353,7 @@ def sync_selectors(reset_clicks,visualization_type, contact_table_active_cell, b
         annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
         bin_selector_style = {'width': '300px', 'display': 'inline-block'}
 
-    return visualization_type, taxonomy_level_style, selected_annotation, annotation_selector_style, secondary_annotation, secondary_annotation_style, selected_bin, bin_selector_style, None, []
+    return visualization_type, selected_annotation, annotation_selector_style, secondary_annotation, secondary_annotation_style, selected_bin, bin_selector_style, None, []
  
 def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, bin_info_selected_rows, contact_table_active_cell, taxonomy_level ):
     # Initialize the return values
@@ -1531,7 +1526,7 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_b
                 connected_bins = []
 
                 for j in selected_annotation_indices:
-                    if dense_matrix[j, selected_bin_index] != 0:  # Check contact from selected annotation to the selected bin
+                    if bin_dense_matrix[j, selected_bin_index] != 0:  # Check contact from selected annotation to the selected bin
                         connected_bin = contig_information.at[j, 'Bin']
                         connected_bins.append(connected_bin)
 
@@ -1547,7 +1542,7 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_b
                 connected_bins = []
 
                 for j in secondary_annotation_indices:
-                    if dense_matrix[selected_bin_index, j] != 0:  # Check contact from selected bin to secondary annotation
+                    if bin_dense_matrix[selected_bin_index, j] != 0:  # Check contact from selected bin to secondary annotation
                         connected_bin = contig_information.at[j, 'Bin']
                         connected_bins.append(connected_bin)
 
@@ -1639,7 +1634,7 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
 
             for i in row_indices:
                 for j in col_indices:
-                    contact_value = dense_matrix[i, j]
+                    contact_value = bin_dense_matrix[i, j]
                     if contact_value != 0:
                         inter_bins_row.add(contig_information.at[i, 'Bin'])
                         inter_bins_col.add(contig_information.at[j, 'Bin'])
@@ -1655,8 +1650,8 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
             selected_bin_index = contig_information[contig_information['Bin'] == current_visualization_mode['selected_bin']].index[0]
 
             connected_bins = set()
-            for j in range(dense_matrix.shape[0]):
-                if dense_matrix[selected_bin_index, j] != 0:
+            for j in range(bin_dense_matrix.shape[0]):
+                if bin_dense_matrix[selected_bin_index, j] != 0:
                     connected_bins.add(contig_information.at[j, 'Bin'])
 
             for row in filtered_data:
