@@ -39,7 +39,8 @@ class DashLoggerHandler(logging.Handler):
 # Function to get bin indexes based on annotation in a specific part of the dataframe
 def get_bin_indexes(annotations, contig_information):
     # Number of threads to use: 4 * CPU core count
-    num_threads = 4 * os.cpu_count()
+    num_threads = 2 * os.cpu_count()
+    bin_indexes = {}
     
     # Ensure annotations is a list even if a single annotation is provided
     if isinstance(annotations, str):
@@ -51,7 +52,6 @@ def get_bin_indexes(annotations, contig_information):
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         futures = {executor.submit(fetch_indexes, annotation): annotation for annotation in annotations}
         
-        bin_indexes = {}
         for future in futures:
             annotation = futures[future]
             try:
@@ -59,10 +59,6 @@ def get_bin_indexes(annotations, contig_information):
                 bin_indexes[annotation] = indexes
             except Exception as e:
                 logger.error(f'Error fetching bin indexes for annotation: {annotation}, error: {e}')
-        
-    # If only one annotation was given as input, return its indexes directly
-    if len(bin_indexes) == 1:
-        return list(bin_indexes.values())[0]
 
     return bin_indexes
 
@@ -80,8 +76,8 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
         elements.append({
             'data': {
                 'id': node,
-                'label': node if G.nodes[node].get('parent') is None else '',  # Add label for annotation nodes only
-                'label_size': G.nodes[node].get('label_size', 6), # Default size to 6
+                'label': node,  
+                'label_size': 6 if G.nodes[node].get('parent') is None else 3, # Default size to 6
                 'size': G.nodes[node].get('size', 1),  # Default size to 1
                 'color': G.nodes[node].get('color', '#000'),  # Default color
                 'border_color': G.nodes[node].get('border_color', None),  # Default to None
@@ -521,7 +517,7 @@ def taxonomy_visualization():
     return fig, bar_fig
 
 #Function to visualize annotation relationship
-def basic_visualization(contig_information, unique_annotations, contact_matrix):
+def annotation_visualization(contig_information, unique_annotations, contact_matrix):
     G = nx.Graph()
 
     # Add nodes with size based on total bin coverage
@@ -585,7 +581,10 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
     # Add nodes with size based on bin counts
     bin_counts = [len(contig_information[contig_information['Bin annotation'] == node]) for node in unique_annotations]
     node_sizes = generate_gradient_values(np.array(bin_counts), 10, 30)
-    indices = get_bin_indexes(selected_annotation, contig_information)
+    
+    # Fetch bin indexes for the selected annotation
+    indices_dict = get_bin_indexes(selected_annotation, contig_information)
+    indices = indices_dict[selected_annotation]
 
     nodes_to_remove = []
     for annotation, size in zip(unique_annotations, node_sizes):
@@ -722,131 +721,17 @@ def intra_annotation_visualization(selected_annotation, contig_information, uniq
 
     return cyto_elements, bar_fig
 
-# Function to visualize inter-annotation relationships
-def inter_annotation_visualization(selected_annotation, secondary_annotation, contig_information):
-
-    row_bin = selected_annotation
-    col_bin = secondary_annotation
-
-    G = nx.Graph()
-    G.add_node(row_bin, color='#FFFFFF', border_color='black', border_width=2, label=row_bin)
-    G.add_node(col_bin, color='#FFFFFF', border_color='black', border_width=2, label=col_bin)
-
-    new_pos = {row_bin: (-0.2, 0), col_bin: (0.2, 0)}
-
-    row_indices = get_bin_indexes(row_bin, contig_information)
-    col_indices = get_bin_indexes(col_bin, contig_information)
-    inter_bins_row = set()
-    inter_bins_col = set()
-
-    interannotation_contacts = []
-    bin_contact_counts = []
-    inter_bin_contacts = []
-
-    for i in row_indices:
-        for j in col_indices:
-            contact_value = bin_dense_matrix[i, j]
-            if contact_value != 0:
-                inter_bins_row.add(contig_information.at[i, 'Bin'])
-                inter_bins_col.add(contig_information.at[j, 'Bin'])
-                interannotation_contacts.append({
-                    'name': f"{contig_information.at[i, 'Bin']} - {contig_information.at[j, 'Bin']}",
-                    'value': contact_value,
-                    'color': 'green'  # Set green color for the bars
-                })
-                bin_contact_counts.append({
-                    'name': contig_information.at[i, 'Bin'],
-                    'annotation': selected_annotation,
-                    'count': 1,
-                    'color': '#C00000'  # Set red color for the bars
-                })
-                bin_contact_counts.append({
-                    'name': contig_information.at[j, 'Bin'],
-                    'annotation': secondary_annotation,
-                    'count': 1,
-                    'color': '#0070C0'  # Set blue color for the bars
-                })
-                inter_bin_contacts.append({
-                    'name': contig_information.at[i, 'Bin'],
-                    'value': contact_value,
-                    'color': '#C00000'  # Set red color for the bars
-                })
-                inter_bin_contacts.append({
-                    'name': contig_information.at[j, 'Bin'],
-                    'value': contact_value,
-                    'color': '#0070C0'  # Set blue color for the bars
-                })
-
-    bin_positions_row = arrange_bins(inter_bins_row, list(), distance=1, center_position=new_pos[row_bin])
-    bin_positions_col = arrange_bins(inter_bins_col, list(), distance=1, center_position=new_pos[col_bin])
-
-    # Add bin nodes to the graph G
-    for bin, (x, y) in bin_positions_row.items():
-        G.add_node(bin, color='#C00000', parent=row_bin)  # Red for primary
-        new_pos[bin] = (x, y)
-
-    for bin, (x, y) in bin_positions_col.items():
-        G.add_node(bin, color='#0070C0', parent=col_bin)  # Blue for secondary
-        new_pos[bin] = (x, y)
-
-    # Add edges between bins
-    for i in row_indices:
-        for j in col_indices:
-            contact_value = bin_dense_matrix[i, j]
-            if contact_value != 0:
-                G.add_edge(contig_information.at[i, 'Bin'], contig_information.at[j, 'Bin'], weight=contact_value)
-
-    invisible_edges = [(u, v) for u, v in G.edges]  # Mark all bin edges as invisible
-
-    cyto_elements = nx_to_cyto_elements(G, new_pos, list(), invisible_edges)
-
-    # Prepare data for bar chart
-    interannotation_contacts_df = pd.DataFrame(interannotation_contacts)
-
-    bin_contact_counts_df = pd.DataFrame(bin_contact_counts)
-    
-    # Log if the DataFrame is empty
-    if bin_contact_counts_df.empty:
-        logger.warning(f"bin_contact_counts_df is empty. No data available between {selected_annotation} and {secondary_annotation}")
-        # Return empty chart or handle accordingly
-        return [], go.Figure()  # Return empty elements and figure
-
-    # Try grouping by 'name' and 'color' with error handling
-    try:
-        bin_contact_counts_summary = bin_contact_counts_df.groupby(['name', 'color']).size().reset_index(name='value')
-    except KeyError as e:
-        logger.error(f"KeyError in bin_contact_counts_df: {e}. DataFrame columns: {bin_contact_counts_df.columns}")
-        # Return empty chart or handle accordingly
-        return [], go.Figure()
-    
-    inter_bin_contacts_df = pd.DataFrame(inter_bin_contacts)
-
-    try:
-        inter_bin_contacts_summary = inter_bin_contacts_df.groupby(['name', 'color']).sum().reset_index()
-    except KeyError as e:
-        logger.error(f"KeyError in inter_bin_contacts_df: {e}. DataFrame columns: {inter_bin_contacts_df.columns}")
-        # Return empty chart or handle accordingly
-        return [], go.Figure()
-    
-    data_dict = {
-        'Inter Bin Contacts': interannotation_contacts_df,
-        'Bin Contacts Counts': bin_contact_counts_summary,
-        'Bin Contacts Value': inter_bin_contacts_summary
-    }
-
-    bar_fig = create_bar_chart(data_dict)
-
-    return cyto_elements, bar_fig
-
 # Function to visualize bin relationships
 def bin_visualization(selected_annotation, selected_bin, contig_information, unique_annotations):
-
+    
+    logger.info(f'Entering bin_visualization with selected_bin: {selected_bin}')
     # Find the index of the selected bin
     selected_bin_index = contig_information[contig_information['Bin'] == selected_bin].index[0]
     selected_annotation = contig_information.loc[selected_bin_index, 'Bin annotation']
 
     # Get all indices that have contact with the selected bin
     contacts_indices = bin_dense_matrix[selected_bin_index].nonzero()[0]
+    logger.info(f'Number of contacts found: {len(contacts_indices)}')
     
     # Remove self-contact
     contacts_indices = contacts_indices[contacts_indices != selected_bin_index]
@@ -1094,7 +979,6 @@ current_visualization_mode = {
     'visualization_type': None,
     'taxonomy_level': None,
     'selected_annotation': None,
-    'secondary_annotation': None,
     'selected_bin': None
 }
 
@@ -1121,6 +1005,16 @@ help_modal = html.Div([
 
 logger.info('Generating default visulization') 
 treemap_fig, bar_fig = taxonomy_visualization()
+bin_colors, annotation_colors = get_bin_and_annotation_colors([], contig_information)
+styleConditions = styling_bin_table(bin_colors, annotation_colors, unique_annotations)
+default_col_def = {
+    "sortable": True,
+    "filter": True,
+    "resizable": True,
+    "cellStyle": {
+        "styleConditions": styleConditions
+    }
+}
 
 # Use the styling functions in the Dash layout
 app.layout = html.Div([
@@ -1138,9 +1032,8 @@ app.layout = html.Div([
             id='visualization-selector',
             options=[
                 {'label': 'Taxonomy Hierarchy', 'value': 'taxonomy_hierarchy'},
-                {'label': 'Community', 'value': 'basic'},
+                {'label': 'Annotation Visualization', 'value': 'basic'},
                 {'label': 'Intra-annotation', 'value': 'intra_annotation'},
-                {'label': 'Inter-annotation', 'value': 'inter_annotation'},
                 {'label': 'Bin', 'value': 'bin'}
             ],
             value='taxonomy_hierarchy',
@@ -1167,13 +1060,6 @@ app.layout = html.Div([
             options=[],
             value=None,
             placeholder="Select a annotation",
-            style={}
-        ),
-        dcc.Dropdown(
-            id='secondary-annotation-selector',
-            options=[],
-            value=None,
-            placeholder="Select a secondary annotation",
             style={}
         ),
         dcc.Dropdown(
@@ -1213,11 +1099,7 @@ app.layout = html.Div([
                 id='bin-info-table',
                 columnDefs=column_defs,
                 rowData=contig_information_display.to_dict('records'),
-                defaultColDef={
-                        "sortable": True,
-                        "filter": True,
-                        "resizable": True
-                    },
+                defaultColDef=default_col_def,
                 style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'},
                 dashGridOptions={
                     'headerPinned': 'top',
@@ -1294,7 +1176,6 @@ def update_data(taxonomy_level):
         'visualization_type': 'taxonomy_hierarchy',
         'taxonomy_level': taxonomy_level,
         'selected_annotation': None,
-        'secondary_annotation': None,
         'selected_bin': None
     }
     
@@ -1311,8 +1192,6 @@ def update_data(taxonomy_level):
     [Output('visualization-selector', 'value'),
      Output('annotation-selector', 'value'),
      Output('annotation-selector', 'style'),
-     Output('secondary-annotation-selector', 'value'),
-     Output('secondary-annotation-selector', 'style'),
      Output('bin-selector', 'value'),
      Output('bin-selector', 'style'),
      Output('contact-table', 'active_cell'),
@@ -1321,27 +1200,24 @@ def update_data(taxonomy_level):
      Input('visualization-selector', 'value'),
      Input('contact-table', 'active_cell'),
      Input('bin-info-table', 'selectedRows'),
-     Input('cyto-graph', 'selectedNodeData'),
-     Input('cyto-graph', 'selectedEdgeData')],
+     Input('cyto-graph', 'selectedNodeData')],
      State('taxonomy-level-selector', 'value'),
      prevent_initial_call=True
 )
-def sync_selectors(reset_clicks,visualization_type, contact_table_active_cell, bin_info_selected_rows, selected_node_data, selected_edge_data, taxonomy_level):
+def sync_selectors(reset_clicks,visualization_type, contact_table_active_cell, bin_info_selected_rows, selected_node_data, taxonomy_level):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-    selected_annotation, secondary_annotation, selected_bin = synchronize_selections(
-        triggered_id, selected_node_data, selected_edge_data, bin_info_selected_rows, contact_table_active_cell, taxonomy_level )
+    selected_annotation, selected_bin = synchronize_selections(
+        triggered_id, selected_node_data, bin_info_selected_rows, contact_table_active_cell, taxonomy_level )
     
     annotation_selector_style = {'display': 'none'}
-    secondary_annotation_style = {'display': 'none'}
     bin_selector_style = {'display': 'none'}
     
     # Reset all the selections
     if triggered_id == 'reset-btn':
         visualization_type = 'taxonomy_hierarchy'
         selected_annotation = None
-        secondary_annotation = None
         selected_bin = None
         
 
@@ -1353,33 +1229,23 @@ def sync_selectors(reset_clicks,visualization_type, contact_table_active_cell, b
 
     # If a annotation is selected in the network or annotation table
     if selected_annotation and not selected_bin:
-        if secondary_annotation:
-            visualization_type = 'inter_annotation'
-            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
-            secondary_annotation_style = {'width': '300px', 'display': 'inline-block'}
-        else:
-            visualization_type = 'intra_annotation'
-            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
+        visualization_type = 'intra_annotation'
+        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
 
     # Default cases based on visualization_type
     if visualization_type == 'intra_annotation':
         annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
-    elif visualization_type == 'inter_annotation':
-        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
-        secondary_annotation_style = {'width': '300px', 'display': 'inline-block'}
     elif visualization_type == 'bin':
         annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
         bin_selector_style = {'width': '300px', 'display': 'inline-block'}
 
-    return visualization_type, selected_annotation, annotation_selector_style, secondary_annotation, secondary_annotation_style, selected_bin, bin_selector_style, None, []
+    return visualization_type, selected_annotation, annotation_selector_style, selected_bin, bin_selector_style, None, []
  
-def synchronize_selections(triggered_id, selected_node_data, selected_edge_data, bin_info_selected_rows, contact_table_active_cell, taxonomy_level ):
+def synchronize_selections(triggered_id, selected_node_data, bin_info_selected_rows, contact_table_active_cell, taxonomy_level ):
     # Initialize the return values
     selected_annotation = None
-    secondary_annotation = None
     selected_bin = None
     
-
     # If a node in the network is selected
     if triggered_id == 'cyto-graph' and selected_node_data:
         selected_node_id = selected_node_data[0]['id']
@@ -1390,13 +1256,6 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
             selected_bin = bin_info['Bin']
         else:
             selected_annotation = selected_node_id
-
-    # If an edge in the network is selected
-    elif triggered_id == 'cyto-graph' and selected_edge_data:
-        source_annotation = selected_edge_data[0]['source']
-        target_annotation = selected_edge_data[0]['target']
-        selected_annotation = source_annotation
-        secondary_annotation = target_annotation
 
     # If a row in the bin-info-table is selected
     elif triggered_id == 'bin-info-table' and bin_info_selected_rows:
@@ -1409,15 +1268,12 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
     # If a cell in the contact-table is selected
     elif triggered_id == 'contact-table' and contact_table_active_cell:
         row_id = contact_table_active_cell['row']
-        column_id = contact_table_active_cell['column_id']
         row_annotation = contact_matrix_display.iloc[row_id]['Annotation']
-        col_annotation = column_id if column_id != 'Annotation' else None
         selected_annotation = row_annotation
-        secondary_annotation = col_annotation
     
-    logger.info(f'Current selected: \n{selected_annotation}, \n{secondary_annotation}, \n{selected_bin}')
+    logger.info(f'Current selected: \n{selected_annotation}, \n{selected_bin}')
 
-    return selected_annotation, secondary_annotation, selected_bin
+    return selected_annotation, selected_bin
 
 # Callback to update the visualizationI want to 
 @app.callback(
@@ -1431,16 +1287,14 @@ def synchronize_selections(triggered_id, selected_node_data, selected_edge_data,
      Input('confirm-btn', 'n_clicks')],
     [State('visualization-selector', 'value'),
      State('annotation-selector', 'value'),
-     State('secondary-annotation-selector', 'value'),
      State('bin-selector', 'value'),
      State('contact-table', 'data')],
      prevent_initial_call=True
 )
-def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, secondary_annotation, selected_bin, table_data):
+def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, table_data):
     logger.info('update_visualization triggered')
     logger.info(f'Visualization type: {visualization_type}')
     logger.info(f'Selected annotation: {selected_annotation}')
-    logger.info(f'Secondary annotation: {secondary_annotation}')
     logger.info(f'Selected bin: {selected_bin}')
     
     global current_visualization_mode
@@ -1453,7 +1307,6 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         current_visualization_mode = {
             'visualization_type': 'taxonomy_hierarchy',
             'selected_annotation': None,
-            'secondary_annotation': None,
             'selected_bin': None
         }
         treemap_fig, bar_fig = taxonomy_visualization()
@@ -1465,7 +1318,6 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         # Update the current visualization mode with selected values
         current_visualization_mode['visualization_type'] = visualization_type
         current_visualization_mode['selected_annotation'] = selected_annotation
-        current_visualization_mode['secondary_annotation'] = secondary_annotation
         current_visualization_mode['selected_bin'] = selected_bin
 
         if visualization_type == 'taxonomy_hierarchy':
@@ -1476,7 +1328,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
         elif visualization_type == 'basic' or not selected_annotation:
             logger.info('show basic visulization')
-            cyto_elements, bar_fig = basic_visualization(contig_information, unique_annotations, contact_matrix)
+            cyto_elements, bar_fig = annotation_visualization(contig_information, unique_annotations, contact_matrix)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
@@ -1486,16 +1338,13 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-        elif visualization_type == 'inter_annotation':
-            logger.info('show inter_annotation visulization')
-            if selected_annotation and secondary_annotation:
-                cyto_elements, bar_fig = inter_annotation_visualization(selected_annotation, secondary_annotation, contig_information)
-                treemap_fig = go.Figure()
-                treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-                cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
         elif visualization_type == 'bin':
             logger.info('show bin visulization')
-            cyto_elements, bar_fig = bin_visualization(selected_annotation, selected_bin, contig_information, unique_annotations)
+            try:
+                cyto_elements, bar_fig = bin_visualization(selected_annotation, selected_bin, contig_information, unique_annotations)
+            except Exception as e:
+                logger.error(f'Error in bin_visualization: {e}')
+
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
@@ -1517,57 +1366,18 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     [Output('cyto-graph', 'stylesheet'),
      Output('hover-info', 'children')],
     [Input('annotation-selector', 'value'),
-     Input('secondary-annotation-selector', 'value'),
      Input('bin-selector', 'value')],
      prevent_initial_call=True
 )
-def update_selected_styles(selected_annotation, secondary_annotation, selected_bin):
+def update_selected_styles(selected_annotation, selected_bin):
     selected_nodes = []
     selected_edges = []
     hover_info = "No selection"
-
-    if selected_annotation and secondary_annotation:
-        selected_edges.append((selected_annotation, secondary_annotation))
-        selected_nodes.append(selected_annotation)
-        selected_nodes.append(secondary_annotation)
-        hover_info = f"Edge between {selected_annotation} and {secondary_annotation}"
-    elif selected_bin:
+        
+    if selected_bin:
         selected_nodes.append(selected_bin)
         bin_info = contig_information[contig_information['Bin'] == selected_bin].iloc[0]
         hover_info = f"Bin: {selected_bin}<br>Annotation: {bin_info['Bin annotation']}"
-
-        if current_visualization_mode['visualization_type'] == 'inter_annotation':
-            if bin_info['Bin annotation'] == current_visualization_mode['secondary_annotation']:
-                # Find bins from the selected annotation that have contact with the selected bin
-                selected_bin_index = contig_information[contig_information['Bin'] == selected_bin].index[0]
-                selected_annotation_indices = get_bin_indexes(current_visualization_mode['selected_annotation'], contig_information)
-                connected_bins = []
-
-                for j in selected_annotation_indices:
-                    if bin_dense_matrix[j, selected_bin_index] != 0:  # Check contact from selected annotation to the selected bin
-                        connected_bin = contig_information.at[j, 'Bin']
-                        connected_bins.append(connected_bin)
-
-                # Add the connected bins and edges to the lists
-                selected_nodes.extend(connected_bins)
-                for bin in connected_bins:
-                    selected_edges.append((bin, selected_bin))  # Edge goes from the connected bin to the selected bin
-
-            else:
-                # Find the bins in the secondary annotation that have contact with the selected bin
-                selected_bin_index = contig_information[contig_information['Bin'] == selected_bin].index[0]
-                secondary_annotation_indices = get_bin_indexes(current_visualization_mode['secondary_annotation'], contig_information)
-                connected_bins = []
-
-                for j in secondary_annotation_indices:
-                    if bin_dense_matrix[selected_bin_index, j] != 0:  # Check contact from selected bin to secondary annotation
-                        connected_bin = contig_information.at[j, 'Bin']
-                        connected_bins.append(connected_bin)
-
-                # Add the connected bins and edges to the lists
-                selected_nodes.extend(connected_bins)
-                for bin in connected_bins:
-                    selected_edges.append((selected_bin, bin))  # Edge goes from selected bin to the connected bin
 
     elif selected_annotation:
         selected_nodes.append(selected_annotation)
@@ -1591,12 +1401,11 @@ def update_selected_styles(selected_annotation, secondary_annotation, selected_b
      Output('bin-info-table', 'filterModel'),
      Output('row-count', 'children')],
     [Input('annotation-selector', 'value'),
-     Input('secondary-annotation-selector', 'value'),
      Input('visibility-filter', 'value')],
     [State('taxonomy-level-selector', 'value'),
      State('bin-info-table', 'rowData')]
 )
-def update_filter_model_and_row_count(selected_annotation, secondary_annotation, filter_value, taxonomy_level, bin_data):
+def update_filter_model_and_row_count(selected_annotation, filter_value, taxonomy_level, bin_data):
     filter_model = {}
     filtered_data = bin_data
     
@@ -1604,8 +1413,8 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
     for row in filtered_data:
         row['Visibility'] = 1
         
-    # Update the filter model based on selected annotation and secondary annotation
-    if selected_annotation and not secondary_annotation:
+    # Update the filter model based on selected annotation
+    if selected_annotation:
         filter_model[taxonomy_level] = {
             "filterType": "text",
             "operator": "OR",
@@ -1620,27 +1429,6 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
         for row in filtered_data:
             if row[taxonomy_level] != selected_annotation:
                 row['Visibility'] = 2
-
-    elif selected_annotation and secondary_annotation:
-        filter_model[taxonomy_level] = {
-            "filterType": "text",
-            "operator": "OR",
-            "conditions": [
-                {
-                    "filter": selected_annotation,
-                    "filterType": "text",
-                    "type": "contains",
-                },
-                {
-                    "filter": secondary_annotation,
-                    "filterType": "text",
-                    "type": "contains",
-                }
-            ]
-        }
-        for row in filtered_data:
-            if row[taxonomy_level] not in [selected_annotation, secondary_annotation]:
-                row['Visibility'] = 2
     else:
         filter_model = {}
 
@@ -1649,26 +1437,6 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
         if current_visualization_mode['selected_annotation']:
             for row in filtered_data:
                 if row[taxonomy_level] != current_visualization_mode['selected_annotation']:
-                    row['Visibility'] = 0
-
-    elif current_visualization_mode['visualization_type'] == 'inter_annotation':
-        if current_visualization_mode['selected_annotation'] and current_visualization_mode['secondary_annotation']:
-            row_indices = get_bin_indexes(current_visualization_mode['selected_annotation'], contig_information)
-            col_indices = get_bin_indexes(current_visualization_mode['secondary_annotation'], contig_information)
-            inter_bins_row = set()
-            inter_bins_col = set()
-
-            for i in row_indices:
-                for j in col_indices:
-                    contact_value = bin_dense_matrix[i, j]
-                    if contact_value != 0:
-                        inter_bins_row.add(contig_information.at[i, 'Bin'])
-                        inter_bins_col.add(contig_information.at[j, 'Bin'])
-
-            inter_bins = inter_bins_row.union(inter_bins_col)
-
-            for row in filtered_data:
-                if row['Bin'] not in inter_bins:
                     row['Visibility'] = 0
 
     elif current_visualization_mode['visualization_type'] == 'bin':
@@ -1703,7 +1471,6 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
 
 @app.callback(
     [Output('annotation-selector', 'options'),
-     Output('secondary-annotation-selector', 'options'),
      Output('bin-selector', 'options')],
     [Input('annotation-selector', 'value')],
     [State('visualization-selector', 'value')],
@@ -1712,23 +1479,18 @@ def update_filter_model_and_row_count(selected_annotation, secondary_annotation,
 def update_dropdowns(selected_annotation, visualization_type):
     # Initialize empty lists for options
     annotation_options = []
-    secondary_annotation_options = []
     bin_options = []
 
     annotation_options = [{'label': annotation, 'value': annotation} for annotation in unique_annotations]
-        
-    # Only show secondary annotation options if visualization type is 'inter_annotation'
-    if visualization_type == 'inter_annotation':
-        secondary_annotation_options = annotation_options  # Same options for secondary annotation dropdown
-    else:
-        secondary_annotation_options = []  # Hide secondary annotation dropdown if not in inter_annotation mode
 
     # Only show bin options if visualization type is 'bin'
     if visualization_type == 'bin' and selected_annotation:
-        bins = contig_information.loc[get_bin_indexes(selected_annotation, contig_information), 'Bin']
+        bin_index_dict = get_bin_indexes(selected_annotation, contig_information)
+        bin_index = bin_index_dict[selected_annotation]
+        bins = contig_information.loc[bin_index, 'Bin']
         bin_options = [{'label': bin, 'value': bin} for bin in bins]
 
-    return annotation_options, secondary_annotation_options, bin_options
+    return annotation_options, bin_options
 
 # Dash callback to use ChatGPT
 @app.callback(

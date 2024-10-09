@@ -388,6 +388,27 @@ else:
 bin_contact_matrix = csc_matrix(bin_contact_matrix)
 contig_contact_matrix = csc_matrix(contig_contact_matrix)
 
+matrix_columns = {
+    'Contig name': 'Contig',
+    'Binning information': 'Bin',
+    'Domain': 'Domain',
+    'Kingdom': 'Kingdom',
+    'Phylum': 'Phylum',
+    'Class': 'Class',
+    'Order': 'Order',
+    'Family': 'Family',
+    'Genus': 'Genus',
+    'Species': 'Species',
+    'Restriction sites': 'Restriction sites',
+    'Contig length': 'Length',
+    'Contig coverage': 'Coverage',
+    'Intra-contig contact': 'Self contact'
+}
+bin_contact_matrix = bin_contact_matrix.rename(columns=matrix_columns)
+bin_contact_matrix = bin_contact_matrix[list(matrix_columns.values())]
+contig_contact_matrix = contig_contact_matrix.rename(columns=matrix_columns)
+contig_contact_matrix = contig_contact_matrix[list(matrix_columns.values())]
+
 # Extract the updated components
 bin_contact_data = bin_contact_matrix.data
 bin_contact_indices = bin_contact_matrix.indices
