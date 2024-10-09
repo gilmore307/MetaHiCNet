@@ -89,18 +89,6 @@ def split_classification(classification):
     return pd.Series(result)
 
 def adjust_taxonomy(row):
-    if row['type'] == 'phage':
-        row['Domain'] = 'Virus'
-        row['Phylum'] = 'Virus'
-        row['Class'] = 'Virus'
-        row['Contig name'] = row['Contig name'] + "_v"
-        
-    if row['type'] == 'plasmid':
-        # Add suffix '_p' to all taxonomy levels for plasmids
-        for tier in tiers:
-            row[tier] = row[tier] + '_p'
-        row['Contig name'] = row['Contig name'] + "_p"
-        
     last_non_blank = ""
 
     if row['type'] != 'Unmapped':
@@ -109,10 +97,23 @@ def adjust_taxonomy(row):
                 last_non_blank = row[tier]
             else:
                 row[tier] = f"Unspecified {last_non_blank}"
-
-    if row['type'] == 'Unmapped':
+    else:
         for tier in tiers:
             row[tier] = "Unmapped"
+            
+    if row['type'] == 'phage':
+        row['Domain'] = 'Virus'
+        row['Phylum'] = 'Virus'
+        row['Class'] = 'Virus'
+        for tier in tiers:
+            row[tier] = row[tier] + '_v'
+        row['Contig name'] = row['Contig name'] + "_v"
+        
+    if row['type'] == 'plasmid':
+        # Add suffix '_p' to all taxonomy levels for plasmids
+        for tier in tiers:
+            row[tier] = row[tier] + '_p'
+        row['Contig name'] = row['Contig name'] + "_p"
     
     return row
 
