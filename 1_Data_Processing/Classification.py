@@ -391,6 +391,7 @@ contig_contact_matrix = csc_matrix(contig_contact_matrix)
 matrix_columns = {
     'Contig name': 'Contig',
     'Binning information': 'Bin',
+    'type': 'type',
     'Domain': 'Domain',
     'Kingdom': 'Kingdom',
     'Phylum': 'Phylum',
@@ -404,10 +405,10 @@ matrix_columns = {
     'Contig coverage': 'Coverage',
     'Intra-contig contact': 'Self contact'
 }
-bin_contact_matrix = bin_contact_matrix.rename(columns=matrix_columns)
-bin_contact_matrix = bin_contact_matrix[list(matrix_columns.values())]
-contig_contact_matrix = contig_contact_matrix.rename(columns=matrix_columns)
-contig_contact_matrix = contig_contact_matrix[list(matrix_columns.values())]
+grouped_data = grouped_data.rename(columns=matrix_columns)
+grouped_data = grouped_data[list(matrix_columns.values())]
+filtered_data = filtered_data.rename(columns=matrix_columns)
+filtered_data = filtered_data[list(matrix_columns.values())]
 
 # Extract the updated components
 bin_contact_data = bin_contact_matrix.data
