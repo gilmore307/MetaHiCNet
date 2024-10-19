@@ -66,7 +66,7 @@ def classify(row):
     elif row['plasmid_score'] > 0.5:
         classification = "plasmid"
     else:
-        classification = "Unmapped"
+        classification = "unmapped"
     return classification
 
 def adjust_classification(row):
@@ -91,7 +91,7 @@ def split_classification(classification):
 def adjust_taxonomy(row):
     last_non_blank = ""
 
-    if row['type'] != 'Unmapped':
+    if row['type'] != 'unmapped':
         for tier in tiers:
             if row[tier] and row[tier] != "N/A":
                 last_non_blank = row[tier]
@@ -99,7 +99,7 @@ def adjust_taxonomy(row):
                 row[tier] = f"Unspecified {last_non_blank}"
     else:
         for tier in tiers:
-            row[tier] = "Unmapped"
+            row[tier] = "unmapped"
             
     if row['type'] == 'phage':
         row['Domain'] = 'Virus'
@@ -193,7 +193,7 @@ chromosome_data['classification'] = chromosome_data['classification'].apply(
 phage_data = contig_data[contig_data['type'] == "phage"]
 phage_data = pd.merge(phage_data, demo_vir_data, on="Contig name", how="left")
 
-unmapped_data = contig_data[contig_data['type'] == "Unmapped"]
+unmapped_data = contig_data[contig_data['type'] == "unmapped"]
 unmapped_data['classification'] = np.nan
 
 # **8. Query classification for plasmids**
@@ -245,7 +245,7 @@ prefix_to_tier = {
 
 tiers = ['Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
 combined_data[tiers] = combined_data['classification'].apply(split_classification)
-combined_data.loc[combined_data['classification'].isna(), 'type'] = 'Unmapped'
+combined_data.loc[combined_data['classification'].isna(), 'type'] = 'unmapped'
 combined_data = combined_data.apply(adjust_taxonomy, axis=1)
 combined_data = combined_data.drop(columns=['classification'])
 combined_data['Kingdom'] = combined_data['Domain'] 
@@ -268,7 +268,7 @@ dense_matrix = sparse_matrix.toarray()
 
 if remove_unmapped:
     # Find the positions of unmapped contigs in combined_data
-    unmapped_contigs = combined_data[combined_data['type'] == "Unmapped"].index.tolist()
+    unmapped_contigs = combined_data[combined_data['type'] == "unmapped"].index.tolist()
     filtered_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
     
     # Create a mask of rows and columns to keep
@@ -282,7 +282,7 @@ else:
 
 # Generate 'Binning information'
 filtered_data['Binning information'] = filtered_data.apply(
-    lambda row: row['Bin'] if row['type'] in ['chromosome', 'Unmapped'] else row['Contig name'], axis=1
+    lambda row: row['Bin'] if row['type'] in ['chromosome', 'unmapped'] else row['Contig name'], axis=1
 )
 filtered_data = filtered_data.drop(columns=['Bin'])
 
@@ -292,7 +292,7 @@ filtered_data['Binning information'] = filtered_data['Binning information'].str.
 # If 'Binning information' is NaN, replace it with 'Unbinned MAG'
 filtered_data['Binning information'] = filtered_data['Binning information'].fillna('Unbinned MAG')
 
-unmapped_contigs = combined_data[combined_data['type'] == "Unmapped"].index
+unmapped_contigs = combined_data[combined_data['type'] == "unmapped"].index
 final_data = combined_data.drop(unmapped_contigs).reset_index(drop=True)
 
 # **11. Handle host-host interactions**
@@ -363,14 +363,6 @@ if remove_host_host:
 
             # Symmetric assignment for host-non-host
             bin_contact_matrix.at[annotation_j, annotation_i] = sub_matrix.sum()
-
-    # Step 3: Add self-contact for host annotations
-    for annotation_i in host_annotations:
-        indexes_i = contig_indexes_dict[annotation_i]
-        
-        # Extract the submatrix and sum the values (self-contact)
-        sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_i)]
-        bin_contact_matrix.at[annotation_i, annotation_i] = sub_matrix.sum()
 
 else:
     # Original method: process all interactions including host-host
