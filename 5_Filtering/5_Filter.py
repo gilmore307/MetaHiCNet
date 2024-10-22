@@ -161,16 +161,16 @@ if remove_host_host:
             bin_contact_matrix.at[annotation_j, annotation_i] = sub_matrix.sum()
     
     # Step 3: Remove host-host interactions in contig_contact_matrix using contig_indexes_dict
-        host_indexes = []
-        for host_annotation in host_annotations:
-            host_indexes.extend(contig_indexes_dict[host_annotation])
-        
-        # Create a mask for host-host contacts to remove them
-        host_mask = np.ones(dense_matrix.shape[0], dtype=bool)
-        host_mask[host_indexes] = False
-        
-        # Remove host-host interactions from contig_contact_matrix
-        contig_contact_matrix = dense_matrix[host_mask, :][:, host_mask]
+    host_indexes = []
+    for host_annotation in host_annotations:
+        host_indexes.extend(contig_indexes_dict[host_annotation])
+    
+    # Create a mask for host-host contacts to remove them
+    host_mask = np.ones(dense_matrix.shape[0], dtype=bool)
+    host_mask[host_indexes] = False
+    
+    # Remove host-host interactions from contig_contact_matrix
+    contig_contact_matrix = dense_matrix[host_mask, :][:, host_mask]
 
 else:
     # Original method: process all interactions including host-host
@@ -201,11 +201,11 @@ contig_contact_indptr = contig_contact_matrix.indptr
 contig_contact_shape = contig_contact_matrix.shape
 
 bin_data_path = 'output/bin_info_final.csv'
-bin_data_path = 'output/contig_info_final.csv'
+contig_data_path = 'output/contig_info_final.csv'
 bin_contact_matrix_path = 'output/bin_contact_matrix.npz'
 contig_contact_matrix_path = 'output/contig_contact_matrix.npz'
 
 np.savez_compressed(bin_contact_matrix_path, data=bin_contact_data, indices=bin_contact_indices, indptr=bin_contact_indptr, shape=bin_contact_shape)
 np.savez_compressed(contig_contact_matrix_path, data=contig_contact_data, indices=contig_contact_indices, indptr=contig_contact_indptr, shape=contig_contact_shape)
 bin_data.to_csv(bin_data_path, index=False)
-contig_data.to_csv(bin_data_path, index=False)
+contig_data.to_csv(contig_data_path, index=False)
