@@ -16,7 +16,7 @@ def get_contig_indexes(annotations, contig_information):
         futures = {}
         for annotation in annotations:
             futures[executor.submit(
-                lambda ann: (ann, contig_information[contig_information['Binning information'] == ann].index.tolist()),
+                lambda ann: (ann, contig_information[contig_information['Bin'] == ann].index.tolist()),
                 annotation)] = annotation
         
         contig_indexes = {}
@@ -131,8 +131,8 @@ bin_data = contig_data.groupby('Bin').agg({
 unique_annotations = bin_data['Bin']
 contig_indexes_dict = get_contig_indexes(unique_annotations, contig_data)
 
-host_annotations = bin_data[bin_data['type'] == 'chromosome']['Binning information'].tolist()
-non_host_annotations = bin_data[~bin_data['type'].isin(['chromosome'])]['Binning information'].tolist()
+host_annotations = bin_data[bin_data['type'] == 'chromosome']['Bin'].tolist()
+non_host_annotations = bin_data[~bin_data['type'].isin(['chromosome'])]['Bin'].tolist()
 
 bin_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
 

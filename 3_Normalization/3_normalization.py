@@ -3,23 +3,44 @@ import sys
 import argparse
 import numpy as np
 import pandas as pd
-from scipy.sparse import save_npz, load_npz, coo_matrix, diags, isspmatrix_csr, spdiags
+from scipy.sparse import save_npz, load_npz, csr_matrix, coo_matrix, spdiags
 import statsmodels.api as sm
-from collections.abc import Iterable
+import gc
+import logging
 
-# Define the standardize function outside the class
-def standardize(array):
+# Set up logging configuration
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def standardize(array: np.ndarray) -> np.ndarray:
+    """
+    Standardizes the input array.
+    
+    Parameters:
+        array (np.ndarray): Input array to standardize.
+    
+    Returns:
+        np.ndarray: Standardized array or zero array if standard deviation is 0.
+    """
     std = np.std(array)
-    if std == 0:
-        return np.zeros_like(array)
-    else:
-        return (array - np.mean(array)) / std
+    return np.zeros_like(array) if std == 0 else (array - np.mean(array)) / std
 
 class Normalization:
-    def __init__(self):
-        pass
+    def __init__(self, epsilon=1, max_iter=1000):
+        self.epsilon = epsilon
+        self.max_iter = max_iter
 
-    def preprocess(self, contig_file, contact_matrix_file, output_path, min_len=1000, min_signal=2, thres=5):
+    def preprocess(self, contig_file: str, contact_matrix_file: str, output_path: str, min_len=1000, min_signal=2, thres=5):
+        """
+        Preprocesses the input data: loads the contig information and contact matrix, applies filters, and sets up paths.
+        
+        Parameters:
+            contig_file (str): Path to contig information CSV file.
+            contact_matrix_file (str): Path to contact matrix npz file.
+            output_path (str): Directory to store output.
+            min_len (int): Minimum contig length to consider.
+            min_signal (int): Minimum signal threshold.
+            thres (float): Threshold percentage for denoising (0-100).
+        """
         self.min_len = min_len
         self.min_signal = min_signal
         self.output_path = output_path
@@ -36,30 +57,44 @@ class Normalization:
 
         # Filter contigs based on min_len
         self.contig_info = self.contig_info[self.contig_info['length'] >= self.min_len].reset_index(drop=True)
+        logging.info(f"Filtered contigs based on min_len: {self.min_len}")
 
-        # Load contact matrix
-        contact_matrix_full = load_npz(contact_matrix_file).tocoo()
+        # Load contact matrix with error handling
+        try:
+            contact_matrix_full = load_npz(contact_matrix_file).tocoo()
+            logging.info("Loaded contact matrix.")
+        except FileNotFoundError:
+            logging.error(f"Error: The file '{contact_matrix_file}' was not found.")
+            sys.exit(1)
+        except Exception as e:
+            logging.error(f"Error loading file '{contact_matrix_file}': {e}")
+            sys.exit(1)
 
-        # No need to reindex if indices match
         self.contact_matrix = contact_matrix_full
 
         # Make output folder
         os.makedirs(self.output_path, exist_ok=True)
-
+        logging.info(f"Output directory created at {self.output_path}")
 
     def raw(self):
         """
         Do not conduct any normalization, just denoise.
         """
         try:
+            logging.info("Starting raw normalization.")
             contact_matrix_raw = self.contact_matrix.copy()
             self.denoise(contact_matrix_raw, 'raw')
             del contact_matrix_raw
+            gc.collect()
         except Exception as e:
-            print(f"Error during raw normalization: {e}")
+            logging.error(f"Error during raw normalization: {e}")
 
-    def normcc(self, epsilon=1):
+    def normcc(self):
+        """
+        Perform normCC normalization.
+        """
         try:
+            logging.info("Starting normCC normalization.")
             contact_matrix = self.contact_matrix.copy()
             covcc = contact_matrix.diagonal()
             contact_matrix.setdiag(0)
@@ -67,11 +102,7 @@ class Normalization:
             site = self.contig_info['sites'].values
             length = self.contig_info['length'].values
 
-            # Debugging statements
-            print(f"Length of site: {len(site)}")
-            print(f"Length of length: {len(length)}")
-            print(f"Length of covcc: {len(covcc)}")
-            print(f"Length of signal: {len(signal)}")
+            logging.info("Running GLM for normCC normalization.")
 
             contig_info_normcc = pd.DataFrame({
                 'site': site,
@@ -80,19 +111,15 @@ class Normalization:
                 'signal': signal
             })
 
-            contig_info_normcc['sample_site'] = np.log(contig_info_normcc['site'] + epsilon)
+            contig_info_normcc['sample_site'] = np.log(contig_info_normcc['site'] + self.epsilon)
             contig_info_normcc['sample_len'] = np.log(contig_info_normcc['length'])
-            contig_info_normcc['sample_covcc'] = np.log(contig_info_normcc['covcc'] + epsilon)
+            contig_info_normcc['sample_covcc'] = np.log(contig_info_normcc['covcc'] + self.epsilon)
             exog = contig_info_normcc[['sample_site', 'sample_len', 'sample_covcc']]
             endog = contig_info_normcc['signal']
             exog = sm.add_constant(exog)
             glm_nb = sm.GLM(endog, exog, family=sm.families.NegativeBinomial(alpha=1))
             res = glm_nb.fit(method="lbfgs")
             norm_result = res.params.values
-
-            if norm_result is None:
-                print("normCC normalization failed.")
-                return None
 
             linear_predictor = np.dot(exog, norm_result)
             expected_signal = np.exp(linear_predictor)
@@ -106,7 +133,6 @@ class Normalization:
                 normalized_value = scal * v / np.sqrt(mu_i * mu_j)
                 normalized_data.append(normalized_value)
 
-            # Create normalized contact matrix
             normalized_contact_matrix = coo_matrix(
                 (normalized_data, (contact_matrix.row, contact_matrix.col)),
                 shape=contact_matrix.shape
@@ -114,28 +140,29 @@ class Normalization:
 
             self.denoise(normalized_contact_matrix, 'normcc')
             del contact_matrix, normalized_contact_matrix
+            gc.collect()
 
         except Exception as e:
-            print(f"Error during normCC normalization: {e}")
+            logging.error(f"Error during normCC normalization: {e}")
             return None
 
-    def hiczin(self, epsilon=1):
+    def hiczin(self):
+        """
+        Perform HiCzin normalization.
+        """
         try:
+            logging.info("Starting HiCzin normalization.")
             contact_matrix = self.contact_matrix.copy()
             contact_matrix.setdiag(0)
 
-            # Log transformation
             contig_info_hiczin = self.contig_info.copy()
-            contig_info_hiczin['site'] = contig_info_hiczin['sites'] + epsilon
+            contig_info_hiczin['site'] = contig_info_hiczin['sites'] + self.epsilon
 
-            # Handle missing or zero coverage
             if 'coverage' not in contig_info_hiczin.columns or contig_info_hiczin['coverage'].isnull().any():
-                print("Warning: 'coverage' column is missing or contains NaNs. Replacing with epsilon.")
-                contig_info_hiczin['coverage'] = epsilon
+                logging.warning("'coverage' column is missing or contains NaNs. Replacing with epsilon.")
+                contig_info_hiczin['coverage'] = self.epsilon
             else:
                 min_non_zero = contig_info_hiczin['coverage'][contig_info_hiczin['coverage'] > 0].min()
-                if pd.isna(min_non_zero):
-                    min_non_zero = epsilon
                 contig_info_hiczin['coverage'] = contig_info_hiczin['coverage'].replace(0, min_non_zero)
 
             map_x = contact_matrix.row
@@ -150,15 +177,9 @@ class Normalization:
             sample_len = np.log(contig_info_hiczin['length'].values[map_x] * contig_info_hiczin['length'].values[map_y])
             sample_cov = np.log(contig_info_hiczin['coverage'].values[map_x] * contig_info_hiczin['coverage'].values[map_y])
 
-            # Use the safe standardization function
             sample_site = standardize(sample_site)
             sample_len = standardize(sample_len)
             sample_cov = standardize(sample_cov)
-
-            # Debugging statements
-            print(f"Standard deviation of sample_site: {np.std(sample_site)}")
-            print(f"Standard deviation of sample_len: {np.std(sample_len)}")
-            print(f"Standard deviation of sample_cov: {np.std(sample_cov)}")
 
             data_hiczin = pd.DataFrame({
                 'sample_site': sample_site,
@@ -169,17 +190,10 @@ class Normalization:
 
             exog = data_hiczin[['sample_site', 'sample_len', 'sample_cov']]
             endog = data_hiczin['sampleCon']
-
             exog = sm.add_constant(exog)
 
-            # Check for NaNs or Infs
-            print("Checking exog for NaNs or Infs")
-            print(f"exog contains NaNs: {np.isnan(exog).any()}")
-            print(f"exog contains Infs: {np.isinf(exog).any()}")
-
-            # Modified condition
             if np.isnan(exog.values).any() or np.isinf(exog.values).any():
-                raise ValueError("exog contains inf or nans")
+                raise ValueError("exog contains inf or NaNs")
 
             glm_nb = sm.GLM(endog, exog, family=sm.families.NegativeBinomial(alpha=1))
             res = glm_nb.fit()
@@ -188,7 +202,6 @@ class Normalization:
             expected_signal = np.exp(linear_predictor)
             normalized_data = map_data / expected_signal
 
-            # Create normalized contact matrix
             normalized_contact_matrix = coo_matrix(
                 (normalized_data, (map_x, map_y)),
                 shape=contact_matrix.shape
@@ -197,20 +210,21 @@ class Normalization:
 
             self.denoise(normalized_contact_matrix, 'hiczin')
             del contact_matrix, normalized_contact_matrix
+            gc.collect()
 
         except Exception as e:
-            print(f"Error during HiCzin normalization: {e}")
+            logging.error(f"Error during HiCzin normalization: {e}")
             return None
 
-
-
-    def bin3c(self, epsilon=1, max_iter=1000, tol=1e-6):
+    def bin3c(self):
+        """
+        Perform bin3C normalization.
+        """
         try:
-            # Get number of sites, avoid division by zero
+            logging.info("Starting bin3C normalization.")
             num_sites = self.contig_info['sites'].values
-            num_sites = num_sites + epsilon
+            num_sites = num_sites + self.epsilon
 
-            # Normalize contact values
             normalized_data = []
             for i, j, v in zip(self.contact_matrix.row, self.contact_matrix.col, self.contact_matrix.data):
                 s_i = num_sites[i]
@@ -223,24 +237,23 @@ class Normalization:
                 shape=self.contact_matrix.shape
             )
 
-            # Apply KR algorithm
-            bistochastic_matrix, _ = self._bisto_seq(normalized_contact_matrix, max_iter, tol)
+            bistochastic_matrix, _ = self._bisto_seq(normalized_contact_matrix, self.max_iter, 1e-6)
 
             self.denoise(bistochastic_matrix, 'bin3c')
 
         except Exception as e:
-            print(f"Error during bin3C normalization: {e}")
+            logging.error(f"Error during bin3C normalization: {e}")
             return None
 
-
-    def metator(self, epsilon=1):
+    def metator(self):
         """
         Perform MetaTOR normalization.
         """
         try:
+            logging.info("Starting MetaTOR normalization.")
             signal = self.contact_matrix.tocsr().diagonal()
-            signal = signal + epsilon
-            # Normalize contact values
+            signal = signal + self.epsilon
+
             normalized_data = []
             for i, j, v in zip(self.contact_matrix.row, self.contact_matrix.col, self.contact_matrix.data):
                 cov_i = signal[i]
@@ -249,7 +262,6 @@ class Normalization:
                 normalized_value = v / norm_factor
                 normalized_data.append(normalized_value)
 
-            # Create normalized contact matrix
             normalized_contact_matrix = coo_matrix(
                 (normalized_data, (self.contact_matrix.row, self.contact_matrix.col)),
                 shape=self.contact_matrix.shape
@@ -258,35 +270,38 @@ class Normalization:
             self.denoise(normalized_contact_matrix, 'metator')
 
         except Exception as e:
-            print(f"Error during MetaTOR normalization: {e}")
+            logging.error(f"Error during MetaTOR normalization: {e}")
             return None
 
-    def denoise(self, _norm_matrix, suffix):
+    def denoise(self, _norm_matrix: coo_matrix, suffix: str):
+        """
+        Denoises the contact matrix by removing values below a certain threshold.
+        
+        Parameters:
+            _norm_matrix (coo_matrix): The normalized contact matrix.
+            suffix (str): A suffix to append to the output filename.
+        """
         try:
-            # Ensure the matrix is in COO format
             if not isinstance(_norm_matrix, coo_matrix):
                 _norm_matrix = _norm_matrix.tocoo()
 
             denoised_matrix_file = os.path.join(self.output_path, f'denoised_contact_matrix_{suffix}.npz')
 
             if _norm_matrix.nnz == 0:
-                print(f"Warning: The contact matrix '{suffix}' is empty. Skipping denoising.")
-                # Save an empty matrix
+                logging.warning(f"The contact matrix '{suffix}' is empty. Skipping denoising.")
                 denoised_contact_matrix = coo_matrix(_norm_matrix.shape)
                 save_npz(denoised_matrix_file, denoised_contact_matrix)
-                print(f"Empty denoised contact matrix saved to {denoised_matrix_file}")
                 return denoised_contact_matrix
 
-            # Calculate threshold to discard lowest p percent
             if self.thres <= 0 or self.thres >= 100:
-                print("Error: The threshold percentage for spurious contact detection must be between 0 and 100.")
-                return None
+                logging.error("The threshold percentage must be between 0 and 100. Using default 5%.")
+                self.thres = 5
 
             threshold = np.percentile(_norm_matrix.data, self.thres)
             mask = _norm_matrix.data > threshold
 
             if not np.any(mask):
-                print(f"Warning: No contacts exceed the threshold in '{suffix}'. Denoised matrix will be empty.")
+                logging.warning(f"No contacts exceed the threshold in '{suffix}'. Denoised matrix will be empty.")
                 denoised_contact_matrix = coo_matrix(_norm_matrix.shape)
             else:
                 denoised_contact_matrix = coo_matrix(
@@ -294,104 +309,128 @@ class Normalization:
                     shape=_norm_matrix.shape
                 )
 
-            # Save denoised contact matrix
             save_npz(denoised_matrix_file, denoised_contact_matrix)
-            print(f"Denoised normalized contact matrix '{suffix}' saved to {denoised_matrix_file}")
+            logging.info(f"Denoised normalized contact matrix '{suffix}' saved to {denoised_matrix_file}")
 
             return denoised_contact_matrix
         except Exception as e:
-            print(f"Error during denoising normalization for '{suffix}': {e}")
+            logging.error(f"Error during denoising normalization for '{suffix}': {e}")
             return None
-
-    def _bisto_seq(self, m , max_iter, tol, x0=None, delta=0.1, Delta=3):
+    
+    def _bisto_seq(self, m: csr_matrix, max_iter: int, tol: float, x0: np.ndarray = None, delta: float = 0.1, Delta: float = 3):
+        """
+        Apply the bistochastic matrix balancing algorithm to normalize the matrix.
+        
+        Parameters:
+            m (csr_matrix): The matrix to normalize.
+            max_iter (int): Maximum number of iterations for convergence.
+            tol (float): Tolerance for convergence.
+            x0 (np.ndarray, optional): Initial scale vector. Defaults to ones.
+            delta (float): Lower bound constraint on the scaling factors.
+            Delta (float): Upper bound constraint on the scaling factors.
+    
+        Returns:
+            csr_matrix: The bistochastically balanced matrix.
+            np.ndarray: The final scaling factors used in the balancing process.
+        """
+        logging.info("Starting bistochastic matrix balancing.")
+        
+        # Copy the original matrix and ensure it's in the correct format
         _orig = m.copy()
-        # replace 0 diagonals with 1, on the working matrix. This avoids potentially
-        # exploding scale-factors. KR should be regularlized!
-        m = m.tolil()
-        is_zero = m.diagonal() == 0
-        if np.any(is_zero):
-            print('treating {} zeros on diagonal as ones'.format(is_zero.sum()))
-            ix = np.where(is_zero)
-            m[ix, ix] = 1
-        if not isspmatrix_csr(m):
-            m = m.tocsr()
+        m = m.tolil()  # LIL format for efficient in-place modifications
+        
+        # Handle zero diagonals by replacing them with 1 to avoid exploding scale factors
+        is_zero_diag = m.diagonal() == 0
+        if np.any(is_zero_diag):
+            logging.warning(f"Replacing {is_zero_diag.sum()} zero diagonals with ones.")
+            m.setdiag(np.where(is_zero_diag, 1, m.diagonal()))  # Set diagonal to 1 where it was zero
+        
+        m = m.tocsr()  # Convert back to CSR for efficient matrix operations
+        
+        # Initialize variables
         n = m.shape[0]
         e = np.ones(n)
-        if x0 is None:
-            x0 = e.copy()
+        x = x0.copy() if x0 is not None else e.copy()
         g = 0.9
         etamax = 0.1
         eta = etamax
         stop_tol = tol * 0.5
-        x = x0.copy()
         rt = tol ** 2
         v = x * m.dot(x)
         rk = 1 - v
-        rho_km1 = rk.T.dot(rk)  # transpose possibly implicit
+        rho_km1 = np.dot(rk, rk)
         rout = rho_km1
         rold = rout
         n_iter = 0
-        i = 0
-        y = np.empty_like(e)
+        
+        # Begin iterative balancing
         while rout > rt and n_iter < max_iter:
-            i += 1
-            k = 0
-            y[:] = e
+            y = e.copy()
             inner_tol = max(rout * eta ** 2, rt)
+            rho_km2 = None
+    
             while rho_km1 > inner_tol:
-                k += 1
-                if k == 1:
+                if rho_km2 is None:
                     Z = rk / v
                     p = Z
-                    rho_km1 = rk.T.dot(Z)
+                    rho_km1 = np.dot(rk, Z)
                 else:
                     beta = rho_km1 / rho_km2
                     p = Z + beta * p
+                
                 w = x * m.dot(x * p) + v * p
-                alpha = rho_km1 / p.T.dot(w)
+                alpha = rho_km1 / np.dot(p, w)
                 ap = alpha * p
                 ynew = y + ap
-                if np.amin(ynew) <= delta:
-                    if delta == 0:
-                        break
-                    ind = np.where(ap < 0)[0]
-                    gamma = np.amin((delta - y[ind]) / ap[ind])
+    
+                # Enforce delta and Delta constraints
+                if np.min(ynew) <= delta:
+                    gamma = np.min((delta - y[ynew < delta]) / ap[ynew < delta])
                     y += gamma * ap
                     break
-                if np.amax(ynew) >= Delta:
-                    ind = np.where(ynew > Delta)[0]
-                    gamma = np.amin((Delta - y[ind]) / ap[ind])
+                if np.max(ynew) >= Delta:
+                    gamma = np.min((Delta - y[ynew > Delta]) / ap[ynew > Delta])
                     y += gamma * ap
                     break
+                
                 y = ynew
-                rk = rk - alpha * w
+                rk -= alpha * w
                 rho_km2 = rho_km1
                 Z = rk / v
-                rho_km1 = np.dot(rk.T, Z)
+                rho_km1 = np.dot(rk, Z)
+    
                 if np.any(np.isnan(x)):
-                    raise RuntimeError('scale vector has developed invalid values (NANs)!')
+                    raise RuntimeError("Scaling vector has developed NaN values!")
+    
             x *= y
             v = x * m.dot(x)
             rk = 1 - v
-            rho_km1 = np.dot(rk.T, rk)
+            rho_km1 = np.dot(rk, rk)
             rout = rho_km1
-            n_iter += k + 1
-            rat = rout / rold
+            n_iter += 1
             rold = rout
-            res_norm = np.sqrt(rout)
-            eta_o = eta
-            eta = g * rat
-            if g * eta_o ** 2 > 0.1:
-                eta = max(eta, g * eta_o ** 2)
-            eta = max(min(eta, etamax), stop_tol / res_norm)
-        if n_iter > max_iter:
-            raise RuntimeError('matrix balancing failed to converge in {} iterations'.format(n_iter))
-        del m
-        print('It took {} iterations to achieve bistochasticity'.format(n_iter))
+            eta = max(min(g * (rout / rold), etamax), stop_tol / np.sqrt(rout))
+    
         if n_iter >= max_iter:
-            print('Warning: maximum number of iterations ({}) reached without convergence'.format(max_iter))
-        X = spdiags(x, 0, n, n, 'csr')
+            logging.warning(f"Matrix balancing did not converge after {max_iter} iterations.")
+        else:
+            logging.info(f"Converged after {n_iter} iterations.")
+    
+        # Return the bistochastically balanced matrix and the scaling vector
+        X = spdiags(x, 0, n, n, format='csr')
         return X.T.dot(_orig.dot(X)), x
+
+
+def preprocess_common_args(args, normalizer):
+    """
+    Common preprocessing for all normalization methods to avoid code repetition.
+    """
+    normalizer.preprocess(
+        contig_file=args.contig_file,
+        contact_matrix_file=args.contact_matrix_file,
+        output_path=args.output_path,
+        thres=args.thres
+    )
 
 def main():
     parser = argparse.ArgumentParser(description="Normalization tool for MetaHit pipeline.")
@@ -416,17 +455,17 @@ def main():
 
     # Subparser for HiCzin normalization
     parser_hiczin = subparsers.add_parser('hiczin', help='Perform HiCzin normalization')
-    parser_hiczin.add_argument('-c', '--contig_file', required=True, help='Path to contig_info.csv')
-    parser_hiczin.add_argument('-m', '--contact_matrix_file', required=True, help='Path to contact_matrix.npz')
-    parser_hiczin.add_argument('-o', '--output_path', required=True, help='Output directory')
+    parser_hiczin.add_argument('--contig_file', required=True, help='Path to contig_info.csv')
+    parser_hiczin.add_argument('--contact_matrix_file', required=True, help='Path to contact_matrix.npz')
+    parser_hiczin.add_argument('--output_path', required=True, help='Output directory')
     parser_hiczin.add_argument('--epsilon', type=float, default=1, help='Epsilon value')
     parser_hiczin.add_argument('--thres', type=float, default=5, help='Threshold percentage for denoising (0-100)')
 
     # Subparser for bin3C normalization
     parser_bin3c = subparsers.add_parser('bin3c', help='Perform bin3C normalization')
-    parser_bin3c.add_argument('-c', '--contig_file', required=True, help='Path to contig_info.csv')
-    parser_bin3c.add_argument('-m', '--contact_matrix_file', required=True, help='Path to contact_matrix.npz')
-    parser_bin3c.add_argument('-o', '--output_path', required=True, help='Output directory')
+    parser_bin3c.add_argument('--contig_file', required=True, help='Path to contig_info.csv')
+    parser_bin3c.add_argument('--contact_matrix_file', required=True, help='Path to contact_matrix.npz')
+    parser_bin3c.add_argument('--output_path', required=True, help='Output directory')
     parser_bin3c.add_argument('--epsilon', type=float, default=1, help='Epsilon value')
     parser_bin3c.add_argument('--max_iter', type=int, default=1000, help='Maximum iterations for Sinkhorn-Knopp')
     parser_bin3c.add_argument('--tol', type=float, default=1e-6, help='Tolerance for convergence')
@@ -434,9 +473,9 @@ def main():
 
     # Subparser for MetaTOR normalization
     parser_metator = subparsers.add_parser('metator', help='Perform MetaTOR normalization')
-    parser_metator.add_argument('-c', '--contig_file', required=True, help='Path to contig_info.csv')
-    parser_metator.add_argument('-m', '--contact_matrix_file', required=True, help='Path to contact_matrix.npz')
-    parser_metator.add_argument('-o', '--output_path', required=True, help='Output directory')
+    parser_metator.add_argument('--contig_file', required=True, help='Path to contig_info.csv')
+    parser_metator.add_argument('--contact_matrix_file', required=True, help='Path to contact_matrix.npz')
+    parser_metator.add_argument('--output_path', required=True, help='Output directory')
     parser_metator.add_argument('--epsilon', type=float, default=1, help='Epsilon value')
     parser_metator.add_argument('--thres', type=float, default=5, help='Threshold percentage for denoising (0-100)')
 
@@ -449,50 +488,20 @@ def main():
     normalizer = Normalization()
 
     if args.command == 'raw':
-        normalizer.preprocess(
-            contig_file=args.contig_file,
-            contact_matrix_file=args.contact_matrix_file,
-            output_path=args.output_path,
-            min_len=args.min_len,
-            min_signal=args.min_signal,
-            thres=args.thres
-        )
+        preprocess_common_args(args, normalizer)
         normalizer.raw()
     elif args.command == 'normcc':
-        normalizer.preprocess(
-            contig_file=args.contig_file,
-            contact_matrix_file=args.contact_matrix_file,
-            output_path=args.output_path,
-            thres=args.thres
-        )
+        preprocess_common_args(args, normalizer)
         normalizer.normcc()
-
     elif args.command == 'hiczin':
-        normalizer.preprocess(
-            contig_file=args.contig_file,
-            contact_matrix_file=args.contact_matrix_file,
-            output_path=args.output_path,
-            thres=args.thres
-        )
-        normalizer.hiczin(epsilon=args.epsilon)
-
+        preprocess_common_args(args, normalizer)
+        normalizer.hiczin()
     elif args.command == 'bin3c':
-        normalizer.preprocess(
-            contig_file=args.contig_file,
-            contact_matrix_file=args.contact_matrix_file,
-            output_path=args.output_path,
-            thres=args.thres
-        )
-        normalizer.bin3c(epsilon=args.epsilon, max_iter=args.max_iter, tol=args.tol)
-
+        preprocess_common_args(args, normalizer)
+        normalizer.bin3c()
     elif args.command == 'metator':
-        normalizer.preprocess(
-            contig_file=args.contig_file,
-            contact_matrix_file=args.contact_matrix_file,
-            output_path=args.output_path,
-            thres=args.thres
-        )
-        normalizer.metator(epsilon=args.epsilon)
+        preprocess_common_args(args, normalizer)
+        normalizer.metator()
 
 if __name__ == "__main__":
     main()

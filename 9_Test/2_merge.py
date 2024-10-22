@@ -128,7 +128,7 @@ grouped_data = combined_data.groupby('Bin').agg({
 }).reset_index()
 
 # **6. Save**
-combined_data_path = 'output/contig_info_final.csv'
-grouped_data_path = 'output/bin_info_final.csv'
+combined_data_path = 'output/contig_info_complete.csv'
+grouped_data_path = 'output/bin_info_complete.csv'
 combined_data.to_csv(combined_data_path, index=False)
 grouped_data.to_csv(grouped_data_path, index=False)
