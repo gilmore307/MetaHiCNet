@@ -237,7 +237,7 @@ def styling_annotation_table(contact_matrix_display):
 
     # Styling for the first column ("Annotation") based on type_colors
     for i, annotation in enumerate(contact_matrix_display['Annotation']):
-        bin_type = bin_information.loc[bin_information['Annotation'] == annotation, 'type'].values[0]
+        bin_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Type'].values[0]
         annotation_color = type_colors.get(bin_type, default_color)
         annotation_color_with_opacity = add_opacity_to_color(annotation_color, opacity)
 
@@ -324,7 +324,7 @@ def get_node_colors(cyto_elements, bin_information):
 
     # Get annotation colors based on viral status
     for annotation in bin_information['Annotation'].unique():
-        bin_type = bin_information[bin_information['Annotation'] == annotation]['type'].values[0]
+        bin_type = bin_information[bin_information['Annotation'] == annotation]['Type'].values[0]
         annotation_colors[annotation] = type_colors.get(bin_type, default_color)
         
     return bin_colors, annotation_colors
@@ -382,8 +382,8 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_bin=None, center_pos
 def taxonomy_visualization():
     logger.info('Creating taxonomy visualization')
 
-    host_data = bin_information_intact[bin_information_intact['type'].isin(['chromosome', 'plasmid'])]
-    virus_data = bin_information_intact[bin_information_intact['type'] == 'phage']
+    host_data = bin_information_intact[bin_information_intact['Type'].isin(['chromosome', 'plasmid'])]
+    virus_data = bin_information_intact[bin_information_intact['Type'] == 'phage']
 
     level_mapping = {
         'Community': 9,
@@ -472,7 +472,7 @@ def taxonomy_visualization():
 
     hierarchy_df = pd.DataFrame(records)
     hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
-    hierarchy_df.loc[hierarchy_df['type'] == 'phage', 'scaled_coverage'] *= 20
+    hierarchy_df.loc[hierarchy_df['Type'] == 'phage', 'scaled_coverage'] *= 20
 
     # Limit the number of bins shown in hover to avoid long hover boxes
     def format_bins(bin_list, max_bins=5):
@@ -514,7 +514,7 @@ def taxonomy_visualization():
 
     node_colors = {}
     for annotation in total_bin_coverage.index:
-        bin_type = bin_information.loc[bin_information['Annotation'] == annotation, 'type'].values[0]
+        bin_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Type'].values[0]
         color = type_colors.get(bin_type, default_color)
         node_colors[annotation] = color
 
@@ -552,7 +552,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     node_colors = {}
     for annotation, size in zip(total_bin_coverage.index, node_sizes):
         bin_type = bin_information.loc[
-            bin_information['Annotation'] == annotation, 'type'
+            bin_information['Annotation'] == annotation, 'Type'
         ].values[0]
         color = type_colors.get(bin_type, default_color)
         node_colors[annotation] = color
@@ -650,7 +650,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
-        annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'type'].values[0]
+        annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Type'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])  
         
         # Assign the gradient color based on rank
@@ -661,7 +661,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     # Ensure selected_annotation is added
     if selected_annotation not in G.nodes:
-        annotation_type = bin_information.loc[bin_information['Annotation'] == selected_annotation, 'type'].values[0]
+        annotation_type = bin_information.loc[bin_information['Annotation'] == selected_annotation, 'Type'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])  # Use '#00FF00' if type is not in the mapping
         gradient_color = color_scale[len(color_scale) - 1]
     
@@ -778,7 +778,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
-        annotation_type = contig_information.loc[contig_information['Annotation'] == annotation, 'type'].values[0]
+        annotation_type = contig_information.loc[contig_information['Annotation'] == annotation, 'Type'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])  
         
         # Assign the gradient color based on rank
@@ -789,7 +789,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     # Ensure selected_annotation is added
     if selected_annotation not in G.nodes:
-        annotation_type = contig_information.loc[contig_information['Annotation'] == selected_annotation, 'type'].values[0]
+        annotation_type = contig_information.loc[contig_information['Annotation'] == selected_annotation, 'Type'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])  # Use '#00FF00' if type is not in the mapping
         gradient_color = color_scale[len(color_scale) - 1]
     

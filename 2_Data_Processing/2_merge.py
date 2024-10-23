@@ -8,7 +8,7 @@ def adjust_taxonomy(row):
     for tier in taxonomy_columns:
         row[tier] = str(row[tier]) if pd.notna(row[tier]) else ""
 
-    if row['type'] != 'unmapped':
+    if row['Type'] != 'unmapped':
         for tier in taxonomy_columns:
             if row[tier]:
                 last_non_blank = row[tier]
@@ -18,7 +18,7 @@ def adjust_taxonomy(row):
         for tier in taxonomy_columns:
             row[tier] = "unmapped"
 
-    if row['type'] == 'phage':
+    if row['Type'] == 'phage':
         row['Domain'] = 'Virus'
         row['Phylum'] = 'Virus'
         row['Class'] = 'Virus'
@@ -27,7 +27,7 @@ def adjust_taxonomy(row):
         row['Contig'] = row['Contig'] + "_v"
         row['Bin'] = row['Bin'] + "_v"
 
-    if row['type'] == 'plasmid':
+    if row['Type'] == 'plasmid':
         # Add suffix '_p' to all taxonomy levels for plasmids
         for tier in taxonomy_columns:
             row[tier] = row[tier] + '_p'

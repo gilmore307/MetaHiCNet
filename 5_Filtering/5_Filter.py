@@ -69,7 +69,7 @@ def classify(row):
     return classification
 
 def adjust_classification(row):
-    if row['type'] == 'plasmid' and pd.isna(row['classification']):
+    if row['Type'] == 'plasmid' and pd.isna(row['classification']):
         row['E-value'] = 100
         row['Bit Score'] = -100
     return row
@@ -96,7 +96,7 @@ remove_unmapped = remove_unmapped_choice == 'y'
 
 if remove_unmapped:
     # Find the positions of unmapped contigs in contig_data
-    unmapped_contigs = contig_data[contig_data['type'] == "unmapped"].index.tolist()
+    unmapped_contigs = contig_data[contig_data['Type'] == "unmapped"].index.tolist()
     contig_data = contig_data.drop(unmapped_contigs).reset_index(drop=True)
     
     # Create a mask of rows and columns to keep
@@ -117,7 +117,7 @@ bin_data = contig_data.groupby('Bin').agg({
     'Length': 'sum',
     'Coverage': 'sum',
     'Self-contact': 'sum',
-    'type': lambda x: x.mode()[0],
+    'Type': lambda x: x.mode()[0],
     'Domain': lambda x: x.mode()[0],
     'Kingdom': lambda x: x.mode()[0],
     'Phylum': lambda x: x.mode()[0],
@@ -131,8 +131,8 @@ bin_data = contig_data.groupby('Bin').agg({
 unique_annotations = bin_data['Bin']
 contig_indexes_dict = get_contig_indexes(unique_annotations, contig_data)
 
-host_annotations = bin_data[bin_data['type'] == 'chromosome']['Bin'].tolist()
-non_host_annotations = bin_data[~bin_data['type'].isin(['chromosome'])]['Bin'].tolist()
+host_annotations = bin_data[bin_data['Type'] == 'chromosome']['Bin'].tolist()
+non_host_annotations = bin_data[~bin_data['Type'].isin(['chromosome'])]['Bin'].tolist()
 
 bin_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
 
