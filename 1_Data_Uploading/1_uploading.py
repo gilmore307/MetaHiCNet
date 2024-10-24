@@ -1,6 +1,5 @@
 import dash
-from dash import dcc, html
-from dash.dependencies import Input, Output, State
+from dash import dcc, html, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
@@ -12,6 +11,38 @@ from scipy.sparse import csr_matrix
 
 # Initialize the Dash app with Bootstrap theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
+stages_mapping = {
+    'method1': ['File Uploading', 'Data Processing', 'Normalization', 'Spurious Contact Removal', 'Visualization'],
+    'method2': ['File Uploading', 'Normalization', 'Spurious Contact Removal', 'Visualization'],
+    'method3': ['File Uploading', 'Visualization']
+}
+
+# Function to generate the flowchart using buttons for stages_mapping
+def create_flowchart(stage_highlight, method='method1'):
+
+    method_stages_mapping = stages_mapping.get(method, stages_mapping['method1'])
+
+    buttons = []
+    for idx, stage in enumerate(method_stages_mapping):
+        color = 'primary' if stage == stage_highlight else 'light'
+        buttons.append(
+            dbc.Button(stage, color=color, disabled=True, className="mx-2 my-2")
+        )
+        if idx < len(method_stages_mapping) - 1:
+            # Add an arrow between stages_mapping
+            buttons.append(html.Span("→", style={'font-size': '24px', 'margin': '0 10px'}))
+
+    return html.Div(buttons, style={'display': 'flex', 'align-items': 'center', 'justify-content': 'center'})
+
+# Helper function to get the next stage in the sequence for the selected method
+def get_next_stage(current_stage, method='method1'):
+    method_stages_mapping = stages_mapping.get(method, stages_mapping['method1'])  # Get the stages for the selected method
+    if current_stage in method_stages_mapping:
+        current_index = method_stages_mapping.index(current_stage)
+        if current_index < len(method_stages_mapping) - 1:
+            return method_stages_mapping[current_index + 1]
+    return current_stage  # Return the same stage if already at the last stage
 
 # Function to parse contents of the uploaded files
 def parse_contents(contents, filename):
@@ -98,7 +129,7 @@ def list_files_in_7z(decoded):
         file_list = z.getnames()
     return file_list
 
-# Custom upload component with file overview and remove option
+# Define a helper function for creating upload components
 def create_upload_component(component_id, text, example_url, instructions):
     return dbc.Card(
         [
@@ -129,14 +160,19 @@ def create_upload_component(component_id, text, example_url, instructions):
         className="my-3"
     )
 
-# Dash layout
+# Define the layout of the app
 app.layout = dbc.Container([
-    html.H1("File Upload System", className="my-4 text-center"),
-    
-    dcc.Tabs([
+    html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
 
+    # Store to hold the current stage for each method
+    dcc.Store(id='current-stage-method1', data='File Uploading'),
+    dcc.Store(id='current-stage-method2', data='File Uploading'),
+    dcc.Store(id='current-stage-method3', data='File Uploading'),
+
+    dcc.Tabs(id='tabs-method', value='method1', children=[
         # Method 1: Raw Data Uploads
-        dcc.Tab(label='First-time users: Upload raw data', children=[
+        dcc.Tab(label='First-time users: Upload raw data', value='method1', children=[
+            html.Div(id='flowchart-container-method1'),
             dbc.Row([
                 dbc.Col(create_upload_component(
                     'raw-contig-info',
@@ -166,40 +202,60 @@ app.layout = dbc.Container([
                 )),
             ]),
             dbc.Button("Validate All Files", id="validate-button", color="success", className="mt-3"),
-            html.Div(id="validation-output", style={'padding': '20px', 'color': 'green'}),
+            html.Div(id="validation-output", style={'padding': '0px', 'color': 'green'}),
         ]),
 
         # Method 2: Unnormalized Data Uploads
-        dcc.Tab(label='Change normalization method: Upload unnormalized data', children=[
+        dcc.Tab(label='Change normalization method: Upload unnormalized data', value='method2', children=[
+            html.Div(id='flowchart-container-method2'),
             dbc.Row([
                 dbc.Col(create_upload_component(
                     'unnormalized-data-folder',
                     'Upload Unnormalized Data Folder (.7z)', 
                     '/examples/unnormalized_information.7z',
                     "Please upload the 'unnormalized_information' folder generated from your previous visualization.  \n"
-                    "It must include following files: 'bin_info_final.csv', 'contig_info_final.csv', 'raw_contact_matrix.npz'."
+                    "It must include the following files: 'bin_info_final.csv', 'contig_info_final.csv', 'raw_contact_matrix.npz'."
                 )),
             ]),
             dbc.Button("Validate All Files", id="validate-button-unnormalized", color="success", className="mt-3"),
-            html.Div(id="validation-output-unnormalized", style={'padding': '20px', 'color': 'green'})
+            html.Div(id="validation-output-unnormalized", style={'padding': '0px', 'color': 'green'})
         ]),
 
         # Method 3: Normalized Data Uploads
-        dcc.Tab(label='Continue previous visualization: Upload normalized data', children=[
-            dbc.Row([
+        dcc.Tab(label='Continue previous visualization: Upload normalized data', value='method3', children=[
+            html.Div(id='flowchart-container-method3'),
+            dbc.Row([ 
                 dbc.Col(create_upload_component(
                     'normalized-data-folder',
                     'Upload Visualization Data Folder (.7z)', 
                     '/examples/normalized_information.7z',
                     "Please upload the 'normalized_information' folder generated from your previous visualization.  \n"
-                    "It must include following files: 'bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz'."
+                    "It must include the following files: 'bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz'."
                 )),
             ]),
             dbc.Button("Validate All Files", id="validate-button-normalized", color="success", className="mt-3"),
-            html.Div(id="validation-output-normalized", style={'padding': '20px', 'color': 'green'})
+            html.Div(id="validation-output-normalized", style={'padding': '0px', 'color': 'green'})
         ]),
     ]),
 ], fluid=True)
+
+# Callback to update the flowchart based on the selected tab and current stage
+@app.callback(
+    [Output('flowchart-container-method1', 'children'),
+     Output('flowchart-container-method2', 'children'),
+     Output('flowchart-container-method3', 'children')],
+    [Input('tabs-method', 'value'),
+     Input('current-stage-method1', 'data'),
+     Input('current-stage-method2', 'data'),
+     Input('current-stage-method3', 'data')]
+)
+def update_flowchart(selected_method, stage_method1, stage_method2, stage_method3):
+    if selected_method == 'method1':
+        return create_flowchart(stage_method1, method='method1'), None, None
+    elif selected_method == 'method2':
+        return None, create_flowchart(stage_method2, method='method2'), None
+    elif selected_method == 'method3':
+        return None, None, create_flowchart(stage_method3, method='method3')
 
 # Callback to store file contents and show overview with remove button for contig information
 @app.callback(
@@ -210,7 +266,7 @@ app.layout = dbc.Container([
      Input('remove-raw-contig-info', 'n_clicks')],
     [State('raw-contig-info', 'filename')]
 )
-def update_file_overview(contents, remove_click, filename):
+def handle_contig_info_upload(contents, remove_click, filename):
     ctx = dash.callback_context
     if not contents:
         return '', {'display': 'none'}, None
@@ -247,7 +303,7 @@ def update_file_overview(contents, remove_click, filename):
      Input('remove-raw-contig-matrix', 'n_clicks')],
     [State('raw-contig-matrix', 'filename')]
 )
-def update_raw_matrix_overview(contents, remove_click, filename):
+def handle_raw_matrix_uploadw(contents, remove_click, filename):
     ctx = dash.callback_context
     if not contents:
         return '', {'display': 'none'}, None
@@ -269,7 +325,7 @@ def update_raw_matrix_overview(contents, remove_click, filename):
      Input('remove-raw-binning-info', 'n_clicks')],
     [State('raw-binning-info', 'filename')]
 )
-def update_binning_info_overview(contents, remove_click, filename):
+def handle_binning_info_upload(contents, remove_click, filename):
     ctx = dash.callback_context
     if not contents:
         return '', {'display': 'none'}, None
@@ -291,7 +347,7 @@ def update_binning_info_overview(contents, remove_click, filename):
      Input('remove-raw-bin-taxonomy', 'n_clicks')],
     [State('raw-bin-taxonomy', 'filename')]
 )
-def update_bin_taxonomy_overview(contents, remove_click, filename):
+def handle_bin_taxonomy_upload(contents, remove_click, filename):
     ctx = dash.callback_context
     if not contents:
         return '', {'display': 'none'}, None
@@ -304,9 +360,10 @@ def update_bin_taxonomy_overview(contents, remove_click, filename):
     return [dbc.Table.from_dataframe(df.head(), striped=True, bordered=True, hover=True),
             html.P(f"File Size: {file_size}")], {'display': 'block'}, contents
 
-# Callback for validating the files once all files are uploaded
+# Validation logic for Method 1
 @app.callback(
-    Output('validation-output', 'children'),
+    [Output('current-stage-method1', 'data'),
+     Output('validation-output', 'children')],
     [Input('validate-button', 'n_clicks')],
     [State('raw-contig-info', 'contents'),
      State('raw-contig-matrix', 'contents'),
@@ -315,18 +372,19 @@ def update_bin_taxonomy_overview(contents, remove_click, filename):
      State('raw-contig-info', 'filename'),
      State('raw-contig-matrix', 'filename'),
      State('raw-binning-info', 'filename'),
-     State('raw-bin-taxonomy', 'filename')]
+     State('raw-bin-taxonomy', 'filename'),
+     State('current-stage-method1', 'data')]
 )
-def validate_files(n_clicks, contig_info, contig_matrix, binning_info, bin_taxonomy, contig_info_name, contig_matrix_name, binning_info_name, bin_taxonomy_name):
-    if not n_clicks:
-        return ""
-    
+def validate_method_1(n_clicks, contig_info, contig_matrix, binning_info, bin_taxonomy, contig_info_name, contig_matrix_name, binning_info_name, bin_taxonomy_name, current_stage):
+    if n_clicks is None or not all([contig_info, contig_matrix, binning_info, bin_taxonomy]):
+        return current_stage, "Please upload all required files to validate."
+
     try:
         # Validate contig information file
         contig_data = parse_contents(contig_info, contig_info_name)
         required_columns = ['Contig', 'Restriction sites', 'Length', 'Coverage']
         validate_file(contig_data, required_columns, optional_columns=['Self-contact'])
-        
+
         # Validate contig matrix
         contig_matrix_data = parse_contents(contig_matrix, contig_matrix_name)
         validate_contig_matrix(contig_data, contig_matrix_data)
@@ -342,10 +400,12 @@ def validate_files(n_clicks, contig_info, contig_matrix, binning_info, bin_taxon
         optional_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Plasmid ID']
         validate_file(taxonomy_data, required_columns, optional_columns)
 
-        return "All files successfully validated!"
-    
+        # If validation passes, move to the next stage
+        return get_next_stage(current_stage, method='method1'), "All files successfully validated!"
+
     except Exception as e:
-        return f"Validation failed: {str(e)}"
+        # If validation fails, remain in the current stage and show an error message
+        return current_stage, f"Validation failed: {str(e)}"
 
 # Callback for Method 2 file uploads (unnormalized folder) with validation and file overview
 @app.callback(
@@ -382,30 +442,32 @@ def handle_unnormalized_folder_upload(contents, remove_click, filename):
     file_size = get_file_size(contents)
     return [overview, html.P(f"File uploaded: {filename} ({file_size})")], {'display': 'block'}, contents
 
-# Callback for validating the unnormalized folder
+# Validation logic for Method 2
 @app.callback(
-    Output('validation-output-unnormalized', 'children'),
+    [Output('current-stage-method2', 'data'),
+     Output('validation-output-unnormalized', 'children')],
     [Input('validate-button-unnormalized', 'n_clicks')],
     [State('unnormalized-data-folder', 'contents'),
-     State('unnormalized-data-folder', 'filename')]
+     State('unnormalized-data-folder', 'filename'),
+     State('current-stage-method2', 'data')]
 )
-def validate_unnormalized_files(n_clicks, contents, filename):
-    if not n_clicks:
-        return ""
-    
+def validate_method_2(n_clicks, contents, filename, current_stage):
+    if n_clicks is None or contents is None:
+        return current_stage, "No file uploaded. Please upload a file to validate."
+
     # Validate the contents of the .7z file
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
-    
+
     try:
         file_list = list_files_in_7z(decoded)
         validate_unnormalized_folder(file_list)
-    except ValueError as e:
-        return f"Validation failed: {str(e)}"
-    except Exception as e:
-        return f"Error opening .7z file: {str(e)}"
+        # If validation passes, move to the next stage
+        return get_next_stage(current_stage, method='method2'), "Unnormalized folder successfully validated!"
     
-    return "Unnormalized folder successfully validated!"
+    except Exception as e:
+        # If validation fails, remain in the current stage and show an error message
+        return current_stage, f"Validation failed: {str(e)}"
 
 
 # Callback for Method 3 file uploads (normalized folder) with validation and file overview
@@ -443,31 +505,36 @@ def handle_normalized_upload(contents, remove_click, filename):
     file_size = get_file_size(contents)
     return [overview, html.P(f"File uploaded: {filename} ({file_size})")], {'display': 'block'}, contents
 
-# Callback for validating the normalized folder
+# Validation logic for Method 3
 @app.callback(
-    Output('validation-output-normalized', 'children'),
+    [Output('current-stage-method3', 'data'),
+     Output('validation-output-normalized', 'children')],
     [Input('validate-button-normalized', 'n_clicks')],
     [State('normalized-data-folder', 'contents'),
-     State('normalized-data-folder', 'filename')]
+     State('normalized-data-folder', 'filename'),
+     State('current-stage-method3', 'data')]
 )
-def validate_normalized_files(n_clicks, contents, filename):
-    if not n_clicks:
-        return ""
-    
+def validate_method_3(n_clicks, contents, filename, current_stage):
+    if n_clicks is None or contents is None:
+        return current_stage, "No file uploaded. Please upload a file to validate."
+
     # Validate the contents of the .7z file
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
-    
-    try:
-        file_list = list_files_in_7z(decoded)
-        validate_normalized_folder(file_list)
-    except ValueError as e:
-        return f"Validation failed: {str(e)}"
-    except Exception as e:
-        return f"Error opening .7z file: {str(e)}"
-    
-    return "Normalized folder successfully validated!"
 
+    try:
+        # Extract the list of files in the uploaded .7z file
+        file_list = list_files_in_7z(decoded)
+
+        # Validate that the expected files are present
+        validate_normalized_folder(file_list)
+
+        # If validation passes, move to the next stage
+        return get_next_stage(current_stage, method='method3'), "Normalized folder successfully validated!"
+
+    except Exception as e:
+        # If validation fails, remain in the current stage and return the error message
+        return current_stage, f"Validation failed: {str(e)}"
 
 # Run the Dash app
 if __name__ == '__main__':
