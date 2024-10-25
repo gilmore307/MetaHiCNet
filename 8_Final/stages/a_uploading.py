@@ -9,7 +9,7 @@ import py7zr
 import pandas as pd
 import numpy as np
 from scipy.sparse import csr_matrix
-from app import save_file_to_user_folder
+from helper import save_file_to_user_folder
 
 # Helper functions (for parsing contents and validations)
 def parse_contents(contents, filename):
@@ -35,8 +35,8 @@ def get_file_size(contents):
     size_in_kb = size_in_bytes / 1024
     return f"{size_in_kb:.2f} KB"
 
-# Function to validate file columns and content
-def validate_file(df, required_columns, optional_columns=[]):
+# Function to validate CSV files
+def validate_csv(df, required_columns, optional_columns=[]):
     all_columns = required_columns + optional_columns
     if not all(column in df.columns for column in all_columns):
         raise ValueError(f"Missing columns in the file: {set(required_columns) - set(df.columns)}")
@@ -115,19 +115,79 @@ def create_upload_component(component_id, text, example_url, instructions):
                 html.H6("Instructions:"),
                 dcc.Markdown(instructions, style={'fontSize': '0.9rem', 'color': '#555'})
             ]),
-            # File overview container
             html.Div(id=f'overview-{component_id}', style={'padding': '10px'}),
-            # Remove file button
             dbc.Button("Remove File", id=f'remove-{component_id}', color="danger", style={'display': 'none'}),
-            # Hidden div to reset file input
             dcc.Store(id=f'store-{component_id}')
         ],
         body=True,
         className="my-3"
     )
 
-# Define callbacks for handling file uploads and validating files
-def register_callbacks(app):
+# Upload layouts for different methods
+def create_upload_layout_method1():
+    return html.Div([
+        dbc.Row([
+            dbc.Col(create_upload_component(
+                'raw-contig-info', 
+                'Upload Contig Information File (.csv)', 
+                'assets/examples/contig_information.csv',
+                "This file must include columns like 'Contig', 'Restriction sites', 'Length', 'Coverage', and 'Self-contact'."
+            )),
+            dbc.Col(create_upload_component(
+                'raw-contig-matrix', 
+                'Upload Raw Contact Matrix File (.npz)', 
+                'assets/examples/raw_contact_matrix.npz',
+                "Matrix file must include keys such as 'indices', 'indptr', 'format', 'shape', 'data'."
+            ))
+        ]),
+        dbc.Row([
+            dbc.Col(create_upload_component(
+                'raw-binning-info', 
+                'Upload Binning Information File (.csv)', 
+                'assets/examples/binning_information.csv',
+                "This file must include columns like 'Contig', 'Bin', and 'Type'."
+            )),
+            dbc.Col(create_upload_component(
+                'raw-bin-taxonomy', 
+                'Upload Bin Taxonomy File (.csv)', 
+                'assets/examples/taxonomy.csv',
+                "This file must include columns like 'Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Plasmid ID'."
+            ))
+        ]),
+        dbc.Button("Validate All Files", id="validate-button", color="success", className="mt-3"),
+        html.Div(id="validation-output", style={'padding': '0px', 'color': 'green'})
+    ])
+
+def create_upload_layout_method2():
+    return html.Div([
+        dbc.Row([
+            dbc.Col(create_upload_component(
+                'unnormalized-data-folder', 
+                'Upload Unnormalized Data Folder (.7z)', 
+                'assets/examples/unnormalized_information.7z',
+                "The folder must include files like 'contig_info_final.csv' and 'raw_contact_matrix.npz'."
+            ))
+        ]),
+        dbc.Button("Validate All Files", id="validate-button-unnormalized", color="success", className="mt-3"),
+        html.Div(id="validation-output-unnormalized", style={'padding': '0px', 'color': 'green'})
+    ])
+
+def create_upload_layout_method3():
+    return html.Div([
+        dbc.Row([
+            dbc.Col(create_upload_component(
+                'normalized-data-folder', 
+                'Upload Visualization Data Folder (.7z)', 
+                'assets/examples/normalized_information.7z',
+                "This folder should include files like 'bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz'."
+            ))
+        ]),
+        dbc.Button("Validate All Files", id="validate-button-normalized", color="success", className="mt-3"),
+        html.Div(id="validation-output-normalized", style={'padding': '0px', 'color': 'green'})
+    ])
+
+# Registering callbacks for uploads
+def register_upload_callbacks(app):
     # Callback for raw contig info upload (Method 1)
     @app.callback(
         [Output('overview-raw-contig-info', 'children'),
@@ -142,11 +202,9 @@ def register_callbacks(app):
         if not contents:
             raise PreventUpdate
         
-        # If remove button is clicked, clear the overview and reset the input
         if remove_click and ctx.triggered_id == 'remove-raw-contig-info':
             return '', {'display': 'none'}, None
         
-        # Otherwise, show the file overview
         file_size = get_file_size(contents)
         if 'csv' in filename:
             df = parse_contents(contents, filename)
@@ -155,7 +213,7 @@ def register_callbacks(app):
         
         return "Unsupported file format", {'display': 'block'}, contents
 
-    # Callback for raw contact matrix upload
+    # Callback for raw contact matrix upload (Method 1)
     @app.callback(
         [Output('overview-raw-contig-matrix', 'children'),
          Output('remove-raw-contig-matrix', 'style'),
@@ -169,11 +227,9 @@ def register_callbacks(app):
         if not contents:
             raise PreventUpdate
         
-        # If remove button is clicked, clear the overview and reset the input
         if remove_click and ctx.triggered_id == 'remove-raw-contig-matrix':
             return '', {'display': 'none'}, None
         
-        # Otherwise, show the file overview
         file_size = get_file_size(contents)
         if 'npz' in filename:
             npzfile = parse_contents(contents, filename)
@@ -182,7 +238,7 @@ def register_callbacks(app):
         
         return "Unsupported file format", {'display': 'block'}, contents
 
-    # Callback for binning info upload
+    # Callback for binning info upload (Method 1)
     @app.callback(
         [Output('overview-raw-binning-info', 'children'),
          Output('remove-raw-binning-info', 'style'),
@@ -196,11 +252,9 @@ def register_callbacks(app):
         if not contents:
             raise PreventUpdate
         
-        # If remove button is clicked, clear the overview and reset the input
         if remove_click and ctx.triggered_id == 'remove-raw-binning-info':
             return '', {'display': 'none'}, None
         
-        # Otherwise, show the file overview
         file_size = get_file_size(contents)
         if 'csv' in filename:
             df = parse_contents(contents, filename)
@@ -209,7 +263,7 @@ def register_callbacks(app):
         
         return "Unsupported file format", {'display': 'block'}, contents
 
-    # Callback for bin taxonomy upload
+    # Callback for bin taxonomy upload (Method 1)
     @app.callback(
         [Output('overview-raw-bin-taxonomy', 'children'),
          Output('remove-raw-bin-taxonomy', 'style'),
@@ -223,11 +277,9 @@ def register_callbacks(app):
         if not contents:
             raise PreventUpdate
         
-        # If remove button is clicked, clear the overview and reset the input
         if remove_click and ctx.triggered_id == 'remove-raw-bin-taxonomy':
             return '', {'display': 'none'}, None
         
-        # Otherwise, show the file overview
         file_size = get_file_size(contents)
         if 'csv' in filename:
             df = parse_contents(contents, filename)
@@ -235,8 +287,8 @@ def register_callbacks(app):
                     html.P(f"File Size: {file_size}")], {'display': 'block'}, contents
         
         return "Unsupported file format", {'display': 'block'}, contents
-
-    # Modify validate_method_1 to save the validated files to the user's folder
+    
+    # Validation Callback for Method 1
     @app.callback(
         [Output('current-stage-method1', 'data'),
          Output('validation-output', 'children')],
@@ -249,47 +301,49 @@ def register_callbacks(app):
          State('raw-contig-matrix', 'filename'),
          State('raw-binning-info', 'filename'),
          State('raw-bin-taxonomy', 'filename'),
-         State('current-stage-method1', 'data'),
-         State('user-folder', 'data')]
+         State('user-folder', 'data'),
+         State('current-stage-method1', 'data')]
     )
     def validate_method_1(n_clicks, contig_info, contig_matrix, binning_info, bin_taxonomy,
-                          contig_info_name, contig_matrix_name, binning_info_name, bin_taxonomy_name, current_stage, user_folder):
+                          contig_info_name, contig_matrix_name, binning_info_name, bin_taxonomy_name,
+                          user_folder, current_stage):
         if n_clicks is None or not all([contig_info, contig_matrix, binning_info, bin_taxonomy]):
-            raise PreventUpdate
-    
+            return dash.no_update, "Please upload all required files to validate."
         try:
             # Validate contig information file
             contig_data = parse_contents(contig_info, contig_info_name)
             required_columns = ['Contig', 'Restriction sites', 'Length', 'Coverage']
-            validate_file(contig_data, required_columns, optional_columns=['Self-contact'])
-    
+            validate_csv(contig_data, required_columns, optional_columns=['Self-contact'])
+
             # Validate contig matrix
             contig_matrix_data = parse_contents(contig_matrix, contig_matrix_name)
             validate_contig_matrix(contig_data, contig_matrix_data)
-    
+
             # Validate binning information file
             binning_data = parse_contents(binning_info, binning_info_name)
             required_columns = ['Contig', 'Bin', 'Type']
-            validate_file(binning_data, required_columns)
-    
+            validate_csv(binning_data, required_columns)
+
             # Validate bin taxonomy file
             taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
             required_columns = ['Bin']
             optional_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Plasmid ID']
-            validate_file(taxonomy_data, required_columns, optional_columns)
-    
-            # Save the files to the user's folder using the helper function
-            save_file_to_user_folder(contig_info, 'contig_information.csv', user_folder)
-            save_file_to_user_folder(binning_info, 'binning_information.csv', user_folder)
-            save_file_to_user_folder(taxonomy_data, 'taxonomy.csv', user_folder)
-            save_file_to_user_folder(contig_matrix, 'raw_contact_matrix.npz', user_folder)
-    
+            validate_csv(taxonomy_data, required_columns, optional_columns)
+
+            # Perform validations (assuming existing validation functions)
+            save_file_to_user_folder(contig_info, contig_info_name, user_folder)
+            save_file_to_user_folder(contig_matrix, contig_matrix_name, user_folder)
+            save_file_to_user_folder(binning_info, binning_info_name, user_folder)
+            save_file_to_user_folder(bin_taxonomy, bin_taxonomy_name, user_folder)
+            
+            print("All files successfully validated and saved!")
+            
             return 'Data Processing', "All files successfully validated and saved!"
-    
         except Exception as e:
-            return current_stage, f"Validation failed: {str(e)}"
-        
-    # Callback for Method 2 file uploads (unnormalized folder) with validation and file overview
+            print("Validation failed")
+            return dash.no_update, f"Validation failed: {str(e)}"
+
+    # Callback for Unnormalized Folder Upload (Method 2)
     @app.callback(
         [Output('overview-unnormalized-data-folder', 'children'),
          Output('remove-unnormalized-data-folder', 'style'),
@@ -305,57 +359,36 @@ def register_callbacks(app):
         
         if remove_click and ctx.triggered_id == 'remove-unnormalized-data-folder':
             return '', {'display': 'none'}, None
-    
-        # Validate the contents of the .7z file
-        content_type, content_string = contents.split(',')
-        decoded = base64.b64decode(content_string)
-        
-        try:
-            file_list = list_files_in_7z(decoded)
-            validate_unnormalized_folder(file_list)
-        except ValueError as e:
-            return f"Validation failed: {str(e)}", {'display': 'none'}, None
-        except Exception as e:
-            return f"Error opening .7z file: {str(e)}", {'display': 'none'}, None
-    
-        # Create an overview of the files inside the folder
-        overview = html.Ul([html.Li(file) for file in file_list])
-        
+
         file_size = get_file_size(contents)
+        decoded = base64.b64decode(contents.split(',')[1])
+        file_list = list_files_in_7z(decoded)
+        overview = html.Ul([html.Li(file) for file in file_list])
         return [overview, html.P(f"File uploaded: {filename} ({file_size})")], {'display': 'block'}, contents
 
-    # Validation for unnormalized folder (Method 2)
+    # Validation Callback for Method 2
     @app.callback(
         [Output('current-stage-method2', 'data'),
          Output('validation-output-unnormalized', 'children')],
         [Input('validate-button-unnormalized', 'n_clicks')],
         [State('unnormalized-data-folder', 'contents'),
          State('unnormalized-data-folder', 'filename'),
-         State('current-stage-method2', 'data'),
-         State('user-folder', 'data')]
+         State('user-folder', 'data'),
+         State('current-stage-method2', 'data')]
     )
-    def validate_method_2(n_clicks, contents, filename, current_stage, user_folder):
+    def validate_method_2(n_clicks, contents, filename, user_folder, current_stage):
         if n_clicks is None or contents is None:
-            raise PreventUpdate
-    
-        # Validate the contents of the .7z file
-        content_type, content_string = contents.split(',')
-        decoded = base64.b64decode(content_string)
-    
+            return dash.no_update, "No file uploaded. Please upload a file to validate."
         try:
+            decoded = base64.b64decode(contents.split(',')[1])
             file_list = list_files_in_7z(decoded)
             validate_unnormalized_folder(file_list)
-    
-            # Save the validated .7z file to the user's folder
             save_file_to_user_folder(contents, filename, user_folder)
-    
-            # If validation passes, move to the next stage
             return 'Normalization', "Unnormalized folder successfully validated and saved!"
-        
         except Exception as e:
-            return current_stage, f"Validation failed: {str(e)}"
-        
-    # Callback for Method 3 file uploads (normalized folder) with validation and file overview
+            return dash.no_update, f"Validation failed: {str(e)}"
+
+    # Callback for Normalized Folder Upload (Method 3)
     @app.callback(
         [Output('overview-normalized-data-folder', 'children'),
          Output('remove-normalized-data-folder', 'style'),
@@ -371,52 +404,31 @@ def register_callbacks(app):
         
         if remove_click and ctx.triggered_id == 'remove-normalized-data-folder':
             return '', {'display': 'none'}, None
-    
-        # Validate the contents of the .7z file
-        content_type, content_string = contents.split(',')
-        decoded = base64.b64decode(content_string)
-        
-        try:
-            file_list = list_files_in_7z(decoded)
-            validate_normalized_folder(file_list)
-        except ValueError as e:
-            return f"Validation failed: {str(e)}", {'display': 'none'}, None
-        except Exception as e:
-            return f"Error opening .7z file: {str(e)}", {'display': 'none'}, None
-    
-        # Create an overview of the files inside the folder
-        overview = html.Ul([html.Li(file) for file in file_list])
-        
+
         file_size = get_file_size(contents)
+        decoded = base64.b64decode(contents.split(',')[1])
+        file_list = list_files_in_7z(decoded)
+        overview = html.Ul([html.Li(file) for file in file_list])
         return [overview, html.P(f"File uploaded: {filename} ({file_size})")], {'display': 'block'}, contents
 
-    # Validation for normalized folder (Method 3)
+    # Validation Callback for Method 3
     @app.callback(
         [Output('current-stage-method3', 'data'),
          Output('validation-output-normalized', 'children')],
         [Input('validate-button-normalized', 'n_clicks')],
         [State('normalized-data-folder', 'contents'),
          State('normalized-data-folder', 'filename'),
-         State('current-stage-method3', 'data'),
-         State('user-folder', 'data')]
+         State('user-folder', 'data'),
+         State('current-stage-method3', 'data')]
     )
-    def validate_method_3(n_clicks, contents, filename, current_stage, user_folder):
+    def validate_method_3(n_clicks, contents, filename, user_folder, current_stage):
         if n_clicks is None or contents is None:
-            raise PreventUpdate
-    
-        # Validate the contents of the .7z file
-        content_type, content_string = contents.split(',')
-        decoded = base64.b64decode(content_string)
-    
+            return dash.no_update, "No file uploaded. Please upload a file to validate."
         try:
+            decoded = base64.b64decode(contents.split(',')[1])
             file_list = list_files_in_7z(decoded)
             validate_normalized_folder(file_list)
-    
-            # Save the validated .7z file to the user's folder
             save_file_to_user_folder(contents, filename, user_folder)
-    
-            # If validation passes, move to the next stage
             return 'Visualization', "Normalized folder successfully validated and saved!"
-        
         except Exception as e:
-            return current_stage, f"Validation failed: {str(e)}"
+            return dash.no_update, f"Validation failed: {str(e)}"

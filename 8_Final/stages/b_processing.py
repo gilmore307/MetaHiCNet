@@ -1,6 +1,11 @@
 import os
+import io
 import pandas as pd
-from plsdbapi import query
+import base64
+from dash import html, no_update
+import dash_bootstrap_components as dbc
+from dash.dependencies import Input, Output, State
+from helper import save_file_to_user_folder, query_plasmid_id
 
 # Helper function to adjust taxonomy
 def adjust_taxonomy(row, taxonomy_columns, prefixes):
@@ -42,10 +47,6 @@ def adjust_taxonomy(row, taxonomy_columns, prefixes):
 
 # Main function to process data
 def process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder):
-    # Generate a unique folder for each user
-    output_folder = f'assets/output/{user_folder}'
-    os.makedirs(output_folder, exist_ok=True)  # Create the folder if it doesn't exist
-
     try:
         # **1. Load contig_information.csv**
         contig_data = pd.read_csv(contig_info_path)
@@ -58,7 +59,7 @@ def process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder
 
         # Query plasmid classification for any available plasmid IDs
         plasmid_ids = taxonomy_data['Plasmid ID'].dropna().unique().tolist()
-        plasmid_classification_df = query.query_plasmid_id(plasmid_ids)[[
+        plasmid_classification_df = query_plasmid_id(plasmid_ids)[[
             'NUCCORE_ACC', 
             'TAXONOMY_superkingdom', 
             'TAXONOMY_phylum', 
@@ -123,9 +124,19 @@ def process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder
         # Fill missing bins with 'Unbinned MAG'
         combined_data['Bin'] = combined_data['Bin'].fillna('Unbinned MAG')
 
-        # **6. Save processed CSV file in user's folder**
-        output_file_path = os.path.join(output_folder, 'contig_info_complete.csv')
-        combined_data.to_csv(output_file_path, index=False)
+        # **6. Save the processed contig info as CSV**
+        csv_buffer = io.StringIO()
+        combined_data.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
+        # Convert csv_content to base64-encoded string with required prefix
+        encoded_csv_content = base64.b64encode(csv_content.encode()).decode()
+        encoded_csv_content = f"data:text/csv;base64,{encoded_csv_content}"
+        
+        # Use save_file_to_user_folder to save the processed CSV with encoded content
+        save_file_to_user_folder(encoded_csv_content, 'contig_info_complete.csv', user_folder)
+
+        return combined_data  # Return the processed DataFrame for preview
 
     finally:
         # Delete user-uploaded files after processing
@@ -133,4 +144,34 @@ def process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder
         os.remove(binning_info_path)
         os.remove(taxonomy_path)
 
-    return output_file_path  # Return path to the saved CSV file
+# Function to create the processed data preview layout
+def create_processed_data_preview(combined_data):
+    if not combined_data.empty:
+        preview_table = dbc.Table.from_dataframe(combined_data.head(), striped=True, bordered=True, hover=True)
+        return html.Div([
+            html.H5('Processed Data Preview'),
+            preview_table
+        ])
+    return None
+
+# Callback to update the preview of the processed data in the 'Data Processing' stage
+def register_processing_callbacks(app):
+    @app.callback(
+        Output('output-preview-method1', 'children'),
+        [Input('current-stage-method1', 'data')],
+        [State('user-folder', 'data')]
+    )
+    def update_processed_data_preview(stage_method1, user_folder):
+        if stage_method1 != 'Data Processing':
+            return no_update  # Keeps existing content if stage isn't 'Data Processing'
+
+        # Define paths for the user-uploaded files
+        contig_info_path = os.path.join('assets/output', user_folder, 'contig_information.csv')
+        binning_info_path = os.path.join('assets/output', user_folder, 'binning_information.csv')
+        taxonomy_path = os.path.join('assets/output', user_folder, 'taxonomy.csv')
+
+        # Process data and get the processed DataFrame
+        combined_data = process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder)
+
+        # Generate a preview of the processed data
+        return create_processed_data_preview(combined_data)
