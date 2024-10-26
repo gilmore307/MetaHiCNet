@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html
+from dash import dcc, html, no_update
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
@@ -9,13 +9,13 @@ import py7zr
 import pandas as pd
 import numpy as np
 from scipy.sparse import csr_matrix
-from helper import save_file_to_user_folder
 import logging
+from helper import save_file_to_user_folder, query_plasmid_id
 
 # Initialize logger
 logger = logging.getLogger("app_logger")
 
-# Helper functions (for parsing contents and validations)
+# Helper functions
 def parse_contents(contents, filename):
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
@@ -31,7 +31,6 @@ def parse_contents(contents, filename):
     else:
         return None
 
-# Helper function to get file size
 def get_file_size(contents):
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
@@ -39,7 +38,6 @@ def get_file_size(contents):
     size_in_kb = size_in_bytes / 1024
     return f"{size_in_kb:.2f} KB"
 
-# Function to validate CSV files
 def validate_csv(df, required_columns, optional_columns=[]):
     all_columns = required_columns + optional_columns
     if not all(column in df.columns for column in all_columns):
@@ -52,7 +50,6 @@ def validate_csv(df, required_columns, optional_columns=[]):
             raise ValueError(f"Required column '{col}' has missing values.")
     return True
 
-# Validation for contact matrix
 def validate_contig_matrix(contig_data, contact_matrix):
     num_contigs = len(contig_data)
 
@@ -84,7 +81,6 @@ def validate_contig_matrix(contig_data, contact_matrix):
     
     return True
 
-# Validation for unnormalized folder contents
 def validate_unnormalized_folder(folder):
     expected_files = ['contig_info_final.csv', 'raw_contact_matrix.npz']
     missing_files = [file for file in expected_files if file not in folder]
@@ -93,7 +89,6 @@ def validate_unnormalized_folder(folder):
         raise ValueError(f"Missing files in unnormalized folder: {', '.join(missing_files)}")
     return True
 
-# Validation for normalized folder contents
 def validate_normalized_folder(folder):
     expected_files = ['bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz']
     missing_files = [file for file in expected_files if file not in folder]
@@ -102,13 +97,135 @@ def validate_normalized_folder(folder):
         raise ValueError(f"Missing files in normalized folder: {', '.join(missing_files)}")
     return True
 
-# Extract and list files from a .7z archive
 def list_files_in_7z(decoded):
     with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as z:
         file_list = z.getnames()
     return file_list
 
-# Define the upload component layout
+def adjust_taxonomy(row, taxonomy_columns, prefixes):
+    last_non_blank = ""
+    
+    for tier in taxonomy_columns:
+        row[tier] = str(row[tier]) if pd.notna(row[tier]) else ""
+
+    if row['Type'] != 'unmapped':
+        for tier in taxonomy_columns:
+            if row[tier]:
+                last_non_blank = row[tier]
+            else:
+                row[tier] = f"Unspecified {last_non_blank}"
+    else:
+        for tier in taxonomy_columns:
+            row[tier] = "unmapped"
+
+    if row['Type'] == 'phage':
+        row['Domain'] = 'Virus'
+        row['Phylum'] = 'Virus'
+        row['Class'] = 'Virus'
+        for tier in taxonomy_columns:
+            row[tier] = row[tier] + '_v'
+        row['Contig'] = row['Contig'] + "_v"
+        row['Bin'] = row['Bin'] + "_v"
+
+    if row['Type'] == 'plasmid':
+        for tier in taxonomy_columns:
+            row[tier] = row[tier] + '_p'
+        row['Contig'] = row['Contig'] + "_p"
+        row['Bin'] = row['Bin'] + "_p"
+
+    for tier, prefix in prefixes.items():
+        row[tier] = f"{prefix}{row[tier]}" if row[tier] else "N/A"
+
+    return row
+
+def process_data(contig_data, binning_data, taxonomy_data, user_folder):
+    try:
+        logger.info("Starting data preparation...")
+
+        # Query plasmid classification for any available plasmid IDs
+        logger.info("Querying plasmid IDs for classification...")
+        plasmid_ids = taxonomy_data['Plasmid ID'].dropna().unique().tolist()
+        plasmid_classification_df = query_plasmid_id(plasmid_ids)
+
+        # Ensure plasmid_classification_df has the expected columns
+        expected_columns = [
+            'NUCCORE_ACC', 
+            'TAXONOMY_superkingdom', 
+            'TAXONOMY_phylum', 
+            'TAXONOMY_class', 
+            'TAXONOMY_order', 
+            'TAXONOMY_family', 
+            'TAXONOMY_genus', 
+            'TAXONOMY_species'
+        ]
+
+        # Check if the returned dataframe contains all expected columns
+        if not all(col in plasmid_classification_df.columns for col in expected_columns):
+            logger.error("The plasmid classification data does not contain the expected columns.")
+            raise ValueError("The plasmid classification data does not contain the expected columns.")
+
+        # Rename columns to match internal structure
+        plasmid_classification_df.rename(columns={
+            'NUCCORE_ACC': 'Plasmid ID',
+            'TAXONOMY_superkingdom': 'Kingdom',
+            'TAXONOMY_phylum': 'Phylum',
+            'TAXONOMY_class': 'Class',
+            'TAXONOMY_order': 'Order',
+            'TAXONOMY_family': 'Family',
+            'TAXONOMY_genus': 'Genus',
+            'TAXONOMY_species': 'Species'
+        }, inplace=True)
+
+        # Define prefixes for taxonomy tiers
+        prefixes = {
+            'Domain': 'd_',
+            'Kingdom': 'k_',
+            'Phylum': 'p_',
+            'Class': 'c_',
+            'Order': 'o_',
+            'Family': 'f_',
+            'Genus': 'g_',
+            'Species': 's_'
+        }
+
+        # Replace certain text in the classification dataframe
+        plasmid_classification_df = plasmid_classification_df.replace(r"\s*\(.*\)", "", regex=True)
+        plasmid_classification_df['Domain'] = plasmid_classification_df['Kingdom']
+
+        # Merge plasmid classification with taxonomy data
+        taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+        taxonomy_data = taxonomy_data.merge(
+            plasmid_classification_df[['Plasmid ID'] + taxonomy_columns],
+            on='Plasmid ID',
+            how='left',
+            suffixes=('', '_new')
+        )
+
+        # Fill taxonomy columns with new classification where available
+        for column in taxonomy_columns:
+            taxonomy_data[column] = taxonomy_data[column + '_new'].combine_first(taxonomy_data[column])
+
+        # Drop unnecessary columns after merge
+        taxonomy_data = taxonomy_data.drop(columns=['Plasmid ID'] + [col + '_new' for col in taxonomy_columns])
+
+        # Merge contig, binning, and taxonomy data
+        combined_data = pd.merge(contig_data, binning_data, on="Contig", how="left")
+        combined_data = pd.merge(combined_data, taxonomy_data, on="Bin", how="left")
+
+        # Apply taxonomy adjustments
+        combined_data = combined_data.apply(lambda row: adjust_taxonomy(row, taxonomy_columns, prefixes), axis=1)
+
+        # Fill missing bins with 'Unbinned MAG'
+        combined_data['Bin'] = combined_data['Bin'].fillna('Unbinned MAG')
+
+        # Return the processed combined data directly
+        logger.info("Data processed successfully.")
+        return combined_data
+
+    except Exception as e:
+        logger.error(f"Error during data preparation: {e}; no preview will be generated.")
+        return None
+
 def create_upload_component(component_id, text, example_url, instructions):
     return dbc.Card(
         [
@@ -136,7 +253,7 @@ def create_upload_component(component_id, text, example_url, instructions):
         className="my-3"
     )
 
-# Upload layouts for different methods
+# Layouts for different methods
 def create_upload_layout_method1():
     return html.Div([
         dbc.Row([
@@ -166,8 +283,7 @@ def create_upload_layout_method1():
                 'assets/examples/taxonomy.csv',
                 "This file must include columns like 'Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Plasmid ID'."
             ))
-        ]),
-        dbc.Button("Validate All Files", id="validate-button", color="success", className="mt-3")
+        ])
     ])
 
 def create_upload_layout_method2():
@@ -179,8 +295,7 @@ def create_upload_layout_method2():
                 'assets/examples/unnormalized_information.7z',
                 "The folder must include files like 'contig_info_final.csv' and 'raw_contact_matrix.npz'."
             ))
-        ]),
-        dbc.Button("Validate All Files", id="validate-button-unnormalized", color="success", className="mt-3")
+        ])
     ])
 
 def create_upload_layout_method3():
@@ -192,12 +307,20 @@ def create_upload_layout_method3():
                 'assets/examples/normalized_information.7z',
                 "This folder should include files like 'bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz'."
             ))
-        ]),
-        dbc.Button("Validate All Files", id="validate-button-normalized", color="success", className="mt-3")
+        ])
     ])
 
+def create_processed_data_preview(combined_data):
+    if not combined_data.empty:
+        preview_table = dbc.Table.from_dataframe(combined_data.head(), striped=True, bordered=True, hover=True)
+        return html.Div([
+            html.H5('Processed Data Preview'),
+            preview_table
+        ])
+    return None
+
 # Registering callbacks for uploads with logging
-def register_upload_callbacks(app):
+def register_preparation_callbacks(app):
     # Callback for raw contig info upload (Method 1) with logging
     @app.callback(
         [Output('overview-raw-contig-info', 'children'),
@@ -314,10 +437,11 @@ def register_upload_callbacks(app):
         logger.error("Unsupported file format for Bin Taxonomy.")
         return "Unsupported file format", {'display': 'block'}, contents
 
-    # Validation Callback for Method 1 without 'validation-output'
+    # Callback for the 'Prepare Data' button (Method 1)
     @app.callback(
-        Output('current-stage-method1', 'data'),
-        [Input('validate-button', 'n_clicks')],
+        [Output('preparation-status-method1', 'data'),
+         Output('dynamic-content-method1', 'children',allow_duplicate=True)],
+        [Input('execute-button-method1', 'n_clicks')],
         [State('raw-contig-info', 'contents'),
          State('raw-contig-matrix', 'contents'),
          State('raw-binning-info', 'contents'),
@@ -326,48 +450,70 @@ def register_upload_callbacks(app):
          State('raw-contig-matrix', 'filename'),
          State('raw-binning-info', 'filename'),
          State('raw-bin-taxonomy', 'filename'),
-         State('user-folder', 'data'),
-         State('current-stage-method1', 'data')],
+         State('user-folder', 'data')],
         prevent_initial_call=True
     )
-    def validate_method_1(n_clicks, contig_info, contig_matrix, binning_info, bin_taxonomy,
-                          contig_info_name, contig_matrix_name, binning_info_name, bin_taxonomy_name,
-                          user_folder, current_stage):
-        logger.info(f"Validating Method 1 - Current stage: {current_stage}")
+    def prepare_data_method_1(n_clicks, contig_info, contig_matrix, binning_info, bin_taxonomy,
+                                          contig_info_name, contig_matrix_name, binning_info_name, bin_taxonomy_name,
+                                          user_folder):
+        logger.info("Validating and preparing data for Method 1...")
         if n_clicks is None:
             raise PreventUpdate
         
-        # Check if all required files are uploaded before proceeding
         if not all([contig_info, contig_matrix, binning_info, bin_taxonomy]):
             logger.error("Validation failed: Missing required files.")
-            return dash.no_update
+            return False, no_update
+        
         try:
+            # Parse and validate the contents directly
             contig_data = parse_contents(contig_info, contig_info_name)
             required_columns = ['Contig', 'Restriction sites', 'Length', 'Coverage']
             validate_csv(contig_data, required_columns, optional_columns=['Self-contact'])
-
+    
             contig_matrix_data = parse_contents(contig_matrix, contig_matrix_name)
             validate_contig_matrix(contig_data, contig_matrix_data)
-
+    
             binning_data = parse_contents(binning_info, binning_info_name)
             required_columns = ['Contig', 'Bin', 'Type']
             validate_csv(binning_data, required_columns)
-
+    
             taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
             required_columns = ['Bin']
             optional_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Plasmid ID']
             validate_csv(taxonomy_data, required_columns, optional_columns)
-
-            save_file_to_user_folder(contig_info, contig_info_name, user_folder)
-            save_file_to_user_folder(contig_matrix, contig_matrix_name, user_folder)
-            save_file_to_user_folder(binning_info, binning_info_name, user_folder)
-            save_file_to_user_folder(bin_taxonomy, bin_taxonomy_name, user_folder)
-
-            logger.info("All files validated and saved successfully for Method 1.")
-            return 'Data Processing'
+    
+            logger.info("Validation successful. Proceeding with data preparation...")
+            
+            # Process data using parsed dataframes directly
+            combined_data = process_data(contig_data, binning_data, taxonomy_data, user_folder)
+    
+            if combined_data is not None:
+                # Save only the matrix and the combined data
+                save_file_to_user_folder(contig_matrix, contig_matrix_name, user_folder)
+    
+                csv_buffer = io.StringIO()
+                combined_data.to_csv(csv_buffer, index=False)
+                csv_content = csv_buffer.getvalue()
+                
+                # Convert csv_content to base64-encoded string with required prefix
+                encoded_csv_content = base64.b64encode(csv_content.encode()).decode()
+                encoded_csv_content = f"data:text/csv;base64,{encoded_csv_content}"
+                
+                # Use save_file_to_user_folder to save the processed CSV with encoded content
+                save_file_to_user_folder(encoded_csv_content, 'contig_info_complete.csv', user_folder)
+    
+                # Create the processed data preview component
+                preview_component = create_processed_data_preview(combined_data)
+    
+                logger.info("Data preparation successful, and files saved.")
+                return True, preview_component
+            else:
+                logger.error("Data preparation failed.")
+                return False, no_update
+    
         except Exception as e:
-            logger.error(f"Validation failed for Method 1: {e}")
-            return dash.no_update
+            logger.error(f"Validation and preparation failed for Method 1: {e}")
+            return False, no_update
 
     # Callback for Unnormalized Folder Upload (Method 2) with logging
     @app.callback(
@@ -395,35 +541,34 @@ def register_upload_callbacks(app):
         logger.info(f"Uploaded Unnormalized Data Folder: {filename} with size {file_size}. Files: {file_list}")
         return [overview, html.P(f"File uploaded: {filename} ({file_size})")], {'display': 'block'}, contents
 
-    # Validation Callback for Method 2 without 'validation-output'
     @app.callback(
-        Output('current-stage-method2', 'data'),
-        [Input('validate-button-unnormalized', 'n_clicks')],
+        Output('validation-status-method2', 'data'),
+        [Input('execute-button-method2', 'n_clicks')],
         [State('unnormalized-data-folder', 'contents'),
          State('unnormalized-data-folder', 'filename'),
-         State('user-folder', 'data'),
-         State('current-stage-method2', 'data')],
+         State('user-folder', 'data')],
         prevent_initial_call=True
     )
-    def validate_method_2(n_clicks, contents, filename, user_folder, current_stage):
-        logger.info(f"Validating Method 2 - Current stage: {current_stage}")
+    def prepare_data_method_2(n_clicks, contents, filename, user_folder):
+        logger.info("Validating Method 2")
         if n_clicks is None:
             raise PreventUpdate
         
         # Check if the required file is uploaded before proceeding
         if contents is None:
             logger.error("Validation failed for Method 2: No file uploaded.")
-            return dash.no_update
+            return False  # Validation failed
+    
         try:
             decoded = base64.b64decode(contents.split(',')[1])
             file_list = list_files_in_7z(decoded)
             validate_unnormalized_folder(file_list)
             save_file_to_user_folder(contents, filename, user_folder)
-            logger.info("Unnormalized folder successfully validated and saved for Method 2.")
-            return 'Normalization'
+            logger.info("Unnormalized folder successfully validated for Method 2.")
+            return True  # Validation succeeded
         except Exception as e:
             logger.error(f"Validation failed for Method 2: {e}")
-            return dash.no_update
+            return False  # Validation failed
 
     # Callback for Normalized Folder Upload (Method 3) with logging
     @app.callback(
@@ -453,30 +598,30 @@ def register_upload_callbacks(app):
 
     # Validation Callback for Method 3 without 'validation-output'
     @app.callback(
-        Output('current-stage-method3', 'data'),
-        [Input('validate-button-normalized', 'n_clicks')],
+        Output('validation-status-method3', 'data'),
+        [Input('execute-button-method3', 'n_clicks')],
         [State('normalized-data-folder', 'contents'),
          State('normalized-data-folder', 'filename'),
-         State('user-folder', 'data'),
-         State('current-stage-method3', 'data')],
+         State('user-folder', 'data')],
         prevent_initial_call=True
     )
-    def validate_method_3(n_clicks, contents, filename, user_folder, current_stage):
-        logger.info(f"Validating Method 3 - Current stage: {current_stage}")
+    def prepare_data_method_3(n_clicks, contents, filename, user_folder):
+        logger.info("Validating Method 3")
         if n_clicks is None:
             raise PreventUpdate
         
         # Check if the required file is uploaded before proceeding
         if contents is None:
             logger.error("Validation failed for Method 3: No file uploaded.")
-            return dash.no_update
+            return False  # Validation failed
+    
         try:
             decoded = base64.b64decode(contents.split(',')[1])
             file_list = list_files_in_7z(decoded)
             validate_normalized_folder(file_list)
             save_file_to_user_folder(contents, filename, user_folder)
-            logger.info("Normalized folder successfully validated and saved for Method 3.")
-            return 'Visualization'
+            logger.info("Normalized folder successfully validated for Method 3.")
+            return True  # Validation succeeded
         except Exception as e:
             logger.error(f"Validation failed for Method 3: {e}")
-            return dash.no_update
+            return False  # Validation failed
