@@ -87,7 +87,7 @@ def query_plasmid_id(ids, fasta=False):
         datefmt='%y:%m:%d %H:%M:%S'
     )
     ch.setFormatter(formatter)
-    logger = logging.getLogger('plsdbapi_logger')
+    logger = logging.getLogger('app_logger')
     logger.setLevel(logging.INFO)
     logger.addHandler(ch)
 

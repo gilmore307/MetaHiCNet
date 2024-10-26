@@ -4,8 +4,17 @@ import dash
 from dash import dcc, html, no_update
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
-from stages.a_uploading import create_upload_layout_method1, create_upload_layout_method2, create_upload_layout_method3, register_upload_callbacks
-from stages.b_processing import process_data, create_processed_data_preview
+from stages.a_uploading import (create_upload_layout_method1,create_upload_layout_method2,create_upload_layout_method3,register_upload_callbacks)
+from stages.b_processing import process_data, create_processed_data_preview, register_processing_callbacks
+import logging
+import io
+
+# Initialize logger
+logger = logging.getLogger("app_logger")
+logger.setLevel(logging.INFO)
+log_stream = io.StringIO()
+stream_handler = logging.StreamHandler(log_stream)
+logger.addHandler(stream_handler)
 
 # Define stages mapping for each method
 stages_mapping = {
@@ -23,27 +32,33 @@ def create_flowchart(current_stage, method='method1'):
     method_stages = stages_mapping.get(method, stages_mapping['method1'])
     buttons = []
     for idx, stage in enumerate(method_stages):
-        if stage == current_stage:
-            color = 'primary'
-        elif method_stages.index(current_stage) > idx:
-            color = 'success'
-        else:
-            color = 'light'
-
-        buttons.append(
-            dbc.Button(stage, color=color, disabled=True, className="mx-2 my-2")
-        )
-
+        color = 'primary' if stage == current_stage else 'success' if method_stages.index(current_stage) > idx else 'light'
+        buttons.append(dbc.Button(stage, color=color, disabled=True, className="mx-2 my-2"))
         if idx < len(method_stages) - 1:
             buttons.append(html.Span("→", style={'font-size': '24px', 'margin': '0 10px'}))
-
     return html.Div(buttons, style={'display': 'flex', 'align-items': 'center', 'justify-content': 'center'})
+
+# Textarea to display logger messages
+log_text = dcc.Textarea(
+    id="log-box",
+    value="Logger Initialized...\n",  # Initial log message
+    style={
+        'width': '100%',
+        'height': '200px',
+        'resize': 'none',
+        'border': '1px solid #ccc',
+        'padding': '10px',
+        'overflow': 'auto',
+        'backgroundColor': '#f9f9f9',
+        'color': '#333',
+        'fontFamily': 'monospace'
+    },
+    readOnly=True
+)
 
 # Define the layout of the app
 app.layout = dbc.Container([
     html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
-
-    # Store components to hold the current stage for each method
     dcc.Store(id='current-stage-method1', data='File Uploading'),
     dcc.Store(id='current-stage-method2', data='File Uploading'),
     dcc.Store(id='current-stage-method3', data='File Uploading'),
@@ -52,17 +67,19 @@ app.layout = dbc.Container([
     dcc.Tabs(id='tabs-method', value='method1', children=[
         dcc.Tab(label='First-time users: Upload raw data', value='method1', children=[
             html.Div(id='flowchart-container-method1'),
-            html.Div(id='dynamic-content-method1'),  # Placeholder div for Method 1 content
+            html.Div(id='dynamic-content-method1'),
         ]),
         dcc.Tab(label='Change normalization method: Upload unnormalized data', value='method2', children=[
             html.Div(id='flowchart-container-method2'),
-            html.Div(id='dynamic-content-method2'),  # Placeholder div for Method 2 content
+            html.Div(id='dynamic-content-method2'),
         ]),
         dcc.Tab(label='Continue previous visualization: Upload normalized data', value='method3', children=[
             html.Div(id='flowchart-container-method3'),
-            html.Div(id='dynamic-content-method3'),  # Placeholder div for Method 3 content
+            html.Div(id='dynamic-content-method3'),
         ]),
     ]),
+    dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
+    log_text
 ], fluid=True)
 
 # Callback to update the flowchart and display content for Method 1
@@ -134,8 +151,19 @@ def update_layout_method3(selected_method, stage_method3, user_folder):
 
     return flowchart3, None
 
+# Periodic callback to update the log box content
+@app.callback(
+    Output("log-box", "value"),
+    [Input("log-interval", "n_intervals")]
+)
+def update_log_box(n):
+    log_stream.seek(0)  # Go to the start of the log
+    log_content = log_stream.read()  # Read the current log content
+    return log_content  # Display the latest logs
+
 # Register all the callbacks from a_uploading
 register_upload_callbacks(app)
+register_processing_callbacks(app)
 
 # Run the Dash app
 if __name__ == '__main__':

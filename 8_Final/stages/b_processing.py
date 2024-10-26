@@ -5,7 +5,12 @@ import base64
 from dash import html, no_update
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
+from dash.exceptions import PreventUpdate
 from helper import save_file_to_user_folder, query_plasmid_id
+import logging
+
+# Initialize logger
+logger = logging.getLogger("app_logger")
 
 # Helper function to adjust taxonomy
 def adjust_taxonomy(row, taxonomy_columns, prefixes):
@@ -48,6 +53,8 @@ def adjust_taxonomy(row, taxonomy_columns, prefixes):
 # Main function to process data
 def process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder):
     try:
+        logger.info("Starting data processing...")
+        
         # **1. Load contig_information.csv**
         contig_data = pd.read_csv(contig_info_path)
 
@@ -58,6 +65,7 @@ def process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder
         taxonomy_data = pd.read_csv(taxonomy_path)
 
         # Query plasmid classification for any available plasmid IDs
+        logger.info("Querying plasmid IDs for classification...")
         plasmid_ids = taxonomy_data['Plasmid ID'].dropna().unique().tolist()
         plasmid_classification_df = query_plasmid_id(plasmid_ids)[[
             'NUCCORE_ACC', 
@@ -135,14 +143,13 @@ def process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder
         
         # Use save_file_to_user_folder to save the processed CSV with encoded content
         save_file_to_user_folder(encoded_csv_content, 'contig_info_complete.csv', user_folder)
-
+        
+        logger.info("Data processed successfully, generating preview.")
         return combined_data  # Return the processed DataFrame for preview
 
-    finally:
-        # Delete user-uploaded files after processing
-        os.remove(contig_info_path)
-        os.remove(binning_info_path)
-        os.remove(taxonomy_path)
+    except Exception as e:
+        logger.error(f"Error during data processing: {e}; no preview will be generated.")
+        return None
 
 # Function to create the processed data preview layout
 def create_processed_data_preview(combined_data):
@@ -150,16 +157,18 @@ def create_processed_data_preview(combined_data):
         preview_table = dbc.Table.from_dataframe(combined_data.head(), striped=True, bordered=True, hover=True)
         return html.Div([
             html.H5('Processed Data Preview'),
-            preview_table
+            preview_table,
+            dbc.Button("Next", id="next-button-processing", color="success", className="mt-3")  # Add the Next button
         ])
     return None
 
 # Callback to update the preview of the processed data in the 'Data Processing' stage
 def register_processing_callbacks(app):
     @app.callback(
-        Output('output-preview-method1', 'children'),
+        Output('processing-preview-method1', 'children'),
         [Input('current-stage-method1', 'data')],
-        [State('user-folder', 'data')]
+        [State('user-folder', 'data')],
+        prevent_initial_call=True
     )
     def update_processed_data_preview(stage_method1, user_folder):
         if stage_method1 != 'Data Processing':
@@ -168,10 +177,22 @@ def register_processing_callbacks(app):
         # Define paths for the user-uploaded files
         contig_info_path = os.path.join('assets/output', user_folder, 'contig_information.csv')
         binning_info_path = os.path.join('assets/output', user_folder, 'binning_information.csv')
-        taxonomy_path = os.path.join('assets/output', user_folder, 'taxonomy.csv')
+        taxonomy_path = os.path.join('assets/output', user_folder, 'bin_taxonomy.csv')
 
         # Process data and get the processed DataFrame
         combined_data = process_data(contig_info_path, binning_info_path, taxonomy_path, user_folder)
 
         # Generate a preview of the processed data
         return create_processed_data_preview(combined_data)
+
+    # Callback to handle the "Next" button click
+    @app.callback(
+        Output('current-stage-method1', 'data'),
+        [Input('next-button-processing', 'n_clicks')],
+        [State('current-stage-method1', 'data')],
+        prevent_initial_call=True
+    )
+    def proceed_to_normalization(next_clicks, current_stage):
+        if next_clicks is None or current_stage != 'Data Processing':
+            raise PreventUpdate
+        return 'Normalization'
