@@ -8,6 +8,9 @@ from stages.a_uploading import (
     create_upload_layout_method2, 
     create_upload_layout_method3,
     register_preparation_callbacks)
+from stages.b_normalization import (
+    create_normalization_layout, 
+    register_normalization_callbacks)
 import logging
 import io
 
@@ -63,6 +66,8 @@ app.layout = dbc.Container([
     dcc.Store(id='preparation-status-method1', data=False),
     dcc.Store(id='preparation-status-method2', data=False),
     dcc.Store(id='preparation-status-method3', data=False),
+    dcc.Store(id='normalization-status-method-1', data=False),
+    dcc.Store(id='normalization-status-method-2', data=False),
     dcc.Store(id='user-folder', data=str(uuid.uuid4())),
 
     dcc.Tabs(id='tabs-method', value='method1', children=[
@@ -218,8 +223,8 @@ def update_layout_method1(selected_method, stage_method1, user_folder):
 
     elif stage_method1 == 'Normalization':
         # Placeholder for normalization component
-        normalization_component = html.Div("Normalization content goes here.")
-        return flowchart1, normalization_component
+        normalization_component1 = create_normalization_layout(method_id=1)
+        return flowchart1, normalization_component1
 
     elif stage_method1 == 'Spurious Contact Removal':
         # Placeholder for spurious contact removal content
@@ -253,8 +258,8 @@ def update_layout_method2(selected_method, stage_method2, user_folder):
 
     elif stage_method2 == 'Normalization':
         # Placeholder for normalization content
-        normalization_component = html.Div("Normalization content goes here.")
-        return flowchart2, normalization_component
+        normalization_component2 = create_normalization_layout(method_id=2)
+        return flowchart2, normalization_component2
 
     elif stage_method2 == 'Spurious Contact Removal':
         spurious_component = html.Div("Spurious contact removal content goes here.")
@@ -302,6 +307,8 @@ def update_log_box(n):
 
 # Part 7: Run the Dash app
 register_preparation_callbacks(app)
+register_normalization_callbacks(app, method_id=1)
+register_normalization_callbacks(app, method_id=2)
 
 if __name__ == '__main__':
     app.run_server(debug=True)
