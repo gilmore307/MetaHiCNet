@@ -396,7 +396,7 @@ matrix_columns = {
     'Restriction sites': 'Restriction sites',
     'Contig length': 'Length',
     'Contig coverage': 'Coverage',
-    'Intra-contig contact': 'Self contact'
+    'Intra-contig contact': 'Signal'
 }
 grouped_data = grouped_data.rename(columns=matrix_columns)
 grouped_data = grouped_data[list(matrix_columns.values())]
