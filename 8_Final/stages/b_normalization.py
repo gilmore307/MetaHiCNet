@@ -1,4 +1,6 @@
+import dash
 from dash import dcc, html, no_update
+from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output, State
 import numpy as np
 import pandas as pd
@@ -13,11 +15,11 @@ logger = logging.getLogger("app_logger")
 
 def create_normalization_layout(method_id):
     normalization_methods = [
-        {'label': 'Raw - No normalization, just denoising', 'value': 'Raw'},
-        {'label': 'normCC - GLM-based normalization', 'value': 'normCC'},
-        {'label': 'HiCzin - Logarithmic scaling method', 'value': 'HiCzin'},
-        {'label': 'bin3C - Sinkhorn-Knopp algorithm for balancing', 'value': 'bin3C'},
-        {'label': 'MetaTOR - Square root normalization', 'value': 'MetaTOR'}
+        {'label': 'Raw - Removing contacts below a certain threshold for noise reduction.', 'value': 'Raw'},
+        {'label': 'normCC - GLM-based normalization to adjust for varying coverage and signal.', 'value': 'normCC'},
+        {'label': 'HiCzin - Logarithmic scaling method for normalizing Hi-C contact frequencies.', 'value': 'HiCzin'},
+        {'label': 'bin3C - Sinkhorn-Knopp algorithm for balancing matrix rows and columns.', 'value': 'bin3C'},
+        {'label': 'MetaTOR - Square root normalization to stabilize variance.', 'value': 'MetaTOR'}
     ]
 
     layout = html.Div([
@@ -213,51 +215,29 @@ def register_normalization_callbacks(app, method_id):
         # Explanatory text for normalization methods
         if selected_method == 'Raw':
             return [html.Div([
-                html.Label("Minimum Contig Length (default: 1000):"),
-                dcc.Input(
-                    id=f'min-len-input-{method_id}',
-                    type='number',
-                    value=1000,
-                    placeholder="Minimum contig length",
-                    style={'width': '100%'}
-                ),
-                html.Small("Contigs shorter than this length will be ignored.", className="form-text text-muted"),
-    
-                html.Label("Minimum Signal (default: 2):"),
-                dcc.Input(
-                    id=f'min-signal-input-{method_id}',
-                    type='number',
-                    value=2,
-                    placeholder="Minimum signal",
-                    style={'width': '100%'}
-                ),
-                html.Small("Contigs with signal below this value will be ignored.", className="form-text text-muted"),
-    
-                html.Label("Threshold Percentage for Denoising (default: 5):"),
+                html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
                 dcc.Input(
                     id=f'thres-input-{method_id}',
                     type='number',
                     value=5,
                     placeholder="Threshold percentage (0-100)",
                     style={'width': '100%'}
-                ),
-                html.Small("Contacts below this percentile will be removed to reduce noise.", className="form-text text-muted")
+                )
             ])]
         elif selected_method == 'normCC':
             return [html.Div([
-                html.Label("Threshold Percentage for Denoising (default: 5):"),
+                html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
                 dcc.Input(
                     id=f'thres-input-{method_id}',
                     type='number',
                     value=5,
                     placeholder="Threshold percentage (0-100)",
                     style={'width': '100%'}
-                ),
-                html.Small("Contacts below this percentile will be removed to reduce noise.", className="form-text text-muted")
+                )
             ])]
         elif selected_method == 'HiCzin':
             return [html.Div([
-                html.Label("Epsilon (default: 1):"),
+                html.Label("Epsilon (default: 1): A small value added to avoid zero values in calculations."),
                 dcc.Input(
                     id=f'epsilon-input-{method_id}',
                     type='number',
@@ -265,21 +245,19 @@ def register_normalization_callbacks(app, method_id):
                     placeholder="Epsilon value",
                     style={'width': '100%'}
                 ),
-                html.Small("A small value added to avoid zero values in calculations.", className="form-text text-muted"),
-    
-                html.Label("Threshold Percentage for Denoising (default: 5):"),
+                
+                html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
                 dcc.Input(
                     id=f'thres-input-{method_id}',
                     type='number',
                     value=5,
                     placeholder="Threshold percentage (0-100)",
                     style={'width': '100%'}
-                ),
-                html.Small("Contacts below this percentile will be removed to reduce noise.", className="form-text text-muted")
+                )
             ])]
         elif selected_method == 'bin3C':
             return [html.Div([
-                html.Label("Epsilon (default: 1):"),
+                html.Label("Epsilon (default: 1): A small value added to avoid zero values in calculations."),
                 dcc.Input(
                     id=f'epsilon-input-{method_id}',
                     type='number',
@@ -287,9 +265,8 @@ def register_normalization_callbacks(app, method_id):
                     placeholder="Epsilon value",
                     style={'width': '100%'}
                 ),
-                html.Small("A small value added to avoid zero values in calculations.", className="form-text text-muted"),
-    
-                html.Label("Maximum Iterations (default: 1000):"),
+                
+                html.Label("Maximum Iterations (default: 1000): Controls the number of iterations for the Sinkhorn-Knopp algorithm."),
                 dcc.Input(
                     id=f'max-iter-input-{method_id}',
                     type='number',
@@ -297,9 +274,8 @@ def register_normalization_callbacks(app, method_id):
                     placeholder="Maximum iterations for convergence",
                     style={'width': '100%'}
                 ),
-                html.Small("Controls the number of iterations for the Sinkhorn-Knopp algorithm.", className="form-text text-muted"),
-    
-                html.Label("Tolerance for Convergence (default: 1e-6):"),
+                
+                html.Label("Tolerance for Convergence (default: 1e-6): Defines the precision for convergence. Lower values increase precision."),
                 dcc.Input(
                     id=f'tol-input-{method_id}',
                     type='number',
@@ -307,21 +283,19 @@ def register_normalization_callbacks(app, method_id):
                     placeholder="Tolerance for convergence",
                     style={'width': '100%'}
                 ),
-                html.Small("Defines the precision for convergence. Lower values increase precision.", className="form-text text-muted"),
-    
-                html.Label("Threshold Percentage for Denoising (default: 5):"),
+                
+                html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
                 dcc.Input(
                     id=f'thres-input-{method_id}',
                     type='number',
                     value=5,
                     placeholder="Threshold percentage (0-100)",
                     style={'width': '100%'}
-                ),
-                html.Small("Contacts below this percentile will be removed to reduce noise.", className="form-text text-muted")
+                )
             ])]
         elif selected_method == 'MetaTOR':
             return [html.Div([
-                html.Label("Epsilon (default: 1):"),
+                html.Label("Epsilon (default: 1): A small value added to avoid zero values in calculations."),
                 dcc.Input(
                     id=f'epsilon-input-{method_id}',
                     type='number',
@@ -329,54 +303,63 @@ def register_normalization_callbacks(app, method_id):
                     placeholder="Epsilon value",
                     style={'width': '100%'}
                 ),
-                html.Small("A small value added to avoid zero values in calculations.", className="form-text text-muted"),
-    
-                html.Label("Threshold Percentage for Denoising (default: 5):"),
+                
+                html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
                 dcc.Input(
                     id=f'thres-input-{method_id}',
                     type='number',
                     value=5,
                     placeholder="Threshold percentage (0-100)",
                     style={'width': '100%'}
-                ),
-                html.Small("Contacts below this percentile will be removed to reduce noise.", className="form-text text-muted")
+                )
             ])]
         else:
             return no_update
-
 
     @app.callback(
         [Output(f'normalization-status-method-{method_id}', 'data'),
          Output(f'dynamic-heatmap-method-{method_id}', 'children'),
          Output(f'normalized-matrix-store-{method_id}', 'data')],
-        [Input(f'execute-normalization-button-{method_id}', 'n_clicks')],
+        [Input(f'execute-button-b-{method_id}', 'n_clicks')],
         [State(f'normalization-method-{method_id}', 'value'),
          State(f'epsilon-input-{method_id}', 'value'),
-         State(f'threshold-input-{method_id}', 'value'),
+         State(f'thres-input-{method_id}', 'value'),
          State(f'max-iter-input-{method_id}', 'value'),
-         State('user-folder', 'data')],
+         State('user-folder', 'data'),
+         State('tabs-method', 'value'),
+         State(f'current-stage-method{method_id}', 'data')],
         prevent_initial_call=True
     )
-    def execute_normalization(n_clicks, method, epsilon, threshold, max_iter, user_folder):
+    def execute_normalization(n_clicks, method, epsilon, threshold, max_iter, user_folder, selected_method, current_stage):
+        # Check if the selected method matches the method_id of the callback
+        ctx = dash.callback_context
+        if not ctx.triggered or ctx.triggered[0]['prop_id'].split('.')[0] != f'execute-button-b-{method_id}':
+            raise PreventUpdate
+        if selected_method != f'method{method_id}' or current_stage != 'Normalization':
+            raise PreventUpdate
         if n_clicks is None:
-            return no_update, no_update, no_update
+            raise PreventUpdate
     
-        # Use the preprocess function to read data from the folder
+        logger.info(f"Running normalization for Method {method_id} using {method}...")
+        
+        # Preprocess the data needed for normalization
         contig_info, contact_matrix = preprocess(user_folder)
         
         if contig_info is None or contact_matrix is None:
+            logger.error("Error reading files from folder. Please check the uploaded data.")
             return False, html.Div("Error reading files from folder. Please check the uploaded data."), no_update
-    
+        
         # Run the normalization
         normalized_matrix = run_normalization(method, contig_info, contact_matrix, epsilon, threshold, max_iter)
         
         if normalized_matrix is None or normalized_matrix.nnz == 0:
+            logger.error("Normalization failed or produced an empty matrix.")
             return False, html.Div("Normalization failed or produced an empty matrix."), no_update
-    
+        
         dense_matrix = normalized_matrix.toarray()
         fig = px.imshow(dense_matrix, color_continuous_scale='Viridis')
         heatmap = dcc.Graph(figure=fig)
-    
+        
         # Convert the sparse matrix to a dictionary for storage in dcc.Store
         normalized_matrix_data = {
             'data': normalized_matrix.data.tolist(),
@@ -384,5 +367,6 @@ def register_normalization_callbacks(app, method_id):
             'col': normalized_matrix.col.tolist(),
             'shape': normalized_matrix.shape
         }
-    
+        
+        logger.info(f"Normalization successful for Method {method_id}.")
         return True, heatmap, normalized_matrix_data
