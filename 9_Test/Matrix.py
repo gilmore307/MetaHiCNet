@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.sparse import csc_matrix
 
-bin_contact_matrix_path= 'input/Raw_contact_matrix.npz'
+bin_contact_matrix_path= 'normalized_contact_matrix.npz'
 bin_contact_matrix_data = np.load(bin_contact_matrix_path)
 data = bin_contact_matrix_data['data']
 indices = bin_contact_matrix_data['indices']
