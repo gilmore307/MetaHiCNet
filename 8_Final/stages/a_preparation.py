@@ -7,256 +7,23 @@ import base64
 import io
 import os
 import py7zr
-import pandas as pd
 import numpy as np
 from scipy.sparse import csr_matrix
 import logging
-from helper import save_file_to_user_folder, query_plasmid_id
+from helper import (
+    save_file_to_user_folder, 
+    parse_contents, 
+    get_file_size, 
+    validate_csv, 
+    validate_contig_matrix, 
+    validate_unnormalized_folder, 
+    validate_normalized_folder,
+    list_files_in_7z,
+    process_data)
 
 # Initialize logger
 logger = logging.getLogger("app_logger")
 
-# Helper functions
-def parse_contents(contents, filename):
-    content_type, content_string = contents.split(',')
-    decoded = base64.b64decode(content_string)
-    
-    if 'csv' in filename:
-        return pd.read_csv(io.StringIO(decoded.decode('utf-8')))
-    elif 'npz' in filename:
-        # Load the npz file
-        npzfile = np.load(io.BytesIO(decoded))
-        
-        # Extract the required arrays to reconstruct the sparse matrix
-        if all(key in npzfile for key in ['data', 'indices', 'indptr', 'shape']):
-            data = npzfile['data']
-            indices = npzfile['indices']
-            indptr = npzfile['indptr']
-            shape = tuple(npzfile['shape'])
-            
-            # Reconstruct the sparse matrix
-            contact_matrix = csr_matrix((data, indices, indptr), shape=shape)
-            return contact_matrix
-        else:
-            raise ValueError("The contact matrix file does not contain the expected sparse matrix keys.")
-    elif '7z' in filename:
-        with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as z:
-            return z.getnames()
-    else:
-        raise ValueError("Unsupported file format.")
-
-def get_file_size(contents):
-    content_type, content_string = contents.split(',')
-    decoded = base64.b64decode(content_string)
-    size_in_bytes = len(decoded)
-    size_in_kb = size_in_bytes / 1024
-    return f"{size_in_kb:.2f} KB"
-
-def validate_csv(df, required_columns, optional_columns=[]):
-    all_columns = required_columns + optional_columns
-    if not all(column in df.columns for column in all_columns):
-        missing_cols = set(required_columns) - set(df.columns)
-        logger.error(f"Missing columns in the CSV file: {missing_cols}")
-        raise ValueError(f"Missing columns in the file: {missing_cols}")
-    for col in required_columns:
-        if df[col].isnull().any():
-            logger.error(f"Required column '{col}' has missing values.")
-            raise ValueError(f"Required column '{col}' has missing values.")
-    return True
-
-def validate_contig_matrix(contig_data, contact_matrix):
-    num_contigs = len(contig_data)
-
-    if isinstance(contact_matrix, np.lib.npyio.NpzFile):
-        if all(key in contact_matrix for key in ['data', 'indices', 'indptr', 'shape']):
-            data = contact_matrix['data']
-            indices = contact_matrix['indices']
-            indptr = contact_matrix['indptr']
-            shape = tuple(contact_matrix['shape'])
-            contact_matrix = csr_matrix((data, indices, indptr), shape=shape)
-        else:
-            logger.error("The contact matrix file does not contain the expected sparse matrix keys.")
-            raise ValueError("The contact matrix file does not contain the expected sparse matrix keys.")
-    
-    matrix_shape = contact_matrix.shape
-    if matrix_shape[0] != matrix_shape[1]:
-        logger.error("The contact matrix is not square.")
-        raise ValueError("The contact matrix is not square.")
-    if matrix_shape[0] != num_contigs:
-        logger.error(f"The contact matrix dimensions {matrix_shape} do not match the number of contigs.")
-        raise ValueError(f"The contact matrix dimensions {matrix_shape} do not match the number of contigs.")
-    
-    if 'Self-contact' in contig_data.columns:
-        diagonal_values = np.diag(contact_matrix.toarray())
-        self_contact = contig_data['Self-contact'].dropna()
-        if not np.allclose(self_contact, diagonal_values[:len(self_contact)]):
-            logger.error("The 'Self-contact' column values do not match the diagonal of the contact matrix.")
-            raise ValueError("The 'Self-contact' column values do not match the diagonal of the contact matrix.")
-    
-    return True
-
-def validate_unnormalized_folder(folder):
-    expected_files = ['contig_info_final.csv', 'raw_contact_matrix.npz']
-    missing_files = [file for file in expected_files if file not in folder]
-    if missing_files:
-        logger.error(f"Missing files in unnormalized folder: {', '.join(missing_files)}")
-        raise ValueError(f"Missing files in unnormalized folder: {', '.join(missing_files)}")
-    return True
-
-def validate_normalized_folder(folder):
-    expected_files = ['bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz']
-    missing_files = [file for file in expected_files if file not in folder]
-    if missing_files:
-        logger.error(f"Missing files in normalized folder: {', '.join(missing_files)}")
-        raise ValueError(f"Missing files in normalized folder: {', '.join(missing_files)}")
-    return True
-
-def list_files_in_7z(decoded):
-    with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as z:
-        file_list = z.getnames()
-    return file_list
-
-def adjust_taxonomy(row, taxonomy_columns, prefixes):
-    last_non_blank = ""
-    
-    for tier in taxonomy_columns:
-        row[tier] = str(row[tier]) if pd.notna(row[tier]) else ""
-
-    if row['Type'] != 'unmapped':
-        for tier in taxonomy_columns:
-            if row[tier]:
-                last_non_blank = row[tier]
-            else:
-                row[tier] = f"Unspecified {last_non_blank}"
-    else:
-        for tier in taxonomy_columns:
-            row[tier] = "unmapped"
-
-    if row['Type'] == 'phage':
-        row['Domain'] = 'Virus'
-        row['Phylum'] = 'Virus'
-        row['Class'] = 'Virus'
-        for tier in taxonomy_columns:
-            row[tier] = row[tier] + '_v'
-        row['Contig'] = row['Contig'] + "_v"
-        row['Bin'] = row['Bin'] + "_v"
-
-    if row['Type'] == 'plasmid':
-        for tier in taxonomy_columns:
-            row[tier] = row[tier] + '_p'
-        row['Contig'] = row['Contig'] + "_p"
-        row['Bin'] = row['Bin'] + "_p"
-
-    for tier, prefix in prefixes.items():
-        row[tier] = f"{prefix}{row[tier]}" if row[tier] else "N/A"
-
-    return row
-
-def process_data(contig_data, binning_data, taxonomy_data, contig_matrix, user_folder):
-    try:
-        logger.info("Starting data preparation...")
-        
-                # Debugging print to check the format of contact_matrix
-        logger.debug(f"Type of contact_matrix: {type(contig_matrix)}")
-        logger.debug(f"Content of contact_matrix: {contig_matrix}")
-        
-        if isinstance(contig_matrix, str):
-            logger.error("contig_matrix is a string, which is unexpected. Please check the source.")
-            raise ValueError("contact_matrix should be a sparse matrix, not a string.")
-        
-        # Ensure the contact_matrix is in the correct sparse format if it's not already
-        if not isinstance(contig_matrix, csr_matrix):
-            logger.error("contig_matrix is not a CSR sparse matrix.")
-            raise ValueError("contig_matrix must be a CSR sparse matrix.")
-
-        # Query plasmid classification for any available plasmid IDs
-        logger.info("Querying plasmid IDs for classification...")
-        plasmid_ids = taxonomy_data['Plasmid ID'].dropna().unique().tolist()
-        plasmid_classification_df = query_plasmid_id(plasmid_ids)
-
-        # Ensure plasmid_classification_df has the expected columns
-        expected_columns = [
-            'NUCCORE_ACC', 
-            'TAXONOMY_superkingdom', 
-            'TAXONOMY_phylum', 
-            'TAXONOMY_class', 
-            'TAXONOMY_order', 
-            'TAXONOMY_family', 
-            'TAXONOMY_genus', 
-            'TAXONOMY_species'
-        ]
-
-        # Check if the returned dataframe contains all expected columns
-        if not all(col in plasmid_classification_df.columns for col in expected_columns):
-            logger.error("The plasmid classification data does not contain the expected columns.")
-            raise ValueError("The plasmid classification data does not contain the expected columns.")
-
-        # Rename columns to match internal structure
-        plasmid_classification_df.rename(columns={
-            'NUCCORE_ACC': 'Plasmid ID',
-            'TAXONOMY_superkingdom': 'Kingdom',
-            'TAXONOMY_phylum': 'Phylum',
-            'TAXONOMY_class': 'Class',
-            'TAXONOMY_order': 'Order',
-            'TAXONOMY_family': 'Family',
-            'TAXONOMY_genus': 'Genus',
-            'TAXONOMY_species': 'Species'
-        }, inplace=True)
-
-        # Define prefixes for taxonomy tiers
-        prefixes = {
-            'Domain': 'd_',
-            'Kingdom': 'k_',
-            'Phylum': 'p_',
-            'Class': 'c_',
-            'Order': 'o_',
-            'Family': 'f_',
-            'Genus': 'g_',
-            'Species': 's_'
-        }
-
-        # Replace certain text in the classification dataframe
-        plasmid_classification_df = plasmid_classification_df.replace(r"\s*\(.*\)", "", regex=True)
-        plasmid_classification_df['Domain'] = plasmid_classification_df['Kingdom']
-
-        # Merge plasmid classification with taxonomy data
-        taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
-        taxonomy_data = taxonomy_data.merge(
-            plasmid_classification_df[['Plasmid ID'] + taxonomy_columns],
-            on='Plasmid ID',
-            how='left',
-            suffixes=('', '_new')
-        )
-
-        # Fill taxonomy columns with new classification where available
-        for column in taxonomy_columns:
-            taxonomy_data[column] = taxonomy_data[column + '_new'].combine_first(taxonomy_data[column])
-
-        # Drop unnecessary columns after merge
-        taxonomy_data = taxonomy_data.drop(columns=['Plasmid ID'] + [col + '_new' for col in taxonomy_columns])
-
-        # Merge contig, binning, and taxonomy data
-        combined_data = pd.merge(contig_data, binning_data, on="Contig", how="left")
-        combined_data = pd.merge(combined_data, taxonomy_data, on="Bin", how="left")
-
-        # Apply taxonomy adjustments
-        combined_data = combined_data.apply(lambda row: adjust_taxonomy(row, taxonomy_columns, prefixes), axis=1)
-
-        # Fill missing bins with 'Unbinned MAG'
-        combined_data['Bin'] = combined_data['Bin'].fillna('Unbinned MAG')
-        
-        # Set the 'Signal' column in combined_data using the diagonal values from the contact matrix
-        diagonal_values = contig_matrix.diagonal()
-        print(len(diagonal_values), max(diagonal_values), diagonal_values)
-        combined_data['Signal'] = diagonal_values
-
-        # Return the processed combined data directly
-        logger.info("Data processed successfully.")
-        return combined_data
-
-    except Exception as e:
-        logger.error(f"Error during data preparation: {e}; no preview will be generated.")
-        return None
 
 def create_upload_component(component_id, text, example_url, instructions):
     return dbc.Card(
@@ -348,8 +115,8 @@ def create_processed_data_preview(combined_data):
         return html.Div([
             html.H5('Processed Data Preview'),
             preview_table
-        ])
-    return None
+        ], style={'margin': '20px 0'})
+    return html.Div("No data available for preview.", style={'color': 'red', 'margin': '20px 0'})
 
 # Registering callbacks for uploads with logging
 def register_preparation_callbacks(app):
@@ -509,7 +276,7 @@ def register_preparation_callbacks(app):
     @app.callback(
         [Output('preparation-status-method1', 'data'),
          Output('dynamic-content-method1', 'children', allow_duplicate=True)],
-        [Input('execute-button-method1', 'n_clicks')],
+        [Input('execute-button', 'n_clicks')],
         [State('raw-contig-info', 'contents'),
          State('raw-contig-matrix', 'contents'),
          State('raw-binning-info', 'contents'),
@@ -518,15 +285,24 @@ def register_preparation_callbacks(app):
          State('raw-contig-matrix', 'filename'),
          State('raw-binning-info', 'filename'),
          State('raw-bin-taxonomy', 'filename'),
-         State('user-folder', 'data')],
-        prevent_initial_call=True
+         State('user-folder', 'data'),
+         State('tabs-method', 'value'),
+         State('current-stage-method1', 'data')],
+         prevent_initial_call=True
     )
     def prepare_data_method_1(n_clicks, contig_info, contig_matrix, binning_info, bin_taxonomy,
                               contig_info_name, contig_matrix_name, binning_info_name, bin_taxonomy_name,
-                              user_folder):
-        logger.info("Validating and preparing data for Method 1...")
+                              user_folder, selected_method, current_stage_method1):
+        # Ensure the selected method is 'method1' and the current stage is 'Preparation'
+        ctx = dash.callback_context
+        if not ctx.triggered or ctx.triggered[0]['prop_id'].split('.')[0] != 'execute-button':
+            raise PreventUpdate
+        if selected_method != 'method1' or current_stage_method1 != 'Preparation':
+            raise PreventUpdate
         if n_clicks is None:
             raise PreventUpdate
+
+        logger.info("Validating and preparing data for Method 1...")
     
         if not all([contig_info, contig_matrix, binning_info, bin_taxonomy]):
             logger.error("Validation failed: Missing required files.")
@@ -617,16 +393,24 @@ def register_preparation_callbacks(app):
 
     @app.callback(
         Output('preparation-status-method2', 'data'),
-        [Input('execute-button-method2', 'n_clicks')],
+        [Input('execute-button', 'n_clicks')],
         [State('unnormalized-data-folder', 'contents'),
          State('unnormalized-data-folder', 'filename'),
-         State('user-folder', 'data')],
-        prevent_initial_call=True
+         State('user-folder', 'data'),
+         State('tabs-method', 'value'),
+         State('current-stage-method2', 'data')],
+         prevent_initial_call=True
     )
-    def prepare_data_method_2(n_clicks, contents, filename, user_folder):
-        logger.info("Validating and preparing Method 2")
+    def prepare_data_method_2(n_clicks, contents, filename, user_folder, selected_method, current_stage_method2):
+        ctx = dash.callback_context
+        if not ctx.triggered or ctx.triggered[0]['prop_id'].split('.')[0] != 'execute-button':
+            raise PreventUpdate
+        if selected_method != 'method2' or current_stage_method2 != 'Preparation':
+            raise PreventUpdate
         if n_clicks is None:
             raise PreventUpdate
+            
+        logger.info("Validating and preparing Method 2")    
         
         if contents is None:
             logger.error("Validation failed for Method 2: No file uploaded.")
@@ -690,16 +474,24 @@ def register_preparation_callbacks(app):
     # Updated Method 3 Callback to Extract and Save .7z Files
     @app.callback(
         Output('preparation-status-method3', 'data'),
-        [Input('execute-button-method3', 'n_clicks')],
+        [Input('execute-button', 'n_clicks')],
         [State('normalized-data-folder', 'contents'),
          State('normalized-data-folder', 'filename'),
-         State('user-folder', 'data')],
-        prevent_initial_call=True
+         State('user-folder', 'data'),
+         State('tabs-method', 'value'),
+         State('current-stage-method3', 'data')],
+         prevent_initial_call=True
     )
-    def prepare_data_method_3(n_clicks, contents, filename, user_folder):
-        logger.info("Validating and preparing Method 3")
+    def prepare_data_method_3(n_clicks, contents, filename, user_folder, selected_method, current_stage_method3):  
+        ctx = dash.callback_context
+        if not ctx.triggered or ctx.triggered[0]['prop_id'].split('.')[0] != 'execute-button':
+            raise PreventUpdate
+        if selected_method != 'method3' or current_stage_method3 != 'Preparation':
+            raise PreventUpdate
         if n_clicks is None:
             raise PreventUpdate
+            
+        logger.info("Validating and preparing Method 3")
         
         if contents is None:
             logger.error("Validation failed for Method 3: No file uploaded.")
@@ -717,7 +509,7 @@ def register_preparation_callbacks(app):
             
             # Validate the folder contents
             logger.info("Validating unnormalized folder contents...")
-            validate_unnormalized_folder(file_list)
+            validate_normalized_folder(file_list)
     
             # Define the extraction path
             user_folder_path = f'assets/output/{user_folder}'

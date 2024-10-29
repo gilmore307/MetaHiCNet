@@ -320,7 +320,7 @@ def register_normalization_callbacks(app, method_id):
         [Output(f'normalization-status-method-{method_id}', 'data'),
          Output(f'dynamic-heatmap-method-{method_id}', 'children'),
          Output(f'normalized-matrix-store-{method_id}', 'data')],
-        [Input(f'execute-button-b-{method_id}', 'n_clicks')],
+        [Input('execute-button', 'n_clicks')],
         [State(f'normalization-method-{method_id}', 'value'),
          State(f'epsilon-input-{method_id}', 'value'),
          State(f'thres-input-{method_id}', 'value'),
@@ -333,7 +333,7 @@ def register_normalization_callbacks(app, method_id):
     def execute_normalization(n_clicks, method, epsilon, threshold, max_iter, user_folder, selected_method, current_stage):
         # Check if the selected method matches the method_id of the callback
         ctx = dash.callback_context
-        if not ctx.triggered or ctx.triggered[0]['prop_id'].split('.')[0] != f'execute-button-b-{method_id}':
+        if not ctx.triggered or ctx.triggered[0]['prop_id'].split('.')[0] != 'execute-button':
             raise PreventUpdate
         if selected_method != f'method{method_id}' or current_stage != 'Normalization':
             raise PreventUpdate
