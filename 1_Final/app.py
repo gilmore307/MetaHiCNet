@@ -216,6 +216,13 @@ def update_execute_button(current_stage, prep_status1, prep_status2, prep_status
     [State('user-folder', 'data')]
 )
 def update_layout(selected_method, current_stage, user_folder):
+    ctx = dash.callback_context
+    if ctx.triggered:
+        trigger = ctx.triggered[0]
+        logger.info(f"Triggered by element ID: {trigger['prop_id']} with value: {trigger['value']}")
+    else:
+        logger.info("Callback triggered without a specific input (e.g., initial load).")
+    
     # Generate the flowchart for the current method and stage
     flowchart = create_flowchart(current_stage, method=selected_method)
 
@@ -230,10 +237,7 @@ def update_layout(selected_method, current_stage, user_folder):
         else:
             return no_update, no_update
     elif current_stage == 'Normalization':
-        if selected_method in ['method1', 'method2']:
-            content = create_normalization_layout()
-        else:
-            return no_update, no_update
+        content = create_normalization_layout()
     else:
         return no_update, no_update
     

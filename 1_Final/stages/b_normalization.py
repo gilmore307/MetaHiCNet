@@ -1,10 +1,10 @@
 from dash import dcc, html
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output, State
-import plotly.express as px
 import logging
 import os
 import py7zr
+import gc
 import numpy as np
 from helper import (
     preprocess_normalization,
@@ -34,21 +34,7 @@ def create_normalization_layout():
                 style={'width': '100%'}
             )
         ], className="my-3"),
-        html.Div(id='normalization-parameters', className="my-3"), 
-        html.Div(id='heatmap-container', className="my-3"),
-        dcc.Store(id='normalized-matrix-store', storage_type='memory')
-    ])
-
-    return layout
-
-def register_normalization_callbacks(app):
-    @app.callback(
-        Output('normalization-parameters', 'children'),
-        Input('normalization-method', 'value')
-    )
-    def update_parameters(normalization_method):
-        # Define parameters for each method and set all input boxes initially disabled
-        return html.Div([
+        html.Div([
             html.Div([
                 dcc.Checklist(
                     id='remove-unmapped-contigs',
@@ -68,8 +54,7 @@ def register_normalization_callbacks(app):
                 type='number',
                 value=5,
                 placeholder="Threshold percentage (0-100)",
-                style={'width': '100%'},
-                disabled=normalization_method not in ['Raw', 'normCC', 'HiCzin', 'bin3C', 'MetaTOR']
+                style={'width': '100%'}
             ),
             html.Label("Epsilon (default: 1): A small value added to avoid zero values in calculations."),
             dcc.Input(
@@ -77,8 +62,7 @@ def register_normalization_callbacks(app):
                 type='number',
                 value=1,
                 placeholder="Epsilon value",
-                style={'width': '100%'},
-                disabled=normalization_method not in ['HiCzin', 'bin3C', 'MetaTOR']
+                style={'width': '100%'}
             ),
             html.Label("Maximum Iterations (default: 1000): Controls the number of iterations for the Sinkhorn-Knopp algorithm."),
             dcc.Input(
@@ -86,8 +70,7 @@ def register_normalization_callbacks(app):
                 type='number',
                 value=1000,
                 placeholder="Maximum iterations for convergence",
-                style={'width': '100%'},
-                disabled=normalization_method != 'bin3C'
+                style={'width': '100%'}
             ),
             html.Label("Tolerance for Convergence (default: 1e-6): Defines the precision for convergence. Lower values increase precision."),
             dcc.Input(
@@ -95,10 +78,29 @@ def register_normalization_callbacks(app):
                 type='number',
                 value=1e-6,
                 placeholder="Tolerance for convergence",
-                style={'width': '100%'},
-                disabled=normalization_method != 'bin3C'
+                style={'width': '100%'}
             )
-        ])
+        ], id='normalization-parameters', className="my-3")
+    ])
+
+    return layout
+
+def register_normalization_callbacks(app):
+    @app.callback(
+        [Output('thres-input', 'disabled'),
+         Output('epsilon-input', 'disabled'),
+         Output('max-iter-input', 'disabled'),
+         Output('tol-input', 'disabled')],
+        Input('normalization-method', 'value')
+    )
+    def update_parameters(normalization_method):
+        # Set disabled attribute for each input based on the selected normalization method
+        thres_disabled = normalization_method not in ['Raw', 'normCC', 'HiCzin', 'bin3C', 'MetaTOR']
+        epsilon_disabled = normalization_method not in ['HiCzin', 'bin3C', 'MetaTOR']
+        max_iter_disabled = normalization_method != 'bin3C'
+        tol_disabled = normalization_method != 'bin3C'
+        
+        return thres_disabled, epsilon_disabled, max_iter_disabled, tol_disabled
 
     @app.callback(
         [Output('normalization-status', 'data')],
@@ -134,7 +136,10 @@ def register_normalization_callbacks(app):
         remove_host_host = 'remove_host' in remove_host_host
     
         # Preprocess the data needed for normalization
+        global contig_info, normalized_matrix
+        
         contig_info, contact_matrix = preprocess_normalization(user_folder)
+        
         if contig_info is None or contact_matrix is None:
             logger.error("Error reading files from folder. Please check the uploaded data.")
             return [False]
@@ -193,7 +198,10 @@ def register_normalization_callbacks(app):
             col=contig_contact_matrix.col,
             shape=contig_contact_matrix.shape
         )
-    
+        
+        del bin_data, contig_info, bin_contact_matrix, contig_contact_matrix, normalized_matrix
+        gc.collect()
+
         # Compress saved files into normalized_information.7z
         normalized_archive_path = os.path.join(user_output_path, 'normalized_information.7z')
         with py7zr.SevenZipFile(normalized_archive_path, 'w') as archive:

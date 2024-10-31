@@ -97,3 +97,35 @@ plt.grid(True)
 plt.gca().set_aspect('equal', adjustable='box')
 plt.savefig('AUDRC.png')
 plt.show()
+
+
+def heatmap(contact_matrix):
+    """
+    Generates a heatmap from a contact matrix with downsampling to 100 bins and logarithmic scaling.
+
+    Parameters:
+    - contact_matrix (array or sparse matrix): The contact matrix in dense or sparse format.
+    """
+    # If the contact matrix is in sparse format, convert it to a dense array
+    if isinstance(contact_matrix, coo_matrix):
+        contact_matrix = contact_matrix.toarray()
+
+    # Downsample the matrix to 100 bins
+    def downsample_matrix(matrix, target_bins=100):
+        original_size = matrix.shape[0]
+        factor = original_size // target_bins  # Calculate downsampling factor
+        return matrix[:factor * target_bins, :factor * target_bins].reshape(target_bins, factor, target_bins, factor).mean(axis=(1, 3))
+
+    downsampled_matrix = downsample_matrix(contact_matrix)
+
+    # Apply logarithmic scaling
+    log_scaled_matrix = np.log1p(downsampled_matrix)  # log(1 + x) to handle zeros
+
+    # Plot the heatmap with a wider color spectrum
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(log_scaled_matrix, cmap='plasma', cbar=False, xticklabels=False, yticklabels=False, square=True)
+    plt.show()
+
+# Example call to the function (replace 'contact_matrix' with an actual matrix when running in a live environment)
+# heatmap(contact_matrix)
+
