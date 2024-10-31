@@ -330,7 +330,7 @@ def register_preparation_callbacks(app):
             logger.info("Validation successful. Proceeding with data preparation...")
             
             # Process data using parsed dataframes directly
-            combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data, user_folder)
+            combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data)
     
             if combined_data is not None:
                 # Save `raw_contact_matrix.npz` using `save_file_to_user_folder`
@@ -341,7 +341,7 @@ def register_preparation_callbacks(app):
                 save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info_final.csv', user_folder)
                 
                 # Compress into `unnormalized_information.7z` including the two files
-                user_output_folder = os.path.join('assets', 'output', user_folder)
+                user_output_folder = os.path.join('output', user_folder)
                 unnormalized_archive_path = os.path.join(user_output_folder, 'unnormalized_information.7z')
                 with py7zr.SevenZipFile(unnormalized_archive_path, 'w') as archive:
                     archive.write(os.path.join(user_output_folder, 'raw_contact_matrix.npz'), 'raw_contact_matrix.npz')
@@ -420,7 +420,7 @@ def register_preparation_callbacks(app):
             validate_unnormalized_folder(file_list)
     
             # Define the extraction path
-            user_folder_path = f'assets/output/{user_folder}'
+            user_folder_path = f'output/{user_folder}'
             os.makedirs(user_folder_path, exist_ok=True)
     
             # Extract the 7z file to the user's folder
@@ -496,7 +496,7 @@ def register_preparation_callbacks(app):
             validate_normalized_folder(file_list)
     
             # Define the extraction path
-            user_folder_path = f'assets/output/{user_folder}'
+            user_folder_path = f'output/{user_folder}'
             os.makedirs(user_folder_path, exist_ok=True)
     
             # Extract the 7z file to the user's folder

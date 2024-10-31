@@ -2,7 +2,6 @@ import os
 import io
 import numpy as np
 import base64
-from scipy.sparse import csr_matrix
 import requests
 import py7zr
 import pandas as pd
@@ -285,7 +284,7 @@ def adjust_taxonomy(row, taxonomy_columns, prefixes):
 
     return row
 
-def process_data(contig_data, binning_data, taxonomy_data, contig_matrix, user_folder):
+def process_data(contig_data, binning_data, taxonomy_data, contig_matrix):
     try:
         logger.info("Starting data preparation...")
         
@@ -391,7 +390,7 @@ def preprocess_normalization(user_folder, assets_folder='output'):
         logger.info("Starting data preprocessing...")
         
         # Locate the folder path for the data preparation output
-        folder_path = os.path.join('assets', assets_folder, user_folder)
+        folder_path = os.path.join(assets_folder, user_folder)
         logger.info(f"Folder path for data preparation output: {folder_path}")
 
         # Define paths for the files within the folder
@@ -514,8 +513,8 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
             index = map_x < map_y
             map_x, map_y, map_data = map_x[index], map_y[index], map_data[index]
 
-            sample_site = standardize(np.log(contig_df['Restriction sites'][map_x] * contig_df['Restriction sites'][map_y]))
-            sample_len = standardize(np.log(contig_df['Length'][map_x] * contig_df['Length'][map_y]))
+            sample_site = standardize(np.log(contig_df['Restriction sites'].iloc[map_x].values * contig_df['Restriction sites'].iloc[map_y].values))
+            sample_len = standardize(np.log(contig_df['Length'].iloc[map_x].values * contig_df['Length'].iloc[map_y].values))
             sample_cov = standardize(np.log(coverage[map_x] * coverage[map_y]))
 
             data_hiczin = pd.DataFrame({

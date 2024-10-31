@@ -22,7 +22,7 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
     prevent_initial_callbacks='initial_duplicate'  # Set globally
 )
-app.enable_dev_tools(debug=True)
+app.enable_dev_tools(debug=True, dev_tools_hot_reload=False)
 
 logger = logging.getLogger("app_logger")
 logger.setLevel(logging.INFO)

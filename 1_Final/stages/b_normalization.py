@@ -173,7 +173,7 @@ def register_normalization_callbacks(app):
         )
     
         # Define the output path and save the files individually
-        user_output_path = f'assets/output/{user_folder}'
+        user_output_path = f'output/{user_folder}'
         os.makedirs(user_output_path, exist_ok=True)
     
         bin_info_final_path = os.path.join(user_output_path, 'bin_info_final.csv')
