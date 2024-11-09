@@ -150,11 +150,14 @@ def create_bar_chart(data_dict):
     traces = []
 
     for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
+        if data_frame.empty or 'value' not in data_frame.columns:
+            logger.warning(f"No data or 'value' column missing for {trace_name}, skipping trace.")
+            continue  # Skip if no 'value' column or data is empty
+            
         logger.info(f"Creating bar trace for {trace_name}")
         bar_data = data_frame.sort_values(by='value', ascending=False)
         bar_colors = bar_data['color']
 
-        # Check if 'hover' column exists
         if 'hover' in bar_data.columns:
             hover_text = bar_data['hover']
             bar_trace = go.Bar(
@@ -177,6 +180,10 @@ def create_bar_chart(data_dict):
 
         traces.append(bar_trace)
 
+    if not traces:
+        logger.warning("No valid traces created, returning empty figure.")
+        return go.Figure()  # Return an empty figure if no valid traces are created
+    
     logger.info("Bar traces created, now creating layout")
     bar_layout = go.Layout(
         xaxis=dict(
@@ -1461,7 +1468,9 @@ def display_and_filter_table(selected_tab, bin_row_data, contig_row_data, select
             "cellStyle": {
                 "styleConditions": style_conditions
             }
-        } 
+        }
+        bin_filter_model = apply_filter_logic(bin_row_data)
+        contig_filter_model = {}
         
     elif selected_tab == 'contig':
         bin_style = {'display': 'none'}
@@ -1477,10 +1486,9 @@ def display_and_filter_table(selected_tab, bin_row_data, contig_row_data, select
             "cellStyle": {
                 "styleConditions": style_conditions
             }
-        } 
-        
-    bin_filter_model = apply_filter_logic(bin_row_data)
-    contig_filter_model = apply_filter_logic(contig_row_data)
+        }
+        bin_filter_model = {}
+        contig_filter_model = apply_filter_logic(contig_row_data)
     
     row_count_text = f"Total Number of Rows: {sum(1 for row in contig_row_data if row['Visibility'] == 1)}"
 
