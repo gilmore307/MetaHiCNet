@@ -1320,7 +1320,6 @@ app.layout = dcc.Loading(
     ]
 )
 
-
 @app.callback(
     [Output('contact-table', 'columns'),
      Output('contact-table', 'data'),
@@ -1842,4 +1841,4 @@ app.clientside_callback(
     Input('scroll-trigger', 'data')
 )
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=True, port=2025)

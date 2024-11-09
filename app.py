@@ -239,7 +239,7 @@ def update_layout(selected_method, current_stage, user_folder):
 
     # Redirect to the visualization app when reaching the Visualization stage
     if current_stage == 'Visualization':
-        return flowchart, no_update, '/stages/c_visualization.py'  # Set URL for redirection
+        return flowchart, no_update, 'http://localhost:2025'  # Redirect to the separate visualization app
 
     # Check the current method and stage to render the appropriate content
     if current_stage == 'Preparation':
