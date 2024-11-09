@@ -958,6 +958,7 @@ def prepare_data(bin_information_intact, contig_information_intact, bin_dense_ma
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+server = app.server
 
 # Create a logger and add the custom Dash logger handler
 logger = logging.getLogger(__name__)
@@ -1840,5 +1841,6 @@ app.clientside_callback(
     Output('scroll-trigger', 'data'),
     Input('scroll-trigger', 'data')
 )
-if __name__ == '__main__':
-    app.run_server(debug=True, port=2025)
+if __name__ == "__main__":
+    port = int(os.environ.get('PORT', 8051))  # Get port from Heroku's environment variable
+    app.run_server(debug=True, port=port)
