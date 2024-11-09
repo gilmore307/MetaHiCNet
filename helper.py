@@ -16,7 +16,7 @@ logger = logging.getLogger("app_logger")
 def save_file_to_user_folder(contents, filename, user_folder, folder_name='output'):
 
     # Ensure the user folder exists
-    user_folder_path = os.path.join('assets', folder_name, user_folder)
+    user_folder_path = os.path.join(folder_name, user_folder)
     os.makedirs(user_folder_path, exist_ok=True)
     
     # Define the full file path
@@ -564,28 +564,6 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
                 (normalized_data, (contact_matrix.row, contact_matrix.col)), shape=contact_matrix.shape
             )
 
-            return denoise(normalized_contact_matrix, threshold)
-        elif method == 'Method 1':
-            logger.info("Running Method 1 normalization.")
-            within_contig_contacts = contact_matrix.diagonal() + epsilon
-            normalized_data = [
-                contact / np.sqrt(within_contig_contacts[i] * within_contig_contacts[j] + epsilon)
-                for i, j, contact in zip(contact_matrix.row, contact_matrix.col, contact_matrix.data)
-            ]
-            normalized_contact_matrix = coo_matrix(
-                (normalized_data, (contact_matrix.row, contact_matrix.col)), shape=contact_matrix.shape
-            )
-            return denoise(normalized_contact_matrix, threshold)
-        elif method == 'Method 2':
-            print("Running Method 2 normalization.")
-            within_contig_contacts = contact_matrix.diagonal() + epsilon
-            normalized_data = [
-                contact / (within_contig_contacts[i] * within_contig_contacts[j] + epsilon)
-                for i, j, contact in zip(contact_matrix.row, contact_matrix.col, contact_matrix.data)
-            ]
-            normalized_contact_matrix = coo_matrix(
-                (normalized_data, (contact_matrix.row, contact_matrix.col)), shape=contact_matrix.shape
-            )
             return denoise(normalized_contact_matrix, threshold)
 
     except Exception as e:

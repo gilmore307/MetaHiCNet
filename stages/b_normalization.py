@@ -21,9 +21,7 @@ def create_normalization_layout():
         {'label': 'normCC - GLM-based normalization to adjust for varying coverage and signal.', 'value': 'normCC'},
         {'label': 'HiCzin - Logarithmic scaling method for normalizing Hi-C contact frequencies.', 'value': 'HiCzin'},
         {'label': 'bin3C - Sinkhorn-Knopp algorithm for balancing matrix rows and columns.', 'value': 'bin3C'},
-        {'label': 'MetaTOR - Square root normalization to stabilize variance.', 'value': 'MetaTOR'},
-        {'label': 'Method 1 - Normalizes by the square root of within-contig contacts.', 'value': 'Method 1'},
-        {'label': 'Method 2 - Normalizes by direct division with within-contig contacts.', 'value': 'Method 2'}
+        {'label': 'MetaTOR - Square root normalization to stabilize variance.', 'value': 'MetaTOR'}
     ]
 
     layout = html.Div([
@@ -36,6 +34,7 @@ def create_normalization_layout():
                 style={'width': '100%'}
             )
         ], className="my-3"),
+        
         html.Div([
             html.Div([
                 dcc.Checklist(
@@ -50,38 +49,55 @@ def create_normalization_layout():
                     value=[],  # Default is unchecked
                 )
             ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}),
-            html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
-            dcc.Input(
-                id='thres-input',
-                type='number',
-                value=5,
-                placeholder="Threshold percentage (0-100)",
-                style={'width': '100%'}
-            ),
-            html.Label("Epsilon (default: 1): A small value added to avoid zero values in calculations."),
-            dcc.Input(
-                id='epsilon-input',
-                type='number',
-                value=1,
-                placeholder="Epsilon value",
-                style={'width': '100%'}
-            ),
-            html.Label("Maximum Iterations (default: 1000): Controls the number of iterations for the Sinkhorn-Knopp algorithm."),
-            dcc.Input(
-                id='max-iter-input',
-                type='number',
-                value=1000,
-                placeholder="Maximum iterations for convergence",
-                style={'width': '100%'}
-            ),
-            html.Label("Tolerance for Convergence (default: 1e-6): Defines the precision for convergence. Lower values increase precision."),
-            dcc.Input(
-                id='tol-input',
-                type='number',
-                value=1e-6,
-                placeholder="Tolerance for convergence",
-                style={'width': '100%'}
-            )
+
+            # Threshold input
+            html.Div([
+                html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
+                dcc.Input(
+                    id='thres-input',
+                    type='number',
+                    value=5,
+                    placeholder="Threshold percentage (0-100)",
+                    style={'width': '100%'}
+                )
+            ], id='thres-container', className="my-3"),
+
+            # Epsilon input
+            html.Div([
+                html.Label("Epsilon (default: 1): A small value added to avoid zero values in calculations."),
+                dcc.Input(
+                    id='epsilon-input',
+                    type='number',
+                    value=1,
+                    placeholder="Epsilon value",
+                    style={'width': '100%'}
+                )
+            ], id='epsilon-container', className="my-3"),
+
+            # Max iterations input
+            html.Div([
+                html.Label("Maximum Iterations (default: 1000): Controls the number of iterations for the Sinkhorn-Knopp algorithm."),
+                dcc.Input(
+                    id='max-iter-input',
+                    type='number',
+                    value=1000,
+                    placeholder="Maximum iterations for convergence",
+                    style={'width': '100%'}
+                )
+            ], id='max-iter-container', className="my-3"),
+
+            # Tolerance input
+            html.Div([
+                html.Label("Tolerance for Convergence (default: 1e-6): Defines the precision for convergence. Lower values increase precision."),
+                dcc.Input(
+                    id='tol-input',
+                    type='number',
+                    value=1e-6,
+                    placeholder="Tolerance for convergence",
+                    style={'width': '100%'}
+                )
+            ], id='tol-container', className="my-3")
+
         ], id='normalization-parameters', className="my-3")
     ])
 
@@ -89,20 +105,20 @@ def create_normalization_layout():
 
 def register_normalization_callbacks(app):
     @app.callback(
-        [Output('thres-input', 'disabled'),
-         Output('epsilon-input', 'disabled'),
-         Output('max-iter-input', 'disabled'),
-         Output('tol-input', 'disabled')],
+        [Output('thres-container', 'style'),
+         Output('epsilon-container', 'style'),
+         Output('max-iter-container', 'style'),
+         Output('tol-container', 'style')],
         Input('normalization-method', 'value')
     )
     def update_parameters(normalization_method):
-        # Set disabled attribute for each input based on the selected normalization method
-        thres_disabled = normalization_method not in ['Raw', 'normCC', 'HiCzin', 'bin3C', 'MetaTOR', 'Method 1', 'Method 2']
-        epsilon_disabled = normalization_method not in ['HiCzin', 'bin3C', 'MetaTOR', 'Method 1', 'Method 2']
-        max_iter_disabled = normalization_method != 'bin3C'
-        tol_disabled = normalization_method != 'bin3C'
+        # Determine styles based on the selected normalization method
+        thres_style = {'display': 'block'} if normalization_method in ['Raw', 'normCC', 'HiCzin', 'bin3C', 'MetaTOR'] else {'display': 'none'}
+        epsilon_style = {'display': 'block'} if normalization_method in ['HiCzin', 'bin3C', 'MetaTOR'] else {'display': 'none'}
+        max_iter_style = {'display': 'block'} if normalization_method == 'bin3C' else {'display': 'none'}
+        tol_style = {'display': 'block'} if normalization_method == 'bin3C' else {'display': 'none'}
         
-        return thres_disabled, epsilon_disabled, max_iter_disabled, tol_disabled
+        return thres_style, epsilon_style, max_iter_style, tol_style
 
     @app.callback(
         [Output('normalization-status', 'data')],

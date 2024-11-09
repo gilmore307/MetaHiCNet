@@ -67,14 +67,6 @@ log_text = dcc.Textarea(
 
 app.layout = dbc.Container([
     html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
-    dcc.Store(id='current-method', data='method1'),
-    dcc.Store(id='current-stage', data='Preparation'),
-    dcc.Store(id='preparation-status-method1', data=False),
-    dcc.Store(id='preparation-status-method2', data=False),
-    dcc.Store(id='preparation-status-method3', data=False),
-    dcc.Store(id='normalization-status', data=False),
-    dcc.Store(id='user-folder', data=str(uuid.uuid4())),
-
     dcc.Tabs(id='tabs-method', value='method1', children=[
         dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
         dcc.Tab(label="Upload Unnormalized Data for New Normalization Method", value='method2', id='tab-method2'),
@@ -82,17 +74,34 @@ app.layout = dbc.Container([
     ]),
     
     html.Div(id='flowchart-container', className="my-4"),
-    html.Div(id='dynamic-content', className="my-4"),
-    
-    dbc.Row([
-        dbc.Col(dbc.Button("Previous", id="previous-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
-        dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2),
-        dbc.Col(dbc.Button("Next", id="next-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
-    ], justify="between", align="center", className="mt-3"),
+
+    # Wrap 'dynamic-content' and button row in dcc.Loading
+    dcc.Loading(
+        id="loading-spinner",
+        type="default",
+        delay_show=500,
+        children=[
+            dcc.Store(id='current-method', data='method1'),
+            dcc.Store(id='current-stage', data='Preparation'),
+            dcc.Store(id='preparation-status-method1', data=False),
+            dcc.Store(id='preparation-status-method2', data=False),
+            dcc.Store(id='preparation-status-method3', data=False),
+            dcc.Store(id='normalization-status', data=False),
+            dcc.Store(id='user-folder', data=str(uuid.uuid4())),
+            html.Div(id='dynamic-content', className="my-4"),
+            
+            dbc.Row([
+                dbc.Col(dbc.Button("Previous", id="previous-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
+                dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2),
+                dbc.Col(dbc.Button("Next", id="next-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
+            ], justify="between", align="center", className="mt-3")
+        ]
+    ),
     
     dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
     log_text
 ], fluid=True)
+
 
 @app.callback(
     [Output('tab-method1', 'disabled'),
