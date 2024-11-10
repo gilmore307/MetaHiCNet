@@ -11,8 +11,9 @@ import dash_ag_grid as dag
 import plotly.graph_objects as go
 from dash import callback_context
 import plotly.express as px
-import plotly.colors as colors 
-from math import sqrt, sin, cos, pi
+import plotly.colors as colors
+import math 
+from math import sqrt, sin, cos
 from openai import OpenAI
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -345,6 +346,7 @@ def get_node_colors(cyto_elements, information_data):
 def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center_position=(0, 0)):
     distance /= 100 
     phi = (1 + sqrt(5)) / 2  # golden ratio
+    pi = math.pi
 
     # Identify bins that connect to other annotation
     connecting_bins = [bin for bin in bins if bin in inter_bin_edges and bin != selected_element]
@@ -391,7 +393,7 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center
 
     return {**inner_positions, **outer_positions}
 
-def taxonomy_visualization():
+def taxonomy_visualization(bin_information_intact):
     logger.info('Creating taxonomy visualization')
 
     host_data = bin_information_intact[bin_information_intact['Type'].isin(['chromosome', 'plasmid'])]
@@ -918,6 +920,43 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     return cyto_elements, bar_fig
 
+def load_data(user_folder):
+    logger.info('Loading data')
+    user_output_path = f'../output/{user_folder}'
+    bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
+    bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
+    contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
+    contig_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
+
+    # Load bin information
+    bin_information_intact = pd.read_csv(bin_info_path)
+    bin_matrix_data = np.load(bin_matrix_path)
+    bin_sparse_matrix = coo_matrix(
+        (bin_matrix_data['data'], (bin_matrix_data['row'], bin_matrix_data['col'])),
+        shape=tuple(bin_matrix_data['shape'])
+    )
+    bin_dense_matrix = bin_sparse_matrix.toarray()
+
+    # Load contig information
+    contig_information_intact = pd.read_csv(contig_info_path)
+    contig_matrix_data = np.load(contig_matrix_path)
+    contig_sparse_matrix = coo_matrix(
+        (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
+        shape=tuple(contig_matrix_data['shape'])
+    )
+    contig_dense_matrix = contig_sparse_matrix.toarray() 
+
+    # Set display columns and visibility
+    bin_display_columns = ['Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
+    bin_information_display = bin_information_intact[bin_display_columns].copy()
+    bin_information_display['Visibility'] = 1  # Default visibility
+
+    contig_display_columns = ['Contig', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
+    contig_information_display = contig_information_intact[contig_display_columns].copy()
+    contig_information_display['Visibility'] = 1  # Default visibility
+
+    return bin_information_intact, bin_dense_matrix, bin_information_display, contig_information_intact, contig_dense_matrix, contig_information_display
+
 def prepare_data(bin_information_intact, contig_information_intact, bin_dense_matrix, taxonomy_level = 'Family'):
     global bin_information
     global contig_information
@@ -975,42 +1014,8 @@ logger.info("App started")
 client = OpenAI(api_key='')
 
 # Load the data
-logger.info('Loading data')
-
-bin_info_path = '../assets/examples/output/bin_info_final.csv'
-bin_matrix_path= '../assets/examples/output/bin_contact_matrix.npz'
-
-bin_information_intact = pd.read_csv(bin_info_path)
-bin_matrix_data = np.load(bin_matrix_path)
-data = bin_matrix_data['data']
-row = bin_matrix_data['row']
-col = bin_matrix_data['col']
-shape = tuple(bin_matrix_data['shape'])
-bin_sparse_matrix = coo_matrix((data, (row, col)), shape=shape)
-bin_dense_matrix = bin_sparse_matrix.toarray()
-
-contig_info_path = '../assets/examples/output/contig_info_final.csv'
-contig_matrix_path= '../assets/examples/output/contig_contact_matrix.npz'
-
-contig_information_intact = pd.read_csv(contig_info_path)
-contig_matrix_data = np.load(contig_matrix_path)
-data = contig_matrix_data['data']
-row = contig_matrix_data['row']
-col = contig_matrix_data['col']
-shape = tuple(contig_matrix_data['shape'])
-contig_sparse_matrix = coo_matrix((data, (row, col)), shape=shape)
-contig_dense_matrix = contig_sparse_matrix.toarray()
-
-logger.info('Data loading completed')  
-
-bin_display_columns = ['Bin','Domain','Kingdom','Phylum','Class','Order','Family','Genus','Species','Restriction sites','Length','Coverage']
-bin_information_display = bin_information_intact[bin_display_columns].copy()
-bin_information_display.loc[:, 'Visibility'] = 1  # Default value to 1 (visible)
-
-contig_display_columns = ['Contig','Domain','Kingdom','Phylum','Class','Order','Family','Genus','Species','Restriction sites','Length','Coverage']
-contig_information_display = contig_information_intact[contig_display_columns].copy()
-contig_information_display.loc[:, 'Visibility'] = 1  # Default value to 1 (visible)
-
+user_folder = "examples"
+bin_information_intact, bin_dense_matrix, bin_information_display, contig_information_intact, contig_dense_matrix, contig_information_display = load_data(user_folder)
 bin_information, contig_information, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(bin_information_intact, contig_information_intact, bin_dense_matrix)
   
 type_colors = {
@@ -1663,7 +1668,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
             'selected_bin': None,
             'selected_contig': None
         }
-        treemap_fig, bar_fig = taxonomy_visualization()
+        treemap_fig, bar_fig = taxonomy_visualization(bin_information_intact)
         treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
         cyto_elements = []
         cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
@@ -1677,7 +1682,7 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
 
         if visualization_type == 'taxonomy_hierarchy':
             logger.info('show taxonomy_hierarchy visualization')
-            treemap_fig, bar_fig = taxonomy_visualization()
+            treemap_fig, bar_fig = taxonomy_visualization(bin_information_intact)
             treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
