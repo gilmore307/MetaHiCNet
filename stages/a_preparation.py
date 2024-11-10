@@ -24,7 +24,6 @@ from helper import (
 # Initialize logger
 logger = logging.getLogger("app_logger")
 
-
 def create_upload_component(component_id, text, example_url, instructions):
     return dbc.Card(
         [
