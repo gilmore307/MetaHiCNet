@@ -66,7 +66,6 @@ log_text = dcc.Textarea(
 )
 
 app.layout = dbc.Container([
-    dcc.Location(id='url', refresh=True),
     html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
     dcc.Tabs(id='tabs-method', value='method1', children=[
         dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
@@ -220,8 +219,7 @@ def update_execute_button(current_stage, prep_status1, prep_status2, prep_status
 
 @app.callback(
     [Output('flowchart-container', 'children'),  # Single container for flowchart
-     Output('dynamic-content', 'children'),
-     Output('url', 'pathname')],  # Add output for URL redirection
+     Output('dynamic-content', 'children')],  # Add output for URL redirection
     [Input('tabs-method', 'value'),  # Track selected method
      Input('current-stage', 'data')],  # Track current stage
     [State('user-folder', 'data')]
@@ -237,10 +235,6 @@ def update_layout(selected_method, current_stage, user_folder):
     # Generate the flowchart for the current method and stage
     flowchart = create_flowchart(current_stage, method=selected_method)
 
-    # Redirect to the visualization app when reaching the Visualization stage
-    if current_stage == 'Visualization':
-        return flowchart, no_update, 'http://localhost:2025'  # Redirect to the separate visualization app
-
     # Check the current method and stage to render the appropriate content
     if current_stage == 'Preparation':
         if selected_method == 'method1':
@@ -250,13 +244,13 @@ def update_layout(selected_method, current_stage, user_folder):
         elif selected_method == 'method3':
             content = create_upload_layout_method3()
         else:
-            return no_update, no_update, no_update
+            return no_update, no_update
     elif current_stage == 'Normalization':
         content = create_normalization_layout()
     else:
-        return no_update, no_update, no_update
+        return no_update, no_update
 
-    return flowchart, content, no_update  # Keep URL the same for other stages
+    return flowchart, content
 
 # Part 6: Periodic callback to update the log box content
 @app.callback(
