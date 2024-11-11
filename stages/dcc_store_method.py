@@ -4,7 +4,6 @@ import networkx as nx
 from scipy.sparse import coo_matrix
 import dash
 import dash_bootstrap_components as dbc
-from dash.exceptions import PreventUpdate
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
@@ -17,12 +16,11 @@ import math
 from math import sqrt, sin, cos
 from openai import OpenAI
 import os
-from io import StringIO
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import redis
-import pickle
 import json
+import pickle
 
 class DashLoggerHandler(logging.Handler):
     def __init__(self):
@@ -32,7 +30,7 @@ class DashLoggerHandler(logging.Handler):
     def emit(self, record):
         # This is the method that is called for each log message
         log_entry = self.format(record)
-        self.logs.append(log_entry)
+        self.logs.append(log_entry)  # Add log message to the list
 
     def get_logs(self):
         # Return the logs as a string (joining the list)
@@ -41,45 +39,39 @@ class DashLoggerHandler(logging.Handler):
     def clear_logs(self):
         # Clear the log list
         self.logs.clear()
-
+        
 def save_to_redis(key, data):
     if isinstance(data, pd.DataFrame):
+        # Convert the DataFrame to a JSON string for storage
         json_data = data.to_json(orient='split')
-        r.set(key, json_data.encode('utf-8'))
+        r.set(key, json_data)
     elif isinstance(data, np.ndarray):
+        # Convert the NumPy array to a binary format
         binary_data = pickle.dumps(data)
         r.set(key, binary_data)
-    elif isinstance(data, list) or isinstance(data, dict):
-        json_data = json.dumps(data)
-        r.set(key, json_data.encode('utf-8'))
     else:
-        raise ValueError("Unsupported data type")
+        raise ValueError("Data must be a Pandas DataFrame or a NumPy ndarray")
 
-# Function to load from Redis
+    print(f"Data saved to Redis with key: {key}")
+
 def load_from_redis(key):
     data = r.get(key)
-
+    
     if data is None:
         raise KeyError(f"No data found in Redis for key: {key}")
-
-    # First, try loading as binary data with pickle (for NumPy arrays or other binary objects)
+    
     try:
-        return pickle.loads(data)
-    except (pickle.UnpicklingError, TypeError):
-        pass  # If binary loading fails, continue to JSON loading
-
-    # Try interpreting the data as JSON (for DataFrames, lists, or dictionaries)
-    try:
-        decoded_data = data.decode('utf-8')
+        # Try loading as a DataFrame (JSON format)
+        return pd.read_json(data, orient='split')
+    except ValueError:
+        # If not JSON, try loading as a NumPy array (binary format)
         try:
-            # Attempt to load as DataFrame format JSON
-            return pd.read_json(StringIO(decoded_data), orient='split')
-        except ValueError:
-            # If not a DataFrame, try loading as a JSON string for list or dict
-            return json.loads(decoded_data)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise ValueError(f"Unable to load data from Redis for key: {key}, unknown format.")
-            
+            return pickle.loads(data)
+        except pickle.UnpicklingError:
+            raise ValueError(f"Unable to load data from Redis for key: {key}, unknown format.")
+    
+    return data
+
 # Function to get bin indexes based on annotation in a specific part of the dataframe
 def get_indexes(annotations, bin_information):
     # Number of threads to use: 4 * CPU core count
@@ -964,8 +956,8 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-redis_url = 'redis://localhost:6379/0'
-r = redis.StrictRedis.from_url(redis_url, decode_responses=False)
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+r = redis.StrictRedis.from_url(redis_url, decode_responses=True)
 
 # Create a logger and add the custom Dash logger handler
 logger = logging.getLogger(__name__)
@@ -976,18 +968,12 @@ dash_logger_handler.setFormatter(formatter)
 logger.addHandler(dash_logger_handler)
 logger.setLevel(logging.INFO)
 
-try:
-    r.ping()
-    logger.info("Connected to Redis!")
-except redis.ConnectionError:
-    logger.info("Failed to connect to Redis.")
-
 # Example of logging messages
 logger.info("App started")
 
 # Set OpenAI API key
 client = OpenAI(api_key='')
- 
+
 type_colors = {
     'chromosome': '#4472C4',
     'phage': '#E83D20',
@@ -1085,6 +1071,15 @@ base_stylesheet = [
     }
 ]
 
+current_visualization_mode = {
+    'visualization_type': None,
+    'taxonomy_level': None,
+    'selected_annotation': None,
+    'selected_bin': None,
+    'selected_contig': None
+}
+
+
 common_style = {
     'height': '38px',
     'display': 'inline-block',
@@ -1113,14 +1108,14 @@ app.layout = dcc.Loading(
     delay_show=1000,
     children=[
         html.Div([
+            dcc.Store(id='current-visualization-mode', data=current_visualization_mode),
+            dcc.Store(id='user-folder', data="examples"),
             dcc.Interval(
                 id='interval-component',
                 interval=1*1000,  # in milliseconds (every 1 second)
                 n_intervals=0
             ),
             html.Div([
-                dcc.Store(id='user-folder', data="examples"),
-                dcc.Store(id='data-loaded', data=False),
                 html.Button("Download files", id="download-btn", style={**common_style}),
                 html.Button("Reset", id="reset-btn", style={**common_style}),
                 html.Button("Help", id="open-help", style={**common_style}),
@@ -1287,159 +1282,101 @@ app.layout = dcc.Loading(
         ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
     ]
 )
-                
+
 @app.callback(
-    [Output('data-loaded', 'data')],
     [Input('user-folder', 'data')]
 )
 def load_data(user_folder):
     # Path setup for user-specific data
-    logger.info(f"Loading data for user folder: {user_folder}")
-    
     user_output_path = f'../output/{user_folder}'
     bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
     bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
     contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
     contig_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
 
-    # Redis keys specific to each user folder
-    bin_info_key = f'{user_folder}:bin-information-intact'
-    bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-    bin_display_key = f'{user_folder}:bin-information-display'
-    contig_info_key = f'{user_folder}:contig-information-intact'
-    contig_matrix_key = f'{user_folder}:contig-dense-matrix'
-    contig_display_key = f'{user_folder}:contig-information-display'
+    # Load bin and contig information
+    bin_information_intact = pd.read_csv(bin_info_path)
+    bin_matrix_data = np.load(bin_matrix_path)
+    bin_dense_matrix = coo_matrix(
+        (bin_matrix_data['data'], (bin_matrix_data['row'], bin_matrix_data['col'])),
+        shape=tuple(bin_matrix_data['shape'])
+    ).toarray()
 
-    # Load data from files
-    try:
-        bin_information_intact = pd.read_csv(bin_info_path)
-        logger.info("Loaded bin information intact from CSV.")
-        
-        bin_matrix_data = np.load(bin_matrix_path)
-        bin_dense_matrix = coo_matrix(
-            (bin_matrix_data['data'], (bin_matrix_data['row'], bin_matrix_data['col'])),
-            shape=tuple(bin_matrix_data['shape'])
-        ).toarray()
-        logger.info("Loaded bin dense matrix from NPZ.")
-
-        contig_information_intact = pd.read_csv(contig_info_path)
-        logger.info("Loaded contig information intact from CSV.")
-
-        contig_matrix_data = np.load(contig_matrix_path)
-        contig_dense_matrix = coo_matrix(
-            (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
-            shape=tuple(contig_matrix_data['shape'])
-        ).toarray()
-        logger.info("Loaded contig dense matrix from NPZ.")
-    except Exception as e:
-        logger.error(f"Error loading data from files: {e}")
-        return [False]
+    contig_information_intact = pd.read_csv(contig_info_path)
+    contig_matrix_data = np.load(contig_matrix_path)
+    contig_dense_matrix = coo_matrix(
+        (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
+        shape=tuple(contig_matrix_data['shape'])
+    ).toarray()
 
     # Prepare display data
     bin_display_columns = ['Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
     bin_information_display = bin_information_intact[bin_display_columns].copy()
-    bin_information_display['Visibility'] = 1
-    logger.info("Prepared bin information display data.")
+    bin_information_display['Visibility'] = 1  # Default visibility
 
     contig_display_columns = ['Contig', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
     contig_information_display = contig_information_intact[contig_display_columns].copy()
-    contig_information_display['Visibility'] = 1
-    logger.info("Prepared contig information display data.")
+    contig_information_display['Visibility'] = 1  # Default visibility
 
-    # Save the loaded data to Redis with keys specific to the user folder
-    try:
-        save_to_redis(bin_info_key, bin_information_intact)
-        logger.info(f"Saved bin information intact to Redis with key {bin_info_key}.")
-        
-        save_to_redis(bin_matrix_key, bin_dense_matrix)
-        logger.info(f"Saved bin dense matrix to Redis with key {bin_matrix_key}.")
-        
-        save_to_redis(bin_display_key, bin_information_display)
-        logger.info(f"Saved bin information display to Redis with key {bin_display_key}.")
-        
-        save_to_redis(contig_info_key, contig_information_intact)
-        logger.info(f"Saved contig information intact to Redis with key {contig_info_key}.")
-        
-        save_to_redis(contig_matrix_key, contig_dense_matrix)
-        logger.info(f"Saved contig dense matrix to Redis with key {contig_matrix_key}.")
-        
-        save_to_redis(contig_display_key, contig_information_display)
-        logger.info(f"Saved contig information display to Redis with key {contig_display_key}.")
-    except Exception as e:
-        logger.error(f"Error saving data to Redis: {e}")
-        return [False]
+    # Save to Redis
+    save_to_redis('bin-information-intact', bin_information_intact)
+    save_to_redis('bin-dense-matrix', bin_dense_matrix)
+    save_to_redis('bin-information-display', bin_information_display)
+    save_to_redis('contig-information-intact', contig_information_intact)
+    save_to_redis('contig-dense-matrix', contig_dense_matrix)
+    save_to_redis('contig-information-display', contig_information_display)
 
-    logger.info("Data loaded and saved to Redis successfully.")
-    return [True]
+    # Return None since we're no longer using `dcc.Store` outputs
+    return None
 
 @app.callback(
     [Output('contact-table', 'columns'),
      Output('contact-table', 'data'),
      Output('contact-table', 'style_data_conditional'),
-     Output('reset-btn', 'n_clicks')],
-    [Input('taxonomy-level-selector', 'value')],
-    [State('reset-btn', 'n_clicks'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
+     Output('reset-btn', 'n_clicks'),
+     Output('bin-information', 'data'),
+     Output('contig-information', 'data'),
+     Output('unique-annotations', 'data'),
+     Output('contact-matrix', 'data'),
+     Output('contact-matrix-display', 'data'),
+     Output('current-visualization-mode', 'data')],
+    [Input('taxonomy-level-selector', 'value'),
+     Input('bin-information-intact', 'data'),
+     Input('contig-information-intact', 'data'),
+     Input('bin-dense-matrix', 'data')],
+    [State('reset-btn', 'n_clicks'), 
+     State('current-visualization-mode', 'data')]
 )
-def update_data(taxonomy_level, reset_clicks, user_folder, data_loaded):
-    if not data_loaded:
-        logger.info("Data not loaded, raising PreventUpdate.")
-        raise PreventUpdate
-
-    logger.info(f"Updating data for user folder: {user_folder} with taxonomy level: {taxonomy_level or 'Family'}")
-
+def update_data(
+    taxonomy_level, bin_information_data, contig_information_data, bin_dense_matrix_data, reset_clicks, current_visualization_mode
+):
     # Default taxonomy level if not provided
     if taxonomy_level is None:
         taxonomy_level = 'Family'
 
-    # Define Redis keys that incorporate the user_folder to avoid concurrency issues
-    bin_info_key = f'{user_folder}:bin-information-intact'
-    contig_info_key = f'{user_folder}:contig-information-intact'
-    bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-    visualization_mode_key = f'{user_folder}:current-visualization-mode'
-    bin_information_key = f'{user_folder}:bin-information'
-    contig_information_key = f'{user_folder}:contig-information'
-    unique_annotations_key = f'{user_folder}:unique-annotations'
-    contact_matrix_key = f'{user_folder}:contact-matrix'
-    contact_matrix_display_key = f'{user_folder}:contact-matrix-display'
-
-    # Load user-specific data from Redis
-    try:
-        bin_information_intact = load_from_redis(bin_info_key)
-        logger.info(f"Loaded bin information intact from Redis with key {bin_info_key}.")
-        
-        contig_information_intact = load_from_redis(contig_info_key)
-        logger.info(f"Loaded contig information intact from Redis with key {contig_info_key}.")
-        
-        bin_dense_matrix = load_from_redis(bin_matrix_key)
-        logger.info(f"Loaded bin dense matrix from Redis with key {bin_matrix_key}.")
-    except KeyError as e:
-        logger.error(f"KeyError while loading data from Redis: {e}")
-        raise PreventUpdate
+    # Convert stored data back to DataFrames and arrays
+    bin_information_intact = pd.DataFrame(bin_information_data)
+    contig_information_intact = pd.DataFrame(contig_information_data)
+    bin_dense_matrix = np.array(bin_dense_matrix_data)
 
     # Set taxonomy columns
     taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
-    
+
     # Process bin and contig information by annotation
     bin_information = bin_information_intact.copy()
     bin_information['Annotation'] = bin_information[taxonomy_level]
     bin_information = bin_information.drop(columns=taxonomy_columns)
-    logger.info("Processed bin information by annotation.")
 
     contig_information = contig_information_intact.copy()
     contig_information['Annotation'] = contig_information[taxonomy_level]
     contig_information = contig_information.drop(columns=taxonomy_columns)
-    logger.info("Processed contig information by annotation.")
 
     # Identify unique annotations
     unique_annotations = bin_information['Annotation'].unique()
-    logger.info(f"Identified unique annotations: {unique_annotations}")
 
     # Initialize and populate the contact matrix
     contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
     bin_indexes_dict = get_indexes(unique_annotations, bin_information)
-    logger.info("Initialized contact matrix.")
 
     # Compute contact values
     for annotation_i in unique_annotations:
@@ -1448,15 +1385,16 @@ def update_data(taxonomy_level, reset_clicks, user_folder, data_loaded):
             indexes_j = bin_indexes_dict[annotation_j]
             sub_matrix = bin_dense_matrix[np.ix_(indexes_i, indexes_j)]
             contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
-    logger.info("Populated contact matrix with computed contact values.")
 
     # Prepare display version of the contact matrix
     contact_matrix_display = contact_matrix.astype(int).copy()
     contact_matrix_display.insert(0, 'Annotation', contact_matrix_display.index)
-    logger.info("Prepared display version of the contact matrix.")
-    
+
+    # Reset clicks if current visualization mode has changed
+    if current_visualization_mode['visualization_type'] != 'taxonomy_hierarchy':
+        reset_clicks = (reset_clicks or 0) + 1
+
     # Update visualization mode state
-    reset_clicks = (reset_clicks or 0) + 1
     current_visualization_mode = {
         'visualization_type': 'taxonomy_hierarchy',
         'taxonomy_level': taxonomy_level,
@@ -1464,34 +1402,21 @@ def update_data(taxonomy_level, reset_clicks, user_folder, data_loaded):
         'selected_bin': None,
         'selected_contig': None
     }
-    logger.info("Updated current visualization mode state.")
 
     # Define table columns and data for display
     table_columns = [{"name": col, "id": col} for col in contact_matrix_display.columns]
     table_data = contact_matrix_display.to_dict('records')
     style_conditions = styling_annotation_table(contact_matrix_display, bin_information)
-    logger.info("Prepared table columns, data, and style conditions.")
 
-    # Save updated data to Redis
-    save_to_redis(bin_information_key, bin_information)
-    logger.info(f"Saved bin information to Redis with key {bin_information_key}.")
-    
-    save_to_redis(contig_information_key, contig_information)
-    logger.info(f"Saved contig information to Redis with key {contig_information_key}.")
-    
-    save_to_redis(unique_annotations_key, unique_annotations)
-    logger.info(f"Saved unique annotations to Redis with key {unique_annotations_key}.")
-    
-    save_to_redis(contact_matrix_key, contact_matrix)
-    logger.info(f"Saved contact matrix to Redis with key {contact_matrix_key}.")
-    
-    save_to_redis(contact_matrix_display_key, contact_matrix_display)
-    logger.info(f"Saved contact matrix display to Redis with key {contact_matrix_display_key}.")
-    
-    save_to_redis(visualization_mode_key, current_visualization_mode)
-    logger.info(f"Saved current visualization mode to Redis with key {visualization_mode_key}.")
-
-    return table_columns, table_data, style_conditions, reset_clicks
+    return (
+        table_columns, table_data, style_conditions, reset_clicks,
+        bin_information.to_dict('records'), 
+        contig_information.to_dict('records'), 
+        unique_annotations.tolist(), 
+        contact_matrix.to_dict(), 
+        contact_matrix_display.to_dict('records'),
+        current_visualization_mode
+    )
 
 @app.callback(
     [Output('bin-info-table', 'rowData'),
@@ -1504,32 +1429,39 @@ def update_data(taxonomy_level, reset_clicks, user_folder, data_loaded):
      Output('contig-info-table', 'defaultColDef'),
      Output('row-count', 'children')],
     [Input('table-tabs', 'value'),
-     Input('bin-info-table', 'rowData'),
-     Input('contig-info-table', 'rowData'),
      Input('annotation-selector', 'value'),
      Input('visibility-filter', 'value')],
-    [State('cyto-graph', 'elements'),
-     State('taxonomy-level-selector', 'value'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
+    [State('bin-information', 'data'),
+     State('bin-dense-matrix', 'data'),
+     State('bin-information-display', 'data'),
+     State('contig-information', 'data'),
+     State('contig-dense-matrix', 'data'),
+     State('contig-information-display', 'data'),
+     State('unique-annotations', 'data'),
+     State('contact-matrix', 'data'),
+     State('contact-matrix-display', 'data'),
+     State('current-visualization-mode', 'data'),
+     State('cyto-graph', 'elements'),
+     State('taxonomy-level-selector', 'value')],
+    prevent_initial_call=True
 )
-def display_info_table(selected_tab, bin_row_data, contig_row_data, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
-    if not data_loaded:
-        raise PreventUpdate
-        
-    bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
-    bin_information_display = load_from_redis(f'{user_folder}:bin-information-display')
-    contig_dense_matrix = load_from_redis(f'{user_folder}:contig-dense-matrix')
-    contig_information_display = load_from_redis(f'{user_folder}:contig-information-display')
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-    current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
+def display_and_filter_table(
+        selected_tab, selected_annotation, filter_value,
+        bin_information, bin_dense_matrix, bin_information_display,
+        contig_information, contig_dense_matrix, contig_information_display,
+        unique_annotations, contact_matrix, contact_matrix_display,
+        current_visualization_mode, cyto_elements, taxonomy_level):
+    
+    bin_information = pd.DataFrame(bin_information)
+    contig_information = pd.DataFrame(contig_information)
+    bin_dense_matrix = np.array(bin_dense_matrix) 
+    contig_dense_matrix = np.array(contig_dense_matrix)
+    bin_information_display = pd.DataFrame(bin_information_display)
+    contig_information_display = pd.DataFrame(contig_information_display)
     
     bin_row_data = bin_information_display.to_dict('records')
     contig_row_data = contig_information_display.to_dict('records')
     
-    # Default styles to hide tables initially
     bin_style = {'display': 'none'}
     contig_style = {'display': 'none'}
     bin_filter_model = {}
@@ -1670,19 +1602,19 @@ def display_info_table(selected_tab, bin_row_data, contig_row_data, selected_ann
      Input('cyto-graph', 'selectedNodeData'),
      Input('table-tabs', 'value')],
     [State('taxonomy-level-selector', 'value'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
+     State('bin-information', 'data'),
+     State('contig-information', 'data'),
+     State('contact-matrix-display', 'data')],
+    prevent_initial_call=True
 )
-def sync_selectors(reset_clicks, visualization_type, contact_table_active_cell, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, user_folder, data_loaded):
-    if not data_loaded:
-        raise PreventUpdate
-        
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    contact_matrix_display = load_from_redis(f'{user_folder}:contact-matrix-display')
-    
+def sync_selectors(reset_clicks, visualization_type, contact_table_active_cell, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, bin_information, contig_information, contact_matrix_display):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    # Convert stored data to DataFrame if needed
+    bin_information = pd.DataFrame(bin_information)
+    contig_information = pd.DataFrame(contig_information)
+    contact_matrix_display = pd.DataFrame(contact_matrix_display)  # Assuming it's in tabular format
 
     # Initialize the styles as hidden
     annotation_selector_style = {'display': 'none'}
@@ -1701,10 +1633,10 @@ def sync_selectors(reset_clicks, visualization_type, contact_table_active_cell, 
             triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, current_tab,
             bin_information, contig_information, contact_matrix_display
         )
-        
+    
     if triggered_id == 'table-tabs':
         visualization_type = current_tab
-            
+
     # Update styles, tab, and visualization type based on selections
     if selected_bin or visualization_type == 'bin':
         visualization_type = 'bin'
@@ -1724,6 +1656,7 @@ def sync_selectors(reset_clicks, visualization_type, contact_table_active_cell, 
     return (visualization_type, selected_annotation, annotation_selector_style,
             selected_bin, bin_selector_style, selected_contig, contig_selector_style,
             tab_value, None, [], [])
+
 
 def synchronize_selections(triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, table_tab_value, bin_information, contig_information, contact_matrix_display):
     selected_annotation = None
@@ -1788,13 +1721,14 @@ def synchronize_selections(triggered_id, selected_node_data, bin_info_selected_r
 
     return selected_annotation, selected_bin, selected_contig
 
-# Callback to update the visualizationI want to 
+# Callback to update the visualization
 @app.callback(
     [Output('cyto-graph', 'elements'),
      Output('cyto-graph', 'style'),
      Output('bar-chart', 'figure'),
      Output('treemap-graph', 'figure'),
-     Output('treemap-graph', 'style')],
+     Output('treemap-graph', 'style'),
+     Output('current-visualization-mode', 'data', allow_duplicate=True)],  # Output current visualization mode
     [Input('reset-btn', 'n_clicks'),
      Input('confirm-btn', 'n_clicks')],
     [State('visualization-selector', 'value'),
@@ -1803,37 +1737,41 @@ def synchronize_selections(triggered_id, selected_node_data, bin_info_selected_r
      State('contig-selector', 'value'),
      State('contact-table', 'data'),
      State('table-tabs', 'value'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
+     State('bin-information-intact', 'data'),
+     State('bin-information', 'data'),
+     State('contig-information', 'data'),
+     State('contig-dense-matrix', 'data'),
+     State('bin-dense-matrix', 'data'),
+     State('unique-annotations', 'data'),
+     State('contact-matrix', 'data'),
+     State('current-visualization-mode', 'data')],
+    prevent_initial_call=True
 )
-def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, table_data, selected_tab, user_folder, data_loaded):
-    if not data_loaded:
-        logger.info("Data not loaded, raising PreventUpdate.")
-        raise PreventUpdate
-        
-    logger.info("update_visualization triggered.")
-    logger.info(f"Visualization type: {visualization_type}")
-    logger.info(f"Selected annotation: {selected_annotation}")
-    logger.info(f"Selected bin: {selected_bin}")
-    logger.info(f"Selected contig: {selected_contig}")
+def update_visualization(
+    reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, 
+    table_data, selected_tab, bin_information_intact, bin_information, contig_information, 
+    contig_dense_matrix, bin_dense_matrix, unique_annotations, contact_matrix, current_visualization_mode
+):
+    logger.info('update_visualization triggered')
+    logger.info(f'Visualization type: {visualization_type}')
+    logger.info(f'Selected annotation: {selected_annotation}')
+    logger.info(f'Selected bin: {selected_bin}')
+    logger.info(f'Selected contig: {selected_contig}')
     
-    # Load user-specific data from Redis
-    bin_information_intact = load_from_redis(f'{user_folder}:bin-information-intact')
-    bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
-    contig_dense_matrix = load_from_redis(f'{user_folder}:contig-dense-matrix')
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-    contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
-    current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
-    logger.info("Successfully loaded all necessary data from Redis.")
-
+    bin_information_intact = pd.DataFrame(bin_information_intact)
+    bin_information = pd.DataFrame(bin_information)
+    contig_information = pd.DataFrame(contig_information)
+    contig_dense_matrix = np.array(contig_dense_matrix)
+    bin_dense_matrix = np.array(bin_dense_matrix) 
+    unique_annotations = np.array(unique_annotations)
+    contact_matrix = pd.DataFrame(contact_matrix)
+    
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    logger.info(f"Triggered by: {triggered_id}")
-
+    
     if triggered_id == 'reset-btn':
-        logger.info("Reset button clicked, switching to taxonomy_hierarchy visualization.")
+        # Reset to show the original plot
+        logger.info('reset to show taxonomy_hierarchy visualization')
         current_visualization_mode = {
             'visualization_type': 'taxonomy_hierarchy',
             'selected_annotation': None,
@@ -1846,53 +1784,45 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
         cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
 
     elif triggered_id == 'confirm-btn':
-        logger.info("Confirm button clicked, updating visualization mode with selected values.")
-        current_visualization_mode.update({
-            'visualization_type': visualization_type,
-            'selected_annotation': selected_annotation,
-            'selected_bin': selected_bin,
-            'selected_contig': selected_contig
-        })
-        save_to_redis(f'{user_folder}:current-visualization-mode', current_visualization_mode)
-        logger.info(f"Updated current_visualization_mode and saved to Redis with key: {user_folder}:current-visualization-mode")
+        # Update the current visualization mode with selected values
+        current_visualization_mode['visualization_type'] = visualization_type
+        current_visualization_mode['selected_annotation'] = selected_annotation
+        current_visualization_mode['selected_bin'] = selected_bin
+        current_visualization_mode['selected_contig'] = selected_contig
 
         if visualization_type == 'taxonomy_hierarchy':
-            logger.info("Displaying taxonomy_hierarchy visualization.")
+            logger.info('show taxonomy_hierarchy visualization')
             treemap_fig, bar_fig = taxonomy_visualization(bin_information_intact, bin_information, unique_annotations, contact_matrix)
             treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             
         elif visualization_type == 'basic' or (selected_annotation and not selected_bin and not selected_contig):
-            logger.info("Displaying basic annotation visualization.")
+            logger.info('show basic annotation visualization')
             cyto_elements, bar_fig, _ = annotation_visualization(bin_information, unique_annotations, contact_matrix)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
 
         elif visualization_type == 'bin' and selected_bin:
-            logger.info(f"Displaying bin visualization for selected bin: {selected_bin}.")
+            logger.info('show bin visualization')
             cyto_elements, bar_fig = bin_visualization(selected_annotation, selected_bin, bin_information, bin_dense_matrix, unique_annotations)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
 
         elif visualization_type == 'contig' and selected_contig:
-            logger.info(f"Displaying contig visualization for selected contig: {selected_contig}.")
+            logger.info('show contig visualization')
             cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig, contig_information, contig_dense_matrix, unique_annotations)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-
-    # Log which tab is selected and return the appropriate layout
-    logger.info(f"Selected tab: {selected_tab}")
+    
+    # Return the appropriate column definition based on the selected tab
     if selected_tab == 'bin':
-        logger.info("Returning elements and layout for bin tab.")
-        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
+        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, current_visualization_mode
     elif selected_tab == 'contig':
-        logger.info("Returning elements and layout for contig tab.")
-        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
-
+        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, current_visualization_mode
     
 @app.callback(
     [Output('cyto-graph', 'elements', allow_duplicate=True),
@@ -1902,25 +1832,26 @@ def update_visualization(reset_clicks, confirm_clicks, visualization_type, selec
     [Input('annotation-selector', 'value'),
      Input('bin-selector', 'value'),
      Input('contig-selector', 'value')],
-    [State('user-folder', 'data'),
-    State('data-loaded', 'data')],
-   prevent_initial_call=True
+    [State('bin-information', 'data'),  
+     State('contig-information', 'data'), 
+     State('unique-annotations', 'data'),
+     State('contact-matrix', 'data')],
+    prevent_initial_call=True
 )
-def update_selected_styles(selected_annotation, selected_bin, selected_contig, user_folder, data_loaded):
-    if not data_loaded:
-        raise PreventUpdate
-        
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-    contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
-    current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')    
-        
+def update_selected_styles(selected_annotation, selected_bin, selected_contig,
+                           bin_information, contig_information, unique_annotations,
+                           contact_matrix):
+
+    bin_information = pd.DataFrame(bin_information) 
+    contig_information = pd.DataFrame(contig_information)
+    unique_annotations = np.array(unique_annotations)
+    contact_matrix = pd.DataFrame(contact_matrix)
+
     selected_nodes = []
     selected_edges = []
     hover_info = "No selection"
-    cyto_elements = dash.no_update  # Default to no update for elements
-    cyto_style = dash.no_update  # Default to no update for layout style
+    cyto_elements = dash.no_update 
+    cyto_style = dash.no_update
 
     # Determine which selection to use based on the active tab
     if  selected_bin:
@@ -1969,17 +1900,14 @@ def update_selected_styles(selected_annotation, selected_bin, selected_contig, u
     [Input('annotation-selector', 'value')],
     [State('visualization-selector', 'value'),
      State('table-tabs', 'value'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
+     State('bin-information', 'data'),
+     State('contig-information', 'data')],
+    prevent_initial_call=True
 )
-def update_dropdowns(selected_annotation, visualization_type, selected_tab, user_folder, data_loaded):
-    if not data_loaded:
-        raise PreventUpdate
-        
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    
-    # Initialize empty lists for dropdown options
+def update_dropdowns(selected_annotation, visualization_type, selected_tab, bin_information, contig_information):
+
+    bin_information = pd.DataFrame(bin_information)
+    contig_information = pd.DataFrame(contig_information) 
     annotation_options = []
     bin_options = []
     contig_options = []
