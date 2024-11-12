@@ -51,8 +51,8 @@ dash_logger_handler = DashLoggerHandler()
 dash_logger_handler.setLevel(logging.INFO)
 logger.addHandler(dash_logger_handler)
 
-redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-r = redis.StrictRedis.from_url(redis_url, decode_responses=False)
+redis_url = os.getenv("REDIS_URL")
+r = redis.from_url(redis_url, decode_responses=True)
 try:
     r.ping()
     logger.info("Connected to Redis!")
