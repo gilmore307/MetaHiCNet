@@ -26,7 +26,7 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
     prevent_initial_callbacks='initial_duplicate'  # Set globally
 )
-app.enable_dev_tools(debug=True, dev_tools_hot_reload=False)
+app.enable_dev_tools(debug=os.getenv("DEBUG", "False") == "True", dev_tools_hot_reload=False)
 
 class DashLoggerHandler(logging.Handler):
     def __init__(self):
@@ -51,6 +51,7 @@ dash_logger_handler = DashLoggerHandler()
 dash_logger_handler.setLevel(logging.INFO)
 logger.addHandler(dash_logger_handler)
 
+# Connect to Redis using REDISCLOUD_URL from environment variables
 redis_url = os.getenv("REDISCLOUD_URL")
 r = redis.from_url(redis_url, decode_responses=True)
 try:
@@ -58,8 +59,7 @@ try:
     logger.info("Connected to Redis!")
 except redis.ConnectionError:
     logger.info("Failed to connect to Redis.")
-
-
+    
 stages_mapping = {
     'method1': ['Preparation', 'Normalization', 'Visualization'],
     'method2': ['Preparation', 'Normalization', 'Visualization'],
