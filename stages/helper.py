@@ -8,7 +8,7 @@ import pandas as pd
 import logging
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from scipy.sparse import coo_matrix, spdiags
+from scipy.sparse import coo_matrix, spdiags, isspmatrix_csr
 import statsmodels.api as sm
 
 logger = logging.getLogger("app_logger")
@@ -259,7 +259,10 @@ def adjust_taxonomy(row, taxonomy_columns, prefixes):
             if row[tier]:
                 last_non_blank = row[tier]
             else:
-                row[tier] = f"Unspecified {last_non_blank}"
+                if last_non_blank:
+                    row[tier] = f"Unspecified {last_non_blank}"
+                else:
+                    row[tier] = f"Unspecified {row['Type']}"
     else:
         for tier in taxonomy_columns:
             row[tier] = "unmapped"
@@ -440,31 +443,112 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         return coo_matrix((matrix.data[mask], (matrix.row[mask], matrix.col[mask])), shape=matrix.shape)
 
     def _bisto_seq(m, max_iter, tol):
-        m = m.tocoo()
-        m.setdiag(np.where(m.diagonal() == 0, 1, m.diagonal()))  # Ensure no zeros on diagonal
-        m = m.tocsr()
-        
-        n = m.shape[0]
-        e = np.ones(n)
-        x = e.copy()
-        
-        for i in range(max_iter):
-            # Clip x to avoid overflow in the square operation
-            x = np.clip(x, -1e10, 1e10)
+        # Make a copy of the original matrix 'm' for later use
+        _orig = m.copy()
+    
+        # Replace zero diagonals with ones to prevent potential scale explosion
+        m = m.tolil()  # Convert matrix to LIL format for efficient indexing
+        is_zero_diag = m.diagonal() == 0  # Check if there are zeros on the diagonal
+        if np.any(is_zero_diag):
+            # Set the diagonal elements that are zero to one
+            ix = np.where(is_zero_diag)
+            m[ix, ix] = 1
+    
+        # Ensure the matrix is in CSR format for efficient matrix operations
+        if not isspmatrix_csr(m):
+            m = m.tocsr()
+    
+        # Initialize variables
+        n = m.shape[0]  # Number of rows (and columns, assuming square matrix)
+        e = np.ones(n)  # A vector of ones
+        x = e.copy()    # Initialize x as a copy of e
+        delta = 0.1     # Lower bound for y
+        Delta = 3       # Upper bound for y
+        g = 0.9         # Step size factor
+        etamax = 0.1    # Maximum eta value
+        eta = etamax    # Initial eta
+        stop_tol = tol * 0.5  # Stopping tolerance
+        rt = tol ** 2        # Residual tolerance (squared)
+        v = x * m.dot(x)     # Initial value for v (Ax)
+        rk = 1 - v           # Residual (1 - Ax)
+        rho_km1 = rk.T.dot(rk)  # Initial rho (dot product of rk and rk)
+        rho_km2 = rho_km1       # Initialize rho_km2 with the same value as rho_km1
+        rout = rho_km1        # Set rout as the initial rho
+        rold = rout           # Previous value of rout
+        n_iter = 0            # Initialize iteration counter
+        i = 0                 # Inner loop iteration counter
+        y = np.empty_like(e)  # Vector y for updating
+    
+        # Main loop for the iterative process
+        while rout > rt and n_iter < max_iter:
+            i += 1
+            k = 0  # Inner loop counter
+            y[:] = e  # Reset y to vector of ones
+            inner_tol = max(rout * eta ** 2, rt)  # Set tolerance for inner loop
             
-            # Update x_new with added epsilon to avoid division by zero
-            x_new = 1 / (m @ (x ** 2 + epsilon))
+            # Inner loop for balancing the matrix
+            while rho_km1 > inner_tol:
+                k += 1
+                if k == 1:
+                    Z = rk / v  # Precompute Z
+                    p = Z  # Set p to Z in the first iteration
+                    rho_km1 = rk.T.dot(Z)  # Update rho
+                else:
+                    # Compute beta and update p in subsequent iterations
+                    beta = rho_km1 / rho_km2
+                    p = Z + beta * p
+                
+                # Compute w and alpha for the line search
+                w = x * m.dot(x * p) + v * p
+                alpha = rho_km1 / p.T.dot(w)  # Compute step size alpha
+                ap = alpha * p  # Compute the step size applied to p
+                ynew = y + ap  # Update y with the new value
+                
+                # Check for bound violations (either below delta or above Delta)
+                if np.amin(ynew) <= delta:
+                    if delta == 0:
+                        break
+                    ind = np.where(ap < 0)[0]
+                    gamma = np.amin((delta - y[ind]) / ap[ind])
+                    y += gamma * ap  # Adjust y to stay within bounds
+                    break
+                if np.amax(ynew) >= Delta:
+                    ind = np.where(ynew > Delta)[0]
+                    gamma = np.amin((Delta - y[ind]) / ap[ind])
+                    y += gamma * ap  # Adjust y to stay within bounds
+                    break
+    
+                y = ynew  # Update y if no bounds are violated
+                rk = rk - alpha * w  # Update the residual
+                rho_km2 = rho_km1  # Store the old value of rho
+                Z = rk / v  # Update Z
+                rho_km1 = np.dot(rk.T, Z)  # Update rho
+    
+                # Check for NaN values in x
+                if np.any(np.isnan(x)):
+                    raise RuntimeError('Scale vector has developed invalid values (NaNs)!')
             
-            # Check convergence with clipped difference for stability
-            if np.linalg.norm(x_new - x, ord=np.inf) < tol:
-                break
-            
-            # Handle NaNs and infs in x_new after each update
-            x = np.nan_to_num(x_new, nan=0.0, posinf=1e10, neginf=-1e10)
+            # Update x with the new y values
+            x *= y
+            v = x * m.dot(x)  # Update v
+            rk = 1 - v  # Recalculate the residual
+            rho_km1 = np.dot(rk.T, rk)  # Update rho
+            rout = rho_km1  # Update the residual norm
+            n_iter += k + 1  # Update the iteration count
+            rat = rout / rold  # Compute the relative change in residual
+            rold = rout  # Update old residual value
+            res_norm = np.sqrt(rout)  # Compute the residual norm
+            eta = g * rat  # Update eta
+            eta = max(min(eta, etamax), stop_tol / res_norm)  # Enforce eta bounds
+    
+        # Check if the algorithm converged
+        if n_iter >= max_iter:
+            logger.error(f'Maximum number of iterations ({max_iter}) reached without convergence')
         
-        # Construct the bistochastic matrix using x
-        X = spdiags(x, 0, n, n, format='csr')
-        return X.T @ m @ X
+        # Return the balanced matrix and the scale vector 'x'
+        X = spdiags(x, 0, n, n, 'csr')  # Create a diagonal matrix with x
+        balanced_matrix = X.T.dot(_orig.dot(X)) * 100000
+        return balanced_matrix 
 
     try:
         if method == 'Raw':

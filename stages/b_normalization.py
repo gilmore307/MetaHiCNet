@@ -6,7 +6,7 @@ import os
 import py7zr
 import gc
 import numpy as np
-from helper import (
+from stages.helper import (
     preprocess_normalization,
     run_normalization,
     generating_bin_information
@@ -20,13 +20,14 @@ def create_normalization_layout():
         {'label': 'Raw - Removing contacts below a certain threshold for noise reduction.', 'value': 'Raw'},
         {'label': 'normCC - GLM-based normalization to adjust for varying coverage and signal.', 'value': 'normCC'},
         {'label': 'HiCzin - Logarithmic scaling method for normalizing Hi-C contact frequencies.', 'value': 'HiCzin'},
-        {'label': 'bin3C - Sinkhorn-Knopp algorithm for balancing matrix rows and columns.', 'value': 'bin3C'},
+        {'label': 'bin3C - Kantorovich-Rubinstein regularization for balancing matrix rows and columns.', 'value': 'bin3C'},
         {'label': 'MetaTOR - Square root normalization to stabilize variance.', 'value': 'MetaTOR'}
     ]
 
     layout = html.Div([
         html.Div([
             html.Label("Select Normalization Method:"),
+            html.Div(id='blank-element', style={'display': 'none'}),
             dcc.Dropdown(
                 id='normalization-method',
                 options=normalization_methods,
@@ -121,7 +122,8 @@ def register_normalization_callbacks(app):
         return thres_style, epsilon_style, max_iter_style, tol_style
 
     @app.callback(
-        [Output('normalization-status', 'data')],
+        [Output('normalization-status', 'data'),
+         Output('blank-element', 'children')],
         [Input('execute-button', 'n_clicks')],
         [State('normalization-method', 'value'),
          State('epsilon-input', 'value'),
@@ -160,7 +162,7 @@ def register_normalization_callbacks(app):
         
         if contig_info is None or contact_matrix is None:
             logger.error("Error reading files from folder. Please check the uploaded data.")
-            return [False]
+            return False, ""
     
         # Define normalization parameters based on the selected method
         normalization_params = {
@@ -177,7 +179,7 @@ def register_normalization_callbacks(app):
         normalized_matrix = run_normalization(**normalization_params)
         if normalized_matrix is None or normalized_matrix.nnz == 0:
             logger.error("Normalization failed or produced an empty matrix.")
-            return [False]
+            return False, ""
     
         logger.info(f"Normalization for {normalization_method} completed successfully.")
     
@@ -230,4 +232,4 @@ def register_normalization_callbacks(app):
     
         logger.info("Bin information generation, file saving, and compression completed successfully.")
     
-        return [True]
+        return True, ""

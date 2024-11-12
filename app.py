@@ -95,42 +95,67 @@ log_text = dcc.Textarea(
 )
 
 app.layout = dbc.Container([
-    html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
-    dcc.Tabs(id='tabs-method', value='method1', children=[
-        dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
-        dcc.Tab(label="Upload Unnormalized Data for New Normalization Method", value='method2', id='tab-method2'),
-        dcc.Tab(label="Resume Visualization with Previously Normalized Data", value='method3', id='tab-method3')
-    ]),
-    
-    html.Div(id='flowchart-container', className="my-4"),
+    # Stores for app state management
+    dcc.Store(id='current-method', data='method1'),
+    dcc.Store(id='current-stage', data='Preparation'),
+    dcc.Store(id='preparation-status-method1', data=False),
+    dcc.Store(id='preparation-status-method2', data=False),
+    dcc.Store(id='preparation-status-method3', data=False),
+    dcc.Store(id='normalization-status', data=False),
+    dcc.Store(id='user-folder', data=str(uuid.uuid4())),
 
-    # Wrap 'dynamic-content' and button row in dcc.Loading
-    dcc.Loading(
-        id="loading-spinner",
-        type="default",
-        delay_show=500,
-        children=[
-            dcc.Store(id='current-method', data='method1'),
-            dcc.Store(id='current-stage', data='Preparation'),
-            dcc.Store(id='preparation-status-method1', data=False),
-            dcc.Store(id='preparation-status-method2', data=False),
-            dcc.Store(id='preparation-status-method3', data=False),
-            dcc.Store(id='normalization-status', data=False),
-            dcc.Store(id='user-folder', data=str(uuid.uuid4())),
-            html.Div(id='dynamic-content', className="my-4"),
-            
-            dbc.Row([
-                dbc.Col(dbc.Button("Previous", id="previous-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
-                dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2),
-                dbc.Col(dbc.Button("Next", id="next-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
-            ], justify="between", align="center", className="mt-3")
-        ]
-    ),
-    
-    dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
-    log_text
+    # Main content container, dynamically updated by callback
+    html.Div(id="main-content", children=[
+        # Header
+        html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
+        
+        # Tabs for different methods
+        dcc.Tabs(id='tabs-method', value='method1', children=[
+            dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
+            dcc.Tab(label="Upload Unnormalized Data for New Normalization Method", value='method2', id='tab-method2'),
+            dcc.Tab(label="Resume Visualization with Previously Normalized Data", value='method3', id='tab-method3')
+        ]),
+        
+        # Flowchart container
+        html.Div(id='flowchart-container', className="my-4"),
+
+        # Loading spinner and primary dynamic content area
+        dcc.Loading(
+            id="loading-spinner",
+            type="default",
+            delay_show=500,
+            children=[
+                html.Div(id='dynamic-content', className="my-4"),
+                
+                # Navigation buttons
+                dbc.Row([
+                    dbc.Col(dbc.Button("Previous", id="previous-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
+                    dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2),
+                    dbc.Col(dbc.Button("Next", id="next-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
+                ], justify="between", align="center", className="mt-3")
+            ]
+        ),
+        
+        # Log interval and log display
+        dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
+        dcc.Textarea(
+            id="log-box",
+            value="Logger Initialized...\n",  # Initial log message
+            style={
+                'width': '100%',
+                'height': '200px',
+                'resize': 'none',
+                'border': '1px solid #ccc',
+                'padding': '10px',
+                'overflow': 'auto',
+                'backgroundColor': '#f9f9f9',
+                'color': '#333',
+                'fontFamily': 'monospace'
+            },
+            readOnly=True
+        )
+    ])
 ], fluid=True)
-
 
 @app.callback(
     [Output('tab-method1', 'disabled'),
@@ -247,6 +272,65 @@ def update_execute_button(current_stage, prep_status1, prep_status2, prep_status
     return button_text, disable_button, button_color
 
 @app.callback(
+    Output('main-content', 'children'),  # Replace the entire content inside main-content
+    [Input('current-stage', 'data')],
+    [State('current-method', 'data')]
+)
+def update_main_content(current_stage, selected_method):
+    if current_stage == 'Visualization':
+        # Replace main-content with visualization layout
+        return create_visualization_layout()
+    else:
+        # Default content for other stages
+        return [
+            html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
+            
+            dcc.Tabs(id='tabs-method', value=selected_method, children=[
+                dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
+                dcc.Tab(label="Upload Unnormalized Data for New Normalization Method", value='method2', id='tab-method2'),
+                dcc.Tab(label="Resume Visualization with Previously Normalized Data", value='method3', id='tab-method3')
+            ]),
+            
+            html.Div(id='flowchart-container', className="my-4"),
+
+            # Loading spinner and primary dynamic content area
+            dcc.Loading(
+                id="loading-spinner",
+                type="default",
+                delay_show=500,
+                children=[
+                    html.Div(id='dynamic-content', className="my-4"),
+                    
+                    # Navigation buttons
+                    dbc.Row([
+                        dbc.Col(dbc.Button("Previous", id="previous-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
+                        dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2),
+                        dbc.Col(dbc.Button("Next", id="next-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
+                    ], justify="between", align="center", className="mt-3")
+                ]
+            ),
+            
+            # Log interval and log box
+            dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
+            dcc.Textarea(
+                id="log-box",
+                value="Logger Initialized...\n",  # Initial log message
+                style={
+                    'width': '100%',
+                    'height': '200px',
+                    'resize': 'none',
+                    'border': '1px solid #ccc',
+                    'padding': '10px',
+                    'overflow': 'auto',
+                    'backgroundColor': '#f9f9f9',
+                    'color': '#333',
+                    'fontFamily': 'monospace'
+                },
+                readOnly=True
+            )
+        ]
+
+@app.callback(
     [Output('flowchart-container', 'children'),  # Single container for flowchart
      Output('dynamic-content', 'children')],  # Add output for URL redirection
     [Input('tabs-method', 'value'),  # Track selected method
@@ -276,8 +360,6 @@ def update_layout(selected_method, current_stage, user_folder):
             return no_update, no_update
     elif current_stage == 'Normalization':
         content = create_normalization_layout()
-    elif current_stage == 'Visualization':
-        content = create_visualization_layout()
     else:
         return no_update, no_update
 

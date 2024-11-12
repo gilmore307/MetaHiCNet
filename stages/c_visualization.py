@@ -17,11 +17,13 @@ import math
 from math import sqrt, sin, cos
 from openai import OpenAI
 import os
+import io
 from io import StringIO
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import pickle
 import json
+import py7zr
 
 class DashLoggerHandler(logging.Handler):
     def __init__(self):
@@ -54,7 +56,6 @@ def save_to_redis(key, data):
         r.set(key, json_data.encode('utf-8'))
     else:
         raise ValueError("Unsupported data type")
-    logger.info(f"Saved data to Redis with key: {key}")
 
 # Function to load from Redis
 def load_from_redis(key):
@@ -189,7 +190,6 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
     return cyto_stylesheet
 
 def create_bar_chart(data_dict):
-    logger.info("Starting to create bar chart with data_dict")
     traces = []
 
     for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
@@ -197,7 +197,6 @@ def create_bar_chart(data_dict):
             logger.warning(f"No data or 'value' column missing for {trace_name}, skipping trace.")
             continue  # Skip if no 'value' column or data is empty
             
-        logger.info(f"Creating bar trace for {trace_name}")
         bar_data = data_frame.sort_values(by='value', ascending=False)
         bar_colors = bar_data['color']
 
@@ -227,7 +226,6 @@ def create_bar_chart(data_dict):
         logger.warning("No valid traces created, returning empty figure.")
         return go.Figure()  # Return an empty figure if no valid traces are created
     
-    logger.info("Bar traces created, now creating layout")
     bar_layout = go.Layout(
         xaxis=dict(
             title="",
@@ -242,7 +240,6 @@ def create_bar_chart(data_dict):
     )
 
     bar_fig = go.Figure(data=traces, layout=bar_layout)
-    logger.info("Bar chart created successfully")
     return bar_fig
 
 # Function to call OpenAI API using GPT-4 with the new API format
@@ -269,7 +266,7 @@ def add_opacity_to_color(hex_color, opacity):
 def styling_annotation_table(contact_matrix_display, bin_information):
     styles = []
     numeric_df = contact_matrix_display.select_dtypes(include=[np.number])
-    log_max_value = np.log1p(numeric_df.values.max())
+    log_max_value = np.log1p(numeric_df.values.max() + 1)
     opacity = 0.6
 
     # Styling for numeric values in the table (excluding the "Annotation" column)
@@ -300,7 +297,6 @@ def styling_annotation_table(contact_matrix_display, bin_information):
         })
 
     return styles
-
 
 # Function to style bin info table
 def styling_information_table(display_data, information_data, bin_colors, annotation_colors, unique_annotations, table_type='bin'):
@@ -436,8 +432,6 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center
     return {**inner_positions, **outer_positions}
 
 def taxonomy_visualization(bin_information_intact, bin_information, unique_annotations, contact_matrix):
-    logger.info('Creating taxonomy visualization')
-
     host_data = bin_information_intact[bin_information_intact['Type'].isin(['chromosome', 'plasmid'])]
     virus_data = bin_information_intact[bin_information_intact['Type'] == 'phage']
 
@@ -1115,7 +1109,10 @@ def create_visualization_layout():
                 ),
                 html.Div([
                     dcc.Store(id='data-loaded', data=False),
-                    html.Button("Download files", id="download-btn", style={**common_style}),
+                    
+                    html.Button("Download", id="download-btn", style={**common_style}),
+                    dcc.Download(id="download"),
+                    
                     html.Button("Reset", id="reset-btn", style={**common_style}),
                     html.Button("Help", id="open-help", style={**common_style}),
                     dcc.Download(id="download-dataframe-csv"),
@@ -1289,7 +1286,7 @@ def register_visualization_callbacks(app):
     )
     def load_data(user_folder):
         # Path setup for user-specific data
-        logger.info(f"Loading data for user folder: {user_folder}")
+        logger.info(f"Loading data for user: {user_folder}")
         
         user_output_path = f'output/{user_folder}'
         bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
@@ -1434,6 +1431,34 @@ def register_visualization_callbacks(app):
     
         return table_columns, table_data, style_conditions, reset_clicks
     
+    @app.callback(
+        Output("download", "data"),
+        [Input("download-btn", "n_clicks")],
+        [State("user-folder", "data")]
+    )
+    def download_user_folder(n_clicks, user_folder):
+        if not n_clicks:
+            raise PreventUpdate
+    
+        # Path to the user folder
+        folder_path = f"output/{user_folder}"
+    
+        # Create a 7z archive in memory
+        memory_file = io.BytesIO()
+        with py7zr.SevenZipFile(memory_file, 'w') as archive:
+            # Add files to the archive
+            for root, _, files in os.walk(folder_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    archive.write(file_path, arcname=os.path.relpath(file_path, folder_path))
+        memory_file.seek(0)
+    
+        # Return the 7z file to download
+        return dcc.send_bytes(
+            memory_file.getvalue(),
+            filename=f"{user_folder}.7z"
+        )
+
     @app.callback(
         [Output('bin-info-table', 'rowData'),
          Output('bin-info-table', 'style'),
@@ -1750,8 +1775,11 @@ def register_visualization_callbacks(app):
     def update_visualization(data_loaded, reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, table_data, selected_tab, user_folder):
         if not data_loaded:
             raise PreventUpdate
-        
-        logger.info("update_visualization triggered.")
+            
+        ctx = callback_context
+        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]            
+        logger.info(f"Triggered by: {triggered_id}")
+        logger.info("Updateing visualization.")
         logger.info(f"Visualization type: {visualization_type}")
         logger.info(f"Selected annotation: {selected_annotation}")
         logger.info(f"Selected bin: {selected_bin}")
@@ -1766,11 +1794,6 @@ def register_visualization_callbacks(app):
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
         contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
         current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
-        logger.info("Successfully loaded all necessary data from Redis.")
-    
-        ctx = callback_context
-        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        logger.info(f"Triggered by: {triggered_id}")
     
         if triggered_id == 'reset-btn':
             logger.info("Reset button clicked, switching to taxonomy_hierarchy visualization.")
@@ -1786,7 +1809,6 @@ def register_visualization_callbacks(app):
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
     
         else:
-            logger.info("Confirm button clicked, updating visualization mode with selected values.")
             current_visualization_mode.update({
                 'visualization_type': visualization_type,
                 'selected_annotation': selected_annotation,
@@ -1794,7 +1816,6 @@ def register_visualization_callbacks(app):
                 'selected_contig': selected_contig
             })
             save_to_redis(f'{user_folder}:current-visualization-mode', current_visualization_mode)
-            logger.info(f"Updated current_visualization_mode and saved to Redis with key: {user_folder}:current-visualization-mode")
     
             if visualization_type == 'taxonomy_hierarchy':
                 logger.info("Displaying taxonomy_hierarchy visualization.")
@@ -1825,7 +1846,6 @@ def register_visualization_callbacks(app):
                 cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
     
         # Log which tab is selected and return the appropriate layout
-        logger.info(f"Selected tab: {selected_tab}")
         if selected_tab == 'bin':
             logger.info("Returning elements and layout for bin tab.")
             return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
@@ -1833,7 +1853,6 @@ def register_visualization_callbacks(app):
             logger.info("Returning elements and layout for contig tab.")
             return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
     
-        
     @app.callback(
         [Output('cyto-graph', 'elements', allow_duplicate=True),
          Output('cyto-graph', 'stylesheet'),
@@ -1865,19 +1884,28 @@ def register_visualization_callbacks(app):
         if  selected_bin:
             selected_nodes.append(selected_bin)
             bin_info = bin_information[bin_information['Bin'] == selected_bin].iloc[0]
-            hover_info = f"Bin: {selected_bin}<br>Annotation: {bin_info['Annotation']}"
+            hover_info = html.Div([
+                html.Span(f"Annotation: {bin_info['Annotation']}"),
+                html.Br(),
+                html.Span(f"Bin: {selected_bin}")
+            ])
             # No need to update cyto_elements or layout if a bin is selected
     
         elif selected_contig:
             selected_nodes.append(selected_contig)
             contig_info = contig_information[contig_information['Contig'] == selected_contig].iloc[0]
-            hover_info = f"Contig: {selected_contig}<br>Annotation: {contig_info['Annotation']}"
+            hover_info = html.Div([
+                html.Span(f"Annotation: {contig_info['Annotation']}"),
+                html.Br(),
+                html.Span(f"Contig: {selected_contig}")
+            ])
             # No need to update cyto_elements or layout if a contig is selected
     
         if current_visualization_mode['visualization_type'] == 'basic':
             selected_nodes.append(selected_annotation)
-            hover_info = f"Annotation: {selected_annotation}"
-    
+            hover_info = html.Div([
+                html.Span(f"Annotation: {selected_annotation}")
+            ])    
             # Only call annotation_visualization in 'basic' mode
             if selected_annotation:
                 # Show edges connected to the selected node using the contact matrix

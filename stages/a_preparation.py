@@ -10,7 +10,7 @@ import py7zr
 import numpy as np
 from scipy.sparse import coo_matrix
 import logging
-from helper import (
+from stages.helper import (
     save_file_to_user_folder, 
     parse_contents, 
     get_file_size, 
