@@ -20,7 +20,6 @@ import os
 from io import StringIO
 from concurrent.futures import ThreadPoolExecutor
 import logging
-import redis
 import pickle
 import json
 
@@ -43,6 +42,7 @@ class DashLoggerHandler(logging.Handler):
         self.logs.clear()
 
 def save_to_redis(key, data):
+    from app import r
     if isinstance(data, pd.DataFrame):
         json_data = data.to_json(orient='split')
         r.set(key, json_data.encode('utf-8'))
@@ -57,6 +57,7 @@ def save_to_redis(key, data):
 
 # Function to load from Redis
 def load_from_redis(key):
+    from app import r
     data = r.get(key)
 
     if data is None:
@@ -82,8 +83,7 @@ def load_from_redis(key):
             
 # Function to get bin indexes based on annotation in a specific part of the dataframe
 def get_indexes(annotations, bin_information):
-    # Number of threads to use: 4 * CPU core count
-    num_threads = 2 * os.cpu_count()
+    num_threads = 4 * os.cpu_count()
     bin_indexes = {}
     
     # Ensure annotations is a list even if a single annotation is provided
@@ -132,13 +132,13 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
             'data': {
                 'id': node,
                 'label': node,  
-                'label_size': 6 if G.nodes[node].get('parent') is None else 3, # Default size to 6
-                'size': G.nodes[node].get('size', 1),  # Default size to 1
-                'color': G.nodes[node].get('color', '#000'),  # Default color
-                'border_color': G.nodes[node].get('border_color', None),  # Default to None
-                'border_width': G.nodes[node].get('border_width', None),  # Default to None
-                'parent': G.nodes[node].get('parent', None),  # Default to None
-                'visible': 'none' if node in invisible_nodes else 'element'  # Set visibility
+                'label_size': 6 if G.nodes[node].get('parent') is None else 3,
+                'size': G.nodes[node].get('size', 1),
+                'color': G.nodes[node].get('color', '#000'),
+                'border_color': G.nodes[node].get('border_color', None), 
+                'border_width': G.nodes[node].get('border_width', None),
+                'parent': G.nodes[node].get('parent', None), 
+                'visible': 'none' if node in invisible_nodes else 'element' 
             },
             'position': {
                 'x': pos[node][0] * 100,
@@ -150,9 +150,9 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
             'data': {
                 'source': edge[0],
                 'target': edge[1],
-                'width': edge[2].get('width', 1),  # Default width
-                'color': edge[2].get('color', '#ccc'),  # Default color
-                'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element'  # Set visibility
+                'width': edge[2].get('width', 1),
+                'color': edge[2].get('color', '#ccc'),
+                'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element'
             }
         })
     return elements
@@ -180,14 +180,13 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
                 'style': {
                     'width': 2,
                     'line-color': 'black',
-                    'display': 'element'  # Make the edge visible
+                    'display': 'element'
                 }
             }
             cyto_stylesheet.append(edge_style)
 
     return cyto_stylesheet
 
-# Function to handle empty DataFrames and log when no contact is found
 def create_bar_chart(data_dict):
     logger.info("Starting to create bar chart with data_dict")
     traces = []
@@ -255,7 +254,7 @@ def get_chatgpt_response(prompt):
     max_tokens=150)
     return response.choices[0].message.content
 
-    # Function to add opacity to a hex color
+# Function to add opacity to a hex color
 def add_opacity_to_color(hex_color, opacity):
     if hex_color.startswith('#') and len(hex_color) == 7:
         hex_color = hex_color.lstrip('#')
@@ -270,7 +269,7 @@ def styling_annotation_table(contact_matrix_display, bin_information):
     styles = []
     numeric_df = contact_matrix_display.select_dtypes(include=[np.number])
     log_max_value = np.log1p(numeric_df.values.max())
-    opacity = 0.6  # Set a fixed opacity for transparency
+    opacity = 0.6
 
     # Styling for numeric values in the table (excluding the "Annotation" column)
     for i in range(len(numeric_df)):
@@ -318,9 +317,9 @@ def styling_information_table(display_data, information_data, bin_colors, annota
         col_min = np.log1p(numeric_df.values.min())
         col_max = np.log1p(numeric_df.values.max())
         col_range = col_max - col_min
-        n_bins = 10  # Number of bins for color scaling
+        n_bins = 10
         bounds = [i * (col_range / n_bins) + col_min for i in range(n_bins + 1)]
-        opacity = 0.6  # Set a fixed opacity for transparency
+        opacity = 0.6
 
         for i in range(1, len(bounds)):
             min_bound = bounds[i - 1]
@@ -387,7 +386,7 @@ def get_node_colors(cyto_elements, information_data):
 # Function to arrange bins
 def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center_position=(0, 0)):
     distance /= 100 
-    phi = (1 + sqrt(5)) / 2  # golden ratio
+    phi = (1 + sqrt(5)) / 2
     pi = math.pi
 
     # Identify bins that connect to other annotation
@@ -401,7 +400,7 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center
     max_inner_radius = 0  # To keep track of the maximum radius used for inner nodes
 
     for k, bin in enumerate(other_bins, start=1):
-        r = distance * sqrt(k)  # Distance increases with sqrt(k) to maintain spacing
+        r = distance * sqrt(k)
         theta = k * angle_stride
         x = center_position[0] + r * cos(theta)
         y = center_position[1] + r * sin(theta)
@@ -530,7 +529,6 @@ def taxonomy_visualization(bin_information_intact, bin_information, unique_annot
     hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
     hierarchy_df.loc[hierarchy_df['type'] == 'phage', 'scaled_coverage'] *= 20
 
-    # Limit the number of bins shown in hover to avoid long hover boxes
     def format_bins(bin_list, max_bins=5):
         if len(bin_list) > max_bins:
             return ', '.join(bin_list[:max_bins]) + f"... (+{len(bin_list) - max_bins} more)"
@@ -551,7 +549,7 @@ def taxonomy_visualization(bin_information_intact, bin_information, unique_annot
         marker=dict(
             line=dict(width=2, color=hierarchy_df['border_color'])
         ),
-        customdata=hierarchy_df[['level_name', 'limited_bins']],  # Use limited bins for hover
+        customdata=hierarchy_df[['level_name', 'limited_bins']],
         hovertemplate='<b>%{label}</b><br>Level: %{customdata[0]}<br>Coverage: %{value}<br>Bins: %{customdata[1]}'
     )
 
@@ -562,7 +560,6 @@ def taxonomy_visualization(bin_information_intact, bin_information, unique_annot
         margin=dict(t=30, b=0, l=0, r=0)
     )
 
-    # Prepare data for bar chart with 3 traces (keep existing logic)
     total_bin_coverage = bin_information.groupby('Annotation')['Coverage'].sum().reindex(unique_annotations)
     inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
     total_bin_coverage_sum = total_bin_coverage.values
@@ -626,11 +623,9 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
                 invisible_edges.add((annotation_i, annotation_j))
                 edge_weights.append(weight)
 
-    # Normalize edge weights using generate_gradient_values
+
     if edge_weights:
         normalized_weights = generate_gradient_values(np.array(edge_weights), 1, 3)
-
-        # Assign normalized weights back to edges
         for (i, (u, v)) in enumerate(G.edges()):
             G[u][v]['weight'] = normalized_weights[i]
     
@@ -641,19 +636,16 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     else:
         pos = nx.spring_layout(G, dim=2, k=1, iterations=200, weight='weight', scale=5.0)
 
-    # Convert to Cytoscape elements
+
     cyto_elements = nx_to_cyto_elements(G, pos, invisible_edges=invisible_edges)
-    
-    # Enable animation in the Cytoscape layout
     cyto_style = {
-        'name': 'preset',  # Use 'preset' to keep the initial positions
-        'animate': True,  # Enable animation
-        'animationDuration': 500,  # Set duration of the animation (in ms)
-        'fit': False  # Automatically zoom to fit the nodes
+        'name': 'preset', 
+        'animate': True,
+        'animationDuration': 500,
+        'fit': False
     }
     
     if not selected_node:
-        # Prepare data for bar chart with 3 traces
         inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
         total_bin_coverage_sum = total_bin_coverage.values
         bin_counts = bin_information['Annotation'].value_counts()
@@ -716,11 +708,8 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
     for annotation in contacts_annotation.unique():
         annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Type'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])  
-        
-        # Assign the gradient color based on rank
         annotation_rank = annotation_contact_ranks.get(annotation, int(max_rank/2))
         gradient_color = color_scale[int((annotation_rank / max_rank) * (len(color_scale) - 1))]
-        
         G.add_node(annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
 
     # Ensure selected_annotation is added
@@ -728,7 +717,6 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
         annotation_type = bin_information.loc[bin_information['Annotation'] == selected_annotation, 'Type'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])
         gradient_color = color_scale[len(color_scale) - 1]
-    
         G.add_node(selected_annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
 
     # Collect all contact values between selected_annotation and other annotations
@@ -741,10 +729,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
         if contact_value > 0:
             contact_values.append(contact_value)
     
-    # Normalize contact values using generate_gradient_values
     scaled_weights = generate_gradient_values(contact_values, 1, 3) if contact_values else [1] * len(contacts_annotation.unique())
-
-    # Add edges between selected_annotation and other annotations with scaled weights
     for i, annotation in enumerate(contacts_annotation.unique()):
         annotation_bins = bin_information[bin_information['Annotation'] == annotation].index
         annotation_bins = annotation_bins[annotation_bins < bin_dense_matrix.shape[1]]  # Filter indices
@@ -753,10 +738,8 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
         if contact_value > 0:
             G.add_edge(selected_annotation, annotation, weight=scaled_weights[i])
 
-    # Pin selected_bin to position (0, 0) during spring layout calculation
-    fixed_positions = {selected_annotation: (0, 0)}
 
-    # Calculate the layout using spring_layout, where weight affects node distance
+    fixed_positions = {selected_annotation: (0, 0)}
     pos = nx.spring_layout(G, k=1, iterations=200, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
 
     # Remove the edges after positioning
@@ -792,7 +775,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
         })
     except Exception as e:
         logger.error(f"Error creating bin_data DataFrame: {e}")
-        bin_data = pd.DataFrame()  # or assign None if that fits better with your app
+        bin_data = pd.DataFrame()
     
     # Attempt to create annotation_data DataFrame
     try:
@@ -861,11 +844,8 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
     for annotation in contacts_annotation.unique():
         annotation_type = contig_information.loc[contig_information['Annotation'] == annotation, 'Type'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])
-        
-        # Assign the gradient color based on rank
         annotation_rank = annotation_contact_ranks.get(annotation, int(max_rank/2))
         gradient_color = color_scale[int((annotation_rank / max_rank) * (len(color_scale) - 1))]
-
         G.add_node(annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
 
     # Ensure selected_annotation is added
@@ -873,7 +853,6 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
         annotation_type = contig_information.loc[contig_information['Annotation'] == selected_annotation, 'Type'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])
         gradient_color = color_scale[len(color_scale) - 1]
-
         G.add_node(selected_annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
 
     # Collect all contact values between selected_annotation and other annotations
@@ -886,10 +865,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
         if contact_value > 0:
             contact_values.append(contact_value)
 
-    # Normalize contact values using generate_gradient_values
     scaled_weights = generate_gradient_values(contact_values, 1, 3) if contact_values else [1] * len(contacts_annotation.unique())
-
-    # Add edges between selected_annotation and other annotations with scaled weights
     for i, annotation in enumerate(contacts_annotation.unique()):
         annotation_contigs = contig_information[contig_information['Annotation'] == annotation].index
         annotation_contigs = annotation_contigs[annotation_contigs < contig_dense_matrix.shape[1]]  # Filter indices
@@ -898,10 +874,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
         if contact_value > 0:
             G.add_edge(selected_annotation, annotation, weight=scaled_weights[i])
 
-    # Pin selected_contig to position (0, 0) during spring layout calculation
     fixed_positions = {selected_annotation: (0, 0)}
-
-    # Calculate the layout using spring_layout, where weight affects node distance
     pos = nx.spring_layout(G, k=1, iterations=200, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
 
     # Remove the edges after positioning
@@ -962,11 +935,6 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     return cyto_elements, bar_fig
 
-# Initialize the Dash app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-redis_url = 'redis://localhost:6379/0'
-r = redis.StrictRedis.from_url(redis_url, decode_responses=False)
-
 # Create a logger and add the custom Dash logger handler
 logger = logging.getLogger(__name__)
 dash_logger_handler = DashLoggerHandler()
@@ -975,12 +943,6 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 dash_logger_handler.setFormatter(formatter)
 logger.addHandler(dash_logger_handler)
 logger.setLevel(logging.INFO)
-
-try:
-    r.ping()
-    logger.info("Connected to Redis!")
-except redis.ConnectionError:
-    logger.info("Failed to connect to Redis.")
 
 # Example of logging messages
 logger.info("App started")
@@ -995,70 +957,6 @@ type_colors = {
 }
 default_color = '#808080' 
 
-# Define the column definitions for AG Grid
-bin_column_defs = [
-    {
-        "headerName": "Bin",
-        "children": [
-            {"headerName": "Bin", "field": "Bin", "pinned": 'left', "width": 120}
-        ]
-    },
-    {
-        "headerName": "Taxonomy",
-        "children": [   
-            {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Genus", "field": "Genus", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Family", "field": "Family", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Order", "field": "Order", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Class", "field": "Class", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Phylum", "field": "Phylum", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Kingdom", "field": "Kingdom", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Domain", "field": "Domain", "width": 140, "wrapHeaderText": True}
-        ]
-    },
-    {
-        "headerName": "Contact Information",
-        "children": [
-            {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Length", "field": "Length", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Visibility", "field": "Visibility", "hide": True}
-        ]
-    }
-]
-
-contig_column_defs = [
-    {
-        "headerName": "Contig",
-        "children": [
-            {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120}
-        ]
-    },
-    {
-        "headerName": "Taxonomy",
-        "children": [   
-            {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Genus", "field": "Genus", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Family", "field": "Family", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Order", "field": "Order", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Class", "field": "Class", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Phylum", "field": "Phylum", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Kingdom", "field": "Kingdom", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Domain", "field": "Domain", "width": 140, "wrapHeaderText": True}
-        ]
-    },
-    {
-        "headerName": "Contact Information",
-        "children": [
-            {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Length", "field": "Length", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
-            {"headerName": "Visibility", "field": "Visibility", "hide": True}
-        ]
-    }
-]
-
-# Base stylesheet for Cytoscape
 base_stylesheet = [
     {
         'selector': 'node',
@@ -1071,7 +969,7 @@ base_stylesheet = [
             'border-color': 'data(border_color)',
             'border-width': 'data(border_width)',
             'parent': 'data(parent)',
-            'display': 'data(visible)'  # Use the visibility attribute
+            'display': 'data(visible)'
         }
     },
     {
@@ -1080,966 +978,965 @@ base_stylesheet = [
             'width': 'data(width)',
             'line-color': 'data(color)',
             'opacity': 0.6,
-            'display': 'data(visible)'  # Use the visibility attribute
+            'display': 'data(visible)'
         }
     }
 ]
 
-common_style = {
-    'height': '38px',
-    'display': 'inline-block',
-    'margin-right': '10px',
-    'vertical-align': 'middle'
-}
-
-# Help page (empty for now)
-help_modal = html.Div([
-    dbc.Modal([
-        dbc.ModalHeader("Help"),
-        dbc.ModalBody([
-            # help content will be added soon
-        ]),
-        dbc.ModalFooter(
-            dbc.Button("Close", id="close-help", className="ml-auto")
-        )
-    ], id="modal", size="lg", is_open=False)
-])
-
-# Use the styling functions in the Dash layout
-app.layout = dcc.Loading(
-    id="loading-spinner",
-    type="default",
-    fullscreen=True,
-    delay_show=1000,
-    children=[
-        html.Div([
-            dcc.Interval(
-                id='interval-component',
-                interval=1*1000,  # in milliseconds (every 1 second)
-                n_intervals=0
-            ),
-            html.Div([
-                dcc.Store(id='user-folder', data="examples"),
-                dcc.Store(id='data-loaded', data=False),
-                html.Button("Download files", id="download-btn", style={**common_style}),
-                html.Button("Reset", id="reset-btn", style={**common_style}),
-                html.Button("Help", id="open-help", style={**common_style}),
-                dcc.Download(id="download-dataframe-csv"),
-                dcc.Dropdown(
-                    id='visualization-selector',
-                    options=[
-                        {'label': 'Taxonomy Hierarchy', 'value': 'taxonomy_hierarchy'},
-                        {'label': 'Annotation Visualization', 'value': 'basic'},
-                        {'label': 'Bin Visualization', 'value': 'bin'},
-                        {'label': 'Contig Visualization', 'value': 'contig'}
-                    ],
-                    value='taxonomy_hierarchy',
-                    style={'width': '300px', 'display': 'inline-block'}
-                ),
-                dcc.Dropdown(
-                    id='taxonomy-level-selector',
-                    options=[
-                        {'label': 'Domain', 'value': 'Domain'},
-                        {'label': 'Kingdom', 'value': 'Kingdom'},
-                        {'label': 'Phylum', 'value': 'Phylum'},
-                        {'label': 'Class', 'value': 'Class'},
-                        {'label': 'Order', 'value': 'Order'},
-                        {'label': 'Family', 'value': 'Family'},
-                        {'label': 'Genus', 'value': 'Genus'},
-                        {'label': 'Species', 'value': 'Species'},
-                    ],
-                    value='Family',
-                    placeholder="Select Taxonomy Level",
-                    style={'width': '300px', 'display': 'inline-block'}
-                ),
-                dcc.Dropdown(
-                    id='annotation-selector',
-                    options=[],
-                    value=None,
-                    placeholder="Select an annotation",
-                    style={}
-                ),
-                dcc.Dropdown(
-                    id='bin-selector',
-                    options=[],
-                    value=None,
-                    placeholder="Select a bin",
-                    style={}
-                ),
-                dcc.Dropdown(
-                    id='contig-selector',
-                    options=[],
-                    value=None,
-                    placeholder="Select a contig",
-                    style={}
-                ),
-                html.Button("Confirm Selection", id="confirm-btn", style={**common_style}),
-            ], style={
-                'display': 'flex',
-                'justify-content': 'space-between',
-                'align-items': 'center',
-                'margin': '0px',
-                'position': 'fixed',
-                'top': '0',
-                'left': '0',
-                'width': '100%',
-                'z-index': '1000',
-                'background-color': 'lightgrey',
-                'padding': '10px',
-                'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'
-            }),
-            html.Div(style={'height': '60px'}),  # Placeholder for header height
-            html.Div([
-                html.Div([
-                    dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=go.Figure(), style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
-                    html.Div(id='row-count', style={'margin': '0px', 'height': '2vh', 'display': 'inline-block'}),
-                    dcc.Checklist(
-                        id='visibility-filter',
-                        options=[{'label': '  Only show elements in the diagram', 'value': 'filter'}],
-                        value=['filter'],
-                        style={'display': 'inline-block', 'margin-right': '10px', 'float': 'right'}
-                    ),
-                    html.Div([
-                        dcc.Tabs(id='table-tabs', value='bin', children=[
-                            dcc.Tab(label='Bin Info', value='bin', className="p-0"),
-                            dcc.Tab(label='Contig Info', value='contig', className="p-0")
-                        ]),
-                        html.Div(
-                            id='table-container',
-                            children=[
-                                dag.AgGrid(
-                                    id='bin-info-table',
-                                    columnDefs=bin_column_defs,
-                                    rowData=[],
-                                    defaultColDef={},
-                                    style={'display': 'none'},
-                                    dashGridOptions={
-                                        'headerPinned': 'top',
-                                        'rowSelection': 'single'
-                                    }
-                                ),
-                                dag.AgGrid(
-                                    id='contig-info-table',
-                                    columnDefs=contig_column_defs,
-                                    rowData=[],
-                                    defaultColDef={},
-                                    style={'display': 'none'},
-                                    dashGridOptions={
-                                        'headerPinned': 'top',
-                                        'rowSelection': 'single'
-                                    }
-                                )
-                            ]
-                        ),
-                    ])
-                ], style={'display': 'inline-block', 'vertical-align': 'top'}),
-                html.Div([
-                    dcc.Graph(id='treemap-graph', figure=go.Figure(), config={'displayModeBar': False}, style={'height': '80vh', 'width': '48vw', 'display': 'inline-block'}),
-                    cyto.Cytoscape(
-                        id='cyto-graph',
-                        elements=[],
-                        stylesheet=base_stylesheet,
-                        style={},
-                        layout={'name': 'preset'},
-                        zoom=1,
-                        userZoomingEnabled=True,
-                        wheelSensitivity=0.1
-                    )
-                ], style={'display': 'inline-block', 'vertical-align': 'top'}),
-                html.Div([
-                    html.Div(id='hover-info', style={'height': '20vh', 'width': '19vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'}),
-                    html.Div([
-                        dcc.Textarea(
-                            id='chatgpt-input',
-                            placeholder='Enter your query here...',
-                            style={'width': '100%', 'height': '15vh', 'display': 'inline-block'}
-                        ),
-                        html.Button('Interpret Data', id='interpret-button', n_clicks=0, style={'width': '100%', 'display': 'inline-block'})
-                    ], style={'width': '19vw', 'display': 'inline-block'}),
-                    html.Div(id='gpt-answer',
-                             style={'height': '45vh',
-                                    'width': '19vw',
-                                    'whiteSpace': 'pre-wrap',
-                                    'font-size': '10px',
-                                    'background-color': 'white',
-                                    'padding': '5px',
-                                    'border': '1px solid #ccc',
-                                    'margin-top': '3px',
-                                    'overflowY': 'auto'}
-                    ),
-                    dcc.Store(id='scroll-trigger', data=False)
-                ], style={'display': 'inline-block', 'vertical-align': 'top', 'margin-left': '20px'}),
-            ], style={'width': '100%', 'display': 'flex'}),
-            html.Div([
-                dash_table.DataTable(
-                    id='contact-table',
-                    columns=[],
-                    data=[],
-                    style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
-                    style_data_conditional=[],
-                    style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
-                    style_header={'whiteSpace': 'normal', 'height': 'auto'},
-                    fixed_rows={'headers': True},
-                    fixed_columns={'headers': True, 'data': 1}
-                )
-            ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
-            help_modal
-        ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
+def create_visualization_layout():
+    bin_column_defs = [
+        {
+            "headerName": "Bin",
+            "children": [
+                {"headerName": "Bin", "field": "Bin", "pinned": 'left', "width": 120}
+            ]
+        },
+        {
+            "headerName": "Taxonomy",
+            "children": [   
+                {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Genus", "field": "Genus", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Family", "field": "Family", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Order", "field": "Order", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Class", "field": "Class", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Phylum", "field": "Phylum", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Kingdom", "field": "Kingdom", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Domain", "field": "Domain", "width": 140, "wrapHeaderText": True}
+            ]
+        },
+        {
+            "headerName": "Contact Information",
+            "children": [
+                {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Length", "field": "Length", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Visibility", "field": "Visibility", "hide": True}
+            ]
+        }
     ]
-)
-                
-@app.callback(
-    [Output('data-loaded', 'data')],
-    [Input('user-folder', 'data')]
-)
-def load_data(user_folder):
-    # Path setup for user-specific data
-    logger.info(f"Loading data for user folder: {user_folder}")
     
-    user_output_path = f'../output/{user_folder}'
-    bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
-    bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
-    contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
-    contig_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
-
-    # Redis keys specific to each user folder
-    bin_info_key = f'{user_folder}:bin-information-intact'
-    bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-    bin_display_key = f'{user_folder}:bin-information-display'
-    contig_info_key = f'{user_folder}:contig-information-intact'
-    contig_matrix_key = f'{user_folder}:contig-dense-matrix'
-    contig_display_key = f'{user_folder}:contig-information-display'
-
-    # Load data from files
-    try:
-        bin_information_intact = pd.read_csv(bin_info_path)
-        logger.info("Loaded bin information intact from CSV.")
-        
-        bin_matrix_data = np.load(bin_matrix_path)
-        bin_dense_matrix = coo_matrix(
-            (bin_matrix_data['data'], (bin_matrix_data['row'], bin_matrix_data['col'])),
-            shape=tuple(bin_matrix_data['shape'])
-        ).toarray()
-        logger.info("Loaded bin dense matrix from NPZ.")
-
-        contig_information_intact = pd.read_csv(contig_info_path)
-        logger.info("Loaded contig information intact from CSV.")
-
-        contig_matrix_data = np.load(contig_matrix_path)
-        contig_dense_matrix = coo_matrix(
-            (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
-            shape=tuple(contig_matrix_data['shape'])
-        ).toarray()
-        logger.info("Loaded contig dense matrix from NPZ.")
-    except Exception as e:
-        logger.error(f"Error loading data from files: {e}")
-        return [False]
-
-    # Prepare display data
-    bin_display_columns = ['Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
-    bin_information_display = bin_information_intact[bin_display_columns].copy()
-    bin_information_display['Visibility'] = 1
-    logger.info("Prepared bin information display data.")
-
-    contig_display_columns = ['Contig', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
-    contig_information_display = contig_information_intact[contig_display_columns].copy()
-    contig_information_display['Visibility'] = 1
-    logger.info("Prepared contig information display data.")
-
-    # Save the loaded data to Redis with keys specific to the user folder
-    try:
-        save_to_redis(bin_info_key, bin_information_intact)
-        logger.info(f"Saved bin information intact to Redis with key {bin_info_key}.")
-        
-        save_to_redis(bin_matrix_key, bin_dense_matrix)
-        logger.info(f"Saved bin dense matrix to Redis with key {bin_matrix_key}.")
-        
-        save_to_redis(bin_display_key, bin_information_display)
-        logger.info(f"Saved bin information display to Redis with key {bin_display_key}.")
-        
-        save_to_redis(contig_info_key, contig_information_intact)
-        logger.info(f"Saved contig information intact to Redis with key {contig_info_key}.")
-        
-        save_to_redis(contig_matrix_key, contig_dense_matrix)
-        logger.info(f"Saved contig dense matrix to Redis with key {contig_matrix_key}.")
-        
-        save_to_redis(contig_display_key, contig_information_display)
-        logger.info(f"Saved contig information display to Redis with key {contig_display_key}.")
-    except Exception as e:
-        logger.error(f"Error saving data to Redis: {e}")
-        return [False]
-
-    logger.info("Data loaded and saved to Redis successfully.")
-    return [True]
-
-@app.callback(
-    [Output('contact-table', 'columns'),
-     Output('contact-table', 'data'),
-     Output('contact-table', 'style_data_conditional'),
-     Output('reset-btn', 'n_clicks')],
-    [Input('taxonomy-level-selector', 'value')],
-    [State('reset-btn', 'n_clicks'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
-)
-def update_data(taxonomy_level, reset_clicks, user_folder, data_loaded):
-    if not data_loaded:
-        logger.info("Data not loaded, raising PreventUpdate.")
-        raise PreventUpdate
-
-    logger.info(f"Updating data for user folder: {user_folder} with taxonomy level: {taxonomy_level or 'Family'}")
-
-    # Default taxonomy level if not provided
-    if taxonomy_level is None:
-        taxonomy_level = 'Family'
-
-    # Define Redis keys that incorporate the user_folder to avoid concurrency issues
-    bin_info_key = f'{user_folder}:bin-information-intact'
-    contig_info_key = f'{user_folder}:contig-information-intact'
-    bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-    visualization_mode_key = f'{user_folder}:current-visualization-mode'
-    bin_information_key = f'{user_folder}:bin-information'
-    contig_information_key = f'{user_folder}:contig-information'
-    unique_annotations_key = f'{user_folder}:unique-annotations'
-    contact_matrix_key = f'{user_folder}:contact-matrix'
-    contact_matrix_display_key = f'{user_folder}:contact-matrix-display'
-
-    # Load user-specific data from Redis
-    try:
-        bin_information_intact = load_from_redis(bin_info_key)
-        logger.info(f"Loaded bin information intact from Redis with key {bin_info_key}.")
-        
-        contig_information_intact = load_from_redis(contig_info_key)
-        logger.info(f"Loaded contig information intact from Redis with key {contig_info_key}.")
-        
-        bin_dense_matrix = load_from_redis(bin_matrix_key)
-        logger.info(f"Loaded bin dense matrix from Redis with key {bin_matrix_key}.")
-    except KeyError as e:
-        logger.error(f"KeyError while loading data from Redis: {e}")
-        raise PreventUpdate
-
-    # Set taxonomy columns
-    taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+    contig_column_defs = [
+        {
+            "headerName": "Contig",
+            "children": [
+                {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120}
+            ]
+        },
+        {
+            "headerName": "Taxonomy",
+            "children": [   
+                {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Genus", "field": "Genus", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Family", "field": "Family", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Order", "field": "Order", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Class", "field": "Class", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Phylum", "field": "Phylum", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Kingdom", "field": "Kingdom", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Domain", "field": "Domain", "width": 140, "wrapHeaderText": True}
+            ]
+        },
+        {
+            "headerName": "Contact Information",
+            "children": [
+                {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Length", "field": "Length", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Visibility", "field": "Visibility", "hide": True}
+            ]
+        }
+    ]
     
-    # Process bin and contig information by annotation
-    bin_information = bin_information_intact.copy()
-    bin_information['Annotation'] = bin_information[taxonomy_level]
-    bin_information = bin_information.drop(columns=taxonomy_columns)
-    logger.info("Processed bin information by annotation.")
-
-    contig_information = contig_information_intact.copy()
-    contig_information['Annotation'] = contig_information[taxonomy_level]
-    contig_information = contig_information.drop(columns=taxonomy_columns)
-    logger.info("Processed contig information by annotation.")
-
-    # Identify unique annotations
-    unique_annotations = bin_information['Annotation'].unique()
-    logger.info(f"Identified unique annotations: {unique_annotations}")
-
-    # Initialize and populate the contact matrix
-    contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
-    bin_indexes_dict = get_indexes(unique_annotations, bin_information)
-    logger.info("Initialized contact matrix.")
-
-    # Compute contact values
-    for annotation_i in unique_annotations:
-        for annotation_j in unique_annotations:
-            indexes_i = bin_indexes_dict[annotation_i]
-            indexes_j = bin_indexes_dict[annotation_j]
-            sub_matrix = bin_dense_matrix[np.ix_(indexes_i, indexes_j)]
-            contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
-    logger.info("Populated contact matrix with computed contact values.")
-
-    # Prepare display version of the contact matrix
-    contact_matrix_display = contact_matrix.astype(int).copy()
-    contact_matrix_display.insert(0, 'Annotation', contact_matrix_display.index)
-    logger.info("Prepared display version of the contact matrix.")
-    
-    # Update visualization mode state
-    reset_clicks = (reset_clicks or 0) + 1
-    current_visualization_mode = {
-        'visualization_type': 'taxonomy_hierarchy',
-        'taxonomy_level': taxonomy_level,
-        'selected_annotation': None,
-        'selected_bin': None,
-        'selected_contig': None
+    common_style = {
+        'height': '38px',
+        'display': 'inline-block',
+        'margin-right': '10px',
+        'vertical-align': 'middle'
     }
-    logger.info("Updated current visualization mode state.")
-
-    # Define table columns and data for display
-    table_columns = [{"name": col, "id": col} for col in contact_matrix_display.columns]
-    table_data = contact_matrix_display.to_dict('records')
-    style_conditions = styling_annotation_table(contact_matrix_display, bin_information)
-    logger.info("Prepared table columns, data, and style conditions.")
-
-    # Save updated data to Redis
-    save_to_redis(bin_information_key, bin_information)
-    logger.info(f"Saved bin information to Redis with key {bin_information_key}.")
     
-    save_to_redis(contig_information_key, contig_information)
-    logger.info(f"Saved contig information to Redis with key {contig_information_key}.")
+    help_modal = html.Div([
+        dbc.Modal([
+            dbc.ModalHeader("Help"),
+            dbc.ModalBody([
+                # help content will be added soon
+            ]),
+            dbc.ModalFooter(
+                dbc.Button("Close", id="close-help", className="ml-auto")
+            )
+        ], id="modal", size="lg", is_open=False)
+    ])
     
-    save_to_redis(unique_annotations_key, unique_annotations)
-    logger.info(f"Saved unique annotations to Redis with key {unique_annotations_key}.")
-    
-    save_to_redis(contact_matrix_key, contact_matrix)
-    logger.info(f"Saved contact matrix to Redis with key {contact_matrix_key}.")
-    
-    save_to_redis(contact_matrix_display_key, contact_matrix_display)
-    logger.info(f"Saved contact matrix display to Redis with key {contact_matrix_display_key}.")
-    
-    save_to_redis(visualization_mode_key, current_visualization_mode)
-    logger.info(f"Saved current visualization mode to Redis with key {visualization_mode_key}.")
-
-    return table_columns, table_data, style_conditions, reset_clicks
-
-@app.callback(
-    [Output('bin-info-table', 'rowData'),
-     Output('bin-info-table', 'style'),
-     Output('bin-info-table', 'filterModel'),
-     Output('bin-info-table', 'defaultColDef'),
-     Output('contig-info-table', 'rowData'),
-     Output('contig-info-table', 'style'),
-     Output('contig-info-table', 'filterModel'),
-     Output('contig-info-table', 'defaultColDef'),
-     Output('row-count', 'children')],
-    [Input('table-tabs', 'value'),
-     Input('bin-info-table', 'rowData'),
-     Input('contig-info-table', 'rowData'),
-     Input('annotation-selector', 'value'),
-     Input('visibility-filter', 'value')],
-    [State('cyto-graph', 'elements'),
-     State('taxonomy-level-selector', 'value'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
-)
-def display_info_table(selected_tab, bin_row_data, contig_row_data, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
-    if not data_loaded:
-        raise PreventUpdate
-        
-    bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
-    bin_information_display = load_from_redis(f'{user_folder}:bin-information-display')
-    contig_dense_matrix = load_from_redis(f'{user_folder}:contig-dense-matrix')
-    contig_information_display = load_from_redis(f'{user_folder}:contig-information-display')
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-    current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
-    
-    bin_row_data = bin_information_display.to_dict('records')
-    contig_row_data = contig_information_display.to_dict('records')
-    
-    # Default styles to hide tables initially
-    bin_style = {'display': 'none'}
-    contig_style = {'display': 'none'}
-    bin_filter_model = {}
-    bin_col_def = {}
-    contig_filter_model = {}
-    contig_col_def = {}
-    row_count_text = ""
-
-    # Apply filtering logic for the selected table and annotation
-    def apply_filter_logic(row_data):
-        filter_model = {}
-        # Set the default visibility to 1 for all rows initially
-        for row in row_data:
-            row['Visibility'] = 1
-
-        # Apply annotation filter based on the selected annotation
-        if selected_annotation:
-            filter_model[taxonomy_level] = {
-                "filterType": "text",
-                "operator": "OR",
-                "conditions": [
-                    {
-                        "filter": selected_annotation,
-                        "filterType": "text",
-                        "type": "contains",
-                    }
-                ]
-            }
-            for row in row_data:
-                if row[taxonomy_level] != selected_annotation:
-                    row['Visibility'] = 2
-        else:
-            filter_model = {}
-
-        # Set visibility based on the current visualization mode
-        if selected_tab == 'bin':
-            if current_visualization_mode['selected_bin']:
-                selected_bin_index = bin_information[bin_information['Bin'] == current_visualization_mode['selected_bin']].index[0]
-        
-                connected_bins = set()
-                for j in range(bin_dense_matrix.shape[0]):
-                    if bin_dense_matrix[selected_bin_index, j] != 0:
-                        connected_bins.add(bin_information.at[j, 'Bin'])
-        
-                for row in row_data:
-                    if row['Bin'] not in connected_bins and row['Bin'] != current_visualization_mode['selected_bin']:
-                        row['Visibility'] = 0
-        elif selected_tab == 'contig':
-            if current_visualization_mode['selected_contig']:
-                selected_contig_index = contig_information[contig_information['Contig'] == current_visualization_mode['selected_contig']].index[0]
-        
-                connected_contigs = set()
-                for j in range(contig_dense_matrix.shape[0]):
-                    if contig_dense_matrix[selected_contig_index, j] != 0:
-                        connected_contigs.add(contig_information.at[j, 'Contig'])
-        
-                for row in row_data:
-                    if row['Contig'] not in connected_contigs and row['Contig'] != current_visualization_mode['selected_contig']:
-                        row['Visibility'] = 0
-                    
-        # Apply visibility filter if checkbox is selected
-        if 'filter' in filter_value:
-            filter_model['Visibility'] = {
-                "filterType": "number",
-                "operator": "OR",
-                "conditions": [
-                    {
-                        "filter": 0,
-                        "filterType": "number",
-                        "type": "notEqual",
-                    }
-                ]
-            }
-        return filter_model
-
-    # Update based on the selected tab and apply filters
-    if selected_tab == 'bin':
-        bin_style = {'display': 'block'}
-        contig_style = {'display': 'none'}
-        display_table = bin_information_display
-        information_data = bin_information
-        bin_colors, annotation_colors = get_node_colors(cyto_elements, information_data)
-        style_conditions = styling_information_table(display_table, information_data, bin_colors, annotation_colors, unique_annotations, selected_tab)
-        bin_col_def = {
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "cellStyle": {
-                "styleConditions": style_conditions
-            }
-        }
-        bin_filter_model = apply_filter_logic(bin_row_data)
-        contig_filter_model = {}
-        
-    elif selected_tab == 'contig':
-        bin_style = {'display': 'none'}
-        contig_style = {'display': 'block'}
-        display_table = contig_information_display
-        information_data = contig_information
-        contig_colors, annotation_colors = get_node_colors(cyto_elements, information_data)
-        style_conditions = styling_information_table(display_table, information_data, contig_colors, annotation_colors, unique_annotations, selected_tab)
-        contig_col_def = {
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "cellStyle": {
-                "styleConditions": style_conditions
-            }
-        }
-        bin_filter_model = {}
-        contig_filter_model = apply_filter_logic(contig_row_data)
-    
-    row_count_text = f"Total Number of Rows: {sum(1 for row in contig_row_data if row['Visibility'] == 1)}"
-
-    return (
-        bin_row_data, bin_style, bin_filter_model, bin_col_def,
-        contig_row_data, contig_style, contig_filter_model, contig_col_def,
-        row_count_text
+    # Use the styling functions in the Dash layout
+    return dcc.Loading(
+        id="loading-spinner",
+        type="default",
+        fullscreen=True,
+        delay_show=1000,
+        children=[
+            html.Div([
+                dcc.Interval(
+                    id='interval-component',
+                    interval=1000,
+                    n_intervals=0
+                ),
+                html.Div([
+                    dcc.Store(id='data-loaded', data=False),
+                    html.Button("Download files", id="download-btn", style={**common_style}),
+                    html.Button("Reset", id="reset-btn", style={**common_style}),
+                    html.Button("Help", id="open-help", style={**common_style}),
+                    dcc.Download(id="download-dataframe-csv"),
+                    dcc.Dropdown(
+                        id='visualization-selector',
+                        options=[
+                            {'label': 'Taxonomy Hierarchy', 'value': 'taxonomy_hierarchy'},
+                            {'label': 'Annotation Visualization', 'value': 'basic'},
+                            {'label': 'Bin Visualization', 'value': 'bin'},
+                            {'label': 'Contig Visualization', 'value': 'contig'}
+                        ],
+                        value='taxonomy_hierarchy',
+                        style={'width': '300px', 'display': 'inline-block'}
+                    ),
+                    dcc.Dropdown(
+                        id='taxonomy-level-selector',
+                        options=[
+                            {'label': 'Domain', 'value': 'Domain'},
+                            {'label': 'Kingdom', 'value': 'Kingdom'},
+                            {'label': 'Phylum', 'value': 'Phylum'},
+                            {'label': 'Class', 'value': 'Class'},
+                            {'label': 'Order', 'value': 'Order'},
+                            {'label': 'Family', 'value': 'Family'},
+                            {'label': 'Genus', 'value': 'Genus'},
+                            {'label': 'Species', 'value': 'Species'},
+                        ],
+                        value='Family',
+                        placeholder="Select Taxonomy Level",
+                        style={'width': '300px', 'display': 'inline-block'}
+                    ),
+                    dcc.Dropdown(
+                        id='annotation-selector',
+                        options=[],
+                        value=None,
+                        placeholder="Select an annotation",
+                        style={}
+                    ),
+                    dcc.Dropdown(
+                        id='bin-selector',
+                        options=[],
+                        value=None,
+                        placeholder="Select a bin",
+                        style={}
+                    ),
+                    dcc.Dropdown(
+                        id='contig-selector',
+                        options=[],
+                        value=None,
+                        placeholder="Select a contig",
+                        style={}
+                    ),
+                    html.Button("Confirm Selection", id="confirm-btn", style={**common_style}),
+                ], style={
+                    'display': 'flex',
+                    'justify-content': 'space-between',
+                    'align-items': 'center',
+                    'margin': '0px',
+                    'position': 'fixed',
+                    'top': '0',
+                    'left': '0',
+                    'width': '100%',
+                    'z-index': '1000',
+                    'background-color': 'lightgrey',
+                    'padding': '10px',
+                    'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'
+                }),
+                html.Div(style={'height': '60px'}),  # Placeholder for header height
+                html.Div([
+                    html.Div([
+                        dcc.Graph(id='bar-chart', config={'displayModeBar': False}, figure=go.Figure(), style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
+                        html.Div(id='row-count', style={'margin': '0px', 'height': '2vh', 'display': 'inline-block'}),
+                        dcc.Checklist(
+                            id='visibility-filter',
+                            options=[{'label': '  Only show elements in the diagram', 'value': 'filter'}],
+                            value=['filter'],
+                            style={'display': 'inline-block', 'margin-right': '10px', 'float': 'right'}
+                        ),
+                        html.Div([
+                            dcc.Tabs(id='table-tabs', value='bin', children=[
+                                dcc.Tab(label='Bin Info', value='bin', className="p-0"),
+                                dcc.Tab(label='Contig Info', value='contig', className="p-0")
+                            ]),
+                            html.Div(
+                                id='table-container',
+                                children=[
+                                    dag.AgGrid(
+                                        id='bin-info-table',
+                                        columnDefs=bin_column_defs,
+                                        rowData=[],
+                                        defaultColDef={},
+                                        style={'display': 'none'},
+                                        dashGridOptions={
+                                            'headerPinned': 'top',
+                                            'rowSelection': 'single'
+                                        }
+                                    ),
+                                    dag.AgGrid(
+                                        id='contig-info-table',
+                                        columnDefs=contig_column_defs,
+                                        rowData=[],
+                                        defaultColDef={},
+                                        style={'display': 'none'},
+                                        dashGridOptions={
+                                            'headerPinned': 'top',
+                                            'rowSelection': 'single'
+                                        }
+                                    )
+                                ]
+                            ),
+                        ])
+                    ], style={'display': 'inline-block', 'vertical-align': 'top'}),
+                    html.Div([
+                        dcc.Graph(id='treemap-graph', figure=go.Figure(), config={'displayModeBar': False}, style={'height': '80vh', 'width': '48vw', 'display': 'inline-block'}),
+                        cyto.Cytoscape(
+                            id='cyto-graph',
+                            elements=[],
+                            stylesheet=base_stylesheet,
+                            style={},
+                            layout={'name': 'preset'},
+                            zoom=1,
+                            userZoomingEnabled=True,
+                            wheelSensitivity=0.1
+                        )
+                    ], style={'display': 'inline-block', 'vertical-align': 'top'}),
+                    html.Div([
+                        html.Div(id='hover-info', style={'height': '20vh', 'width': '19vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'}),
+                        html.Div([
+                            dcc.Textarea(
+                                id='chatgpt-input',
+                                placeholder='Enter your query here...',
+                                style={'width': '100%', 'height': '15vh', 'display': 'inline-block'}
+                            ),
+                            html.Button('Interpret Data', id='interpret-button', n_clicks=0, style={'width': '100%', 'display': 'inline-block'})
+                        ], style={'width': '19vw', 'display': 'inline-block'}),
+                        html.Div(id='gpt-answer',
+                                 style={'height': '45vh',
+                                        'width': '19vw',
+                                        'whiteSpace': 'pre-wrap',
+                                        'font-size': '10px',
+                                        'background-color': 'white',
+                                        'padding': '5px',
+                                        'border': '1px solid #ccc',
+                                        'margin-top': '3px',
+                                        'overflowY': 'auto'}
+                        ),
+                        dcc.Store(id='scroll-trigger', data=False)
+                    ], style={'display': 'inline-block', 'vertical-align': 'top', 'margin-left': '20px'}),
+                ], style={'width': '100%', 'display': 'flex'}),
+                html.Div([
+                    dash_table.DataTable(
+                        id='contact-table',
+                        columns=[],
+                        data=[],
+                        style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
+                        style_data_conditional=[],
+                        style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
+                        style_header={'whiteSpace': 'normal', 'height': 'auto'},
+                        fixed_rows={'headers': True},
+                        fixed_columns={'headers': True, 'data': 1}
+                    )
+                ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
+                help_modal
+            ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
+        ]
     )
-
-@app.callback(
-    [Output('visualization-selector', 'value'),
-     Output('annotation-selector', 'value'),
-     Output('annotation-selector', 'style'),
-     Output('bin-selector', 'value'),
-     Output('bin-selector', 'style'),
-     Output('contig-selector', 'value'),
-     Output('contig-selector', 'style'),
-     Output('table-tabs', 'value'),
-     Output('contact-table', 'active_cell'),
-     Output('bin-info-table', 'selectedRows'),
-     Output('contig-info-table', 'selectedRows')],
-    [Input('reset-btn', 'n_clicks'),
-     Input('visualization-selector', 'value'),
-     Input('contact-table', 'active_cell'),
-     Input('bin-info-table', 'selectedRows'),
-     Input('contig-info-table', 'selectedRows'),
-     Input('cyto-graph', 'selectedNodeData'),
-     Input('table-tabs', 'value')],
-    [State('taxonomy-level-selector', 'value'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
-)
-def sync_selectors(reset_clicks, visualization_type, contact_table_active_cell, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, user_folder, data_loaded):
-    if not data_loaded:
-        raise PreventUpdate
+           
+def register_visualization_callbacks(app):
+    @app.callback(
+        [Output('data-loaded', 'data')],
+        [Input('user-folder', 'data')]
+    )
+    def load_data(user_folder):
+        # Path setup for user-specific data
+        logger.info(f"Loading data for user folder: {user_folder}")
         
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    contact_matrix_display = load_from_redis(f'{user_folder}:contact-matrix-display')
+        user_output_path = f'output/{user_folder}'
+        bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
+        bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
+        contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
+        contig_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
     
-    ctx = callback_context
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    # Initialize the styles as hidden
-    annotation_selector_style = {'display': 'none'}
-    bin_selector_style = {'display': 'none'}
-    contig_selector_style = {'display': 'none'}
-    tab_value = current_tab  # Default to the current tab
-
-    # Reset selections if reset button is clicked
-    if triggered_id == 'reset-btn':
-        visualization_type = 'taxonomy_hierarchy'
-        selected_annotation = None
-        selected_bin = None
-        selected_contig = None
-    else:
-        selected_annotation, selected_bin, selected_contig = synchronize_selections(
-            triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, current_tab,
-            bin_information, contig_information, contact_matrix_display
-        )
-        
-    if triggered_id == 'table-tabs':
-        visualization_type = current_tab
+        # Redis keys specific to each user folder
+        bin_info_key = f'{user_folder}:bin-information-intact'
+        bin_matrix_key = f'{user_folder}:bin-dense-matrix'
+        bin_display_key = f'{user_folder}:bin-information-display'
+        contig_info_key = f'{user_folder}:contig-information-intact'
+        contig_matrix_key = f'{user_folder}:contig-dense-matrix'
+        contig_display_key = f'{user_folder}:contig-information-display'
+    
+        # Load data from files
+        try:
+            bin_information_intact = pd.read_csv(bin_info_path)
             
-    # Update styles, tab, and visualization type based on selections
-    if selected_bin or visualization_type == 'bin':
-        visualization_type = 'bin'
-        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
-        bin_selector_style = {'width': '300px', 'display': 'inline-block'}
-        tab_value = 'bin'  # Switch to bin tab
-
-    elif selected_contig or visualization_type == 'contig':
-        visualization_type = 'contig'
-        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
-        contig_selector_style = {'width': '300px', 'display': 'inline-block'}
-        tab_value = 'contig'  # Switch to contig tab
-
-    elif selected_annotation and visualization_type == 'basic':
-        annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
-
-    return (visualization_type, selected_annotation, annotation_selector_style,
-            selected_bin, bin_selector_style, selected_contig, contig_selector_style,
-            tab_value, None, [], [])
-
-def synchronize_selections(triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, table_tab_value, bin_information, contig_information, contact_matrix_display):
-    selected_annotation = None
-    selected_bin = None
-    selected_contig = None
-
-    # Node selected in the network
-    if triggered_id == 'cyto-graph' and selected_node_data:
-        selected_node_id = selected_node_data[0]['id']
-        
-        # Check if the node exists in both bin and contig information
-        is_in_bin = selected_node_id in bin_information['Bin'].values
-        is_in_contig = selected_node_id in contig_information['Contig'].values
-
-        # Decide based on the active tab
-        if is_in_bin and is_in_contig:
-            if table_tab_value == 'bin':
-                # Use bin info if the bin tab is active
-                bin_info = bin_information[bin_information['Bin'] == selected_node_id].iloc[0]
-                selected_annotation = bin_info['Annotation']
-                selected_bin = bin_info['Bin']
-            elif table_tab_value == 'contig':
-                # Use contig info if the contig tab is active
-                contig_info = contig_information[contig_information['Contig'] == selected_node_id].iloc[0]
-                selected_annotation = contig_info['Annotation']
-                selected_contig = contig_info['Contig']
-        elif is_in_bin:
-            # If only in bin, select bin info
-            bin_info = bin_information[bin_information['Bin'] == selected_node_id].iloc[0]
-            selected_annotation = bin_info['Annotation']
-            selected_bin = bin_info['Bin']
-        elif is_in_contig:
-            # If only in contig, select contig info
-            contig_info = contig_information[contig_information['Contig'] == selected_node_id].iloc[0]
-            selected_annotation = contig_info['Annotation']
-            selected_contig = contig_info['Contig']
-        else:
-            # Default to treating it as an annotation
-            selected_annotation = selected_node_id
-
-    # Row selected in bin-info-table
-    elif triggered_id == 'bin-info-table' and bin_info_selected_rows:
-        selected_row = bin_info_selected_rows[0]
-        if taxonomy_level in selected_row and 'Bin' in selected_row:
-            selected_annotation = selected_row[taxonomy_level]
-            selected_bin = selected_row['Bin']
-
-    # Row selected in contig-info-table
-    elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
-        selected_row = contig_info_selected_rows[0]
-        if taxonomy_level in selected_row and 'Contig' in selected_row:
-            selected_annotation = selected_row[taxonomy_level]
-            selected_contig = selected_row['Contig']
-
-    # Cell selected in contact-table
-    elif triggered_id == 'contact-table' and contact_table_active_cell:
-        row_id = contact_table_active_cell['row']
-        row_annotation = contact_matrix_display.iloc[row_id]['Annotation']
-        selected_annotation = row_annotation
-
-    logger.info(f'Current selected: Annotation={selected_annotation}, Bin={selected_bin}, Contig={selected_contig}')
-
-    return selected_annotation, selected_bin, selected_contig
-
-# Callback to update the visualizationI want to 
-@app.callback(
-    [Output('cyto-graph', 'elements'),
-     Output('cyto-graph', 'style'),
-     Output('bar-chart', 'figure'),
-     Output('treemap-graph', 'figure'),
-     Output('treemap-graph', 'style')],
-    [Input('reset-btn', 'n_clicks'),
-     Input('confirm-btn', 'n_clicks')],
-    [State('visualization-selector', 'value'),
-     State('annotation-selector', 'value'),
-     State('bin-selector', 'value'),
-     State('contig-selector', 'value'),
-     State('contact-table', 'data'),
-     State('table-tabs', 'value'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
-)
-def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, table_data, selected_tab, user_folder, data_loaded):
-    if not data_loaded:
-        logger.info("Data not loaded, raising PreventUpdate.")
-        raise PreventUpdate
-        
-    logger.info("update_visualization triggered.")
-    logger.info(f"Visualization type: {visualization_type}")
-    logger.info(f"Selected annotation: {selected_annotation}")
-    logger.info(f"Selected bin: {selected_bin}")
-    logger.info(f"Selected contig: {selected_contig}")
+            bin_matrix_data = np.load(bin_matrix_path)
+            bin_dense_matrix = coo_matrix(
+                (bin_matrix_data['data'], (bin_matrix_data['row'], bin_matrix_data['col'])),
+                shape=tuple(bin_matrix_data['shape'])
+            ).toarray()
     
-    # Load user-specific data from Redis
-    bin_information_intact = load_from_redis(f'{user_folder}:bin-information-intact')
-    bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
-    contig_dense_matrix = load_from_redis(f'{user_folder}:contig-dense-matrix')
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-    contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
-    current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
-    logger.info("Successfully loaded all necessary data from Redis.")
-
-    ctx = callback_context
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    logger.info(f"Triggered by: {triggered_id}")
-
-    if triggered_id == 'reset-btn':
-        logger.info("Reset button clicked, switching to taxonomy_hierarchy visualization.")
+            contig_information_intact = pd.read_csv(contig_info_path)
+    
+            contig_matrix_data = np.load(contig_matrix_path)
+            contig_dense_matrix = coo_matrix(
+                (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
+                shape=tuple(contig_matrix_data['shape'])
+            ).toarray()
+        except Exception as e:
+            logger.error(f"Error loading data from files: {e}")
+            return [False]
+    
+        # Prepare display data
+        bin_display_columns = ['Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
+        bin_information_display = bin_information_intact[bin_display_columns].copy()
+        bin_information_display['Visibility'] = 1
+    
+        contig_display_columns = ['Contig', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
+        contig_information_display = contig_information_intact[contig_display_columns].copy()
+        contig_information_display['Visibility'] = 1
+    
+        # Save the loaded data to Redis with keys specific to the user folder
+        try:
+            save_to_redis(bin_info_key, bin_information_intact)       
+            save_to_redis(bin_matrix_key, bin_dense_matrix)
+            save_to_redis(bin_display_key, bin_information_display)
+            save_to_redis(contig_info_key, contig_information_intact)
+            save_to_redis(contig_matrix_key, contig_dense_matrix)
+            save_to_redis(contig_display_key, contig_information_display)
+        except Exception as e:
+            logger.error(f"Error saving data to Redis: {e}")
+            return [False]
+    
+        logger.info("Data loaded and saved to Redis successfully.")
+        return [True]
+    
+    @app.callback(
+        [Output('contact-table', 'columns'),
+         Output('contact-table', 'data'),
+         Output('contact-table', 'style_data_conditional'),
+         Output('reset-btn', 'n_clicks')],
+        [Input('taxonomy-level-selector', 'value')],
+        [State('reset-btn', 'n_clicks'),
+         State('user-folder', 'data'),
+         State('data-loaded', 'data')]
+    )
+    def update_data(taxonomy_level, reset_clicks, user_folder, data_loaded):
+        logger.info(f"Updating data for user folder: {user_folder} with taxonomy level: {taxonomy_level or 'Family'}")
+    
+        # Default taxonomy level if not provided
+        if taxonomy_level is None:
+            taxonomy_level = 'Family'
+    
+        # Define Redis keys that incorporate the user_folder to avoid concurrency issues
+        bin_info_key = f'{user_folder}:bin-information-intact'
+        contig_info_key = f'{user_folder}:contig-information-intact'
+        bin_matrix_key = f'{user_folder}:bin-dense-matrix'
+        visualization_mode_key = f'{user_folder}:current-visualization-mode'
+        bin_information_key = f'{user_folder}:bin-information'
+        contig_information_key = f'{user_folder}:contig-information'
+        unique_annotations_key = f'{user_folder}:unique-annotations'
+        contact_matrix_key = f'{user_folder}:contact-matrix'
+        contact_matrix_display_key = f'{user_folder}:contact-matrix-display'
+    
+        # Load user-specific data from Redis
+        try:
+            bin_information_intact = load_from_redis(bin_info_key)
+            contig_information_intact = load_from_redis(contig_info_key)
+            bin_dense_matrix = load_from_redis(bin_matrix_key)
+        except KeyError as e:
+            logger.error(f"KeyError while loading data from Redis: {e}")
+            raise PreventUpdate
+    
+        # Set taxonomy columns
+        taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+        
+        # Process bin and contig information by annotation
+        bin_information = bin_information_intact.copy()
+        bin_information['Annotation'] = bin_information[taxonomy_level]
+        bin_information = bin_information.drop(columns=taxonomy_columns)
+    
+        contig_information = contig_information_intact.copy()
+        contig_information['Annotation'] = contig_information[taxonomy_level]
+        contig_information = contig_information.drop(columns=taxonomy_columns)
+    
+        # Identify unique annotations
+        unique_annotations = bin_information['Annotation'].unique()
+    
+        # Initialize and populate the contact matrix
+        contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
+        bin_indexes_dict = get_indexes(unique_annotations, bin_information)
+    
+        # Compute contact values
+        for annotation_i in unique_annotations:
+            for annotation_j in unique_annotations:
+                indexes_i = bin_indexes_dict[annotation_i]
+                indexes_j = bin_indexes_dict[annotation_j]
+                sub_matrix = bin_dense_matrix[np.ix_(indexes_i, indexes_j)]
+                contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
+    
+        # Prepare display version of the contact matrix
+        contact_matrix_display = contact_matrix.astype(int).copy()
+        contact_matrix_display.insert(0, 'Annotation', contact_matrix_display.index)
+        
+        # Update visualization mode state
+        reset_clicks = (reset_clicks or 0) + 1
         current_visualization_mode = {
             'visualization_type': 'taxonomy_hierarchy',
+            'taxonomy_level': taxonomy_level,
             'selected_annotation': None,
             'selected_bin': None,
             'selected_contig': None
         }
-        treemap_fig, bar_fig = taxonomy_visualization(bin_information_intact, bin_information, unique_annotations, contact_matrix)
-        treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-        cyto_elements = []
-        cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-
-    elif triggered_id == 'confirm-btn':
-        logger.info("Confirm button clicked, updating visualization mode with selected values.")
-        current_visualization_mode.update({
-            'visualization_type': visualization_type,
-            'selected_annotation': selected_annotation,
-            'selected_bin': selected_bin,
-            'selected_contig': selected_contig
-        })
-        save_to_redis(f'{user_folder}:current-visualization-mode', current_visualization_mode)
-        logger.info(f"Updated current_visualization_mode and saved to Redis with key: {user_folder}:current-visualization-mode")
-
-        if visualization_type == 'taxonomy_hierarchy':
-            logger.info("Displaying taxonomy_hierarchy visualization.")
+    
+        # Define table columns and data for display
+        table_columns = [{"name": col, "id": col} for col in contact_matrix_display.columns]
+        table_data = contact_matrix_display.to_dict('records')
+        style_conditions = styling_annotation_table(contact_matrix_display, bin_information)
+    
+        # Save updated data to Redis
+        save_to_redis(bin_information_key, bin_information)
+        save_to_redis(contig_information_key, contig_information)
+        save_to_redis(unique_annotations_key, unique_annotations)
+        save_to_redis(contact_matrix_key, contact_matrix)
+        save_to_redis(contact_matrix_display_key, contact_matrix_display)
+        save_to_redis(visualization_mode_key, current_visualization_mode)
+    
+        return table_columns, table_data, style_conditions, reset_clicks
+    
+    @app.callback(
+        [Output('bin-info-table', 'rowData'),
+         Output('bin-info-table', 'style'),
+         Output('bin-info-table', 'filterModel'),
+         Output('bin-info-table', 'defaultColDef'),
+         Output('contig-info-table', 'rowData'),
+         Output('contig-info-table', 'style'),
+         Output('contig-info-table', 'filterModel'),
+         Output('contig-info-table', 'defaultColDef'),
+         Output('row-count', 'children')],
+        [Input('table-tabs', 'value'),
+         Input('bin-info-table', 'rowData'),
+         Input('contig-info-table', 'rowData'),
+         Input('annotation-selector', 'value'),
+         Input('visibility-filter', 'value')],
+        [State('cyto-graph', 'elements'),
+         State('taxonomy-level-selector', 'value'),
+         State('user-folder', 'data'),
+         State('data-loaded', 'data')]
+    )
+    def display_info_table(selected_tab, bin_row_data, contig_row_data, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
+        bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
+        bin_information_display = load_from_redis(f'{user_folder}:bin-information-display')
+        contig_dense_matrix = load_from_redis(f'{user_folder}:contig-dense-matrix')
+        contig_information_display = load_from_redis(f'{user_folder}:contig-information-display')
+        bin_information = load_from_redis(f'{user_folder}:bin-information')
+        contig_information = load_from_redis(f'{user_folder}:contig-information')
+        unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
+        current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
+        
+        bin_row_data = bin_information_display.to_dict('records')
+        contig_row_data = contig_information_display.to_dict('records')
+        
+        # Default styles to hide tables initially
+        bin_style = {'display': 'none'}
+        contig_style = {'display': 'none'}
+        bin_filter_model = {}
+        bin_col_def = {}
+        contig_filter_model = {}
+        contig_col_def = {}
+        row_count_text = ""
+    
+        # Apply filtering logic for the selected table and annotation
+        def apply_filter_logic(row_data):
+            filter_model = {}
+            # Set the default visibility to 1 for all rows initially
+            for row in row_data:
+                row['Visibility'] = 1
+    
+            # Apply annotation filter based on the selected annotation
+            if selected_annotation:
+                filter_model[taxonomy_level] = {
+                    "filterType": "text",
+                    "operator": "OR",
+                    "conditions": [
+                        {
+                            "filter": selected_annotation,
+                            "filterType": "text",
+                            "type": "contains",
+                        }
+                    ]
+                }
+                for row in row_data:
+                    if row[taxonomy_level] != selected_annotation:
+                        row['Visibility'] = 2
+            else:
+                filter_model = {}
+    
+            # Set visibility based on the current visualization mode
+            if selected_tab == 'bin':
+                if current_visualization_mode['selected_bin']:
+                    selected_bin_index = bin_information[bin_information['Bin'] == current_visualization_mode['selected_bin']].index[0]
+            
+                    connected_bins = set()
+                    for j in range(bin_dense_matrix.shape[0]):
+                        if bin_dense_matrix[selected_bin_index, j] != 0:
+                            connected_bins.add(bin_information.at[j, 'Bin'])
+            
+                    for row in row_data:
+                        if row['Bin'] not in connected_bins and row['Bin'] != current_visualization_mode['selected_bin']:
+                            row['Visibility'] = 0
+            elif selected_tab == 'contig':
+                if current_visualization_mode['selected_contig']:
+                    selected_contig_index = contig_information[contig_information['Contig'] == current_visualization_mode['selected_contig']].index[0]
+            
+                    connected_contigs = set()
+                    for j in range(contig_dense_matrix.shape[0]):
+                        if contig_dense_matrix[selected_contig_index, j] != 0:
+                            connected_contigs.add(contig_information.at[j, 'Contig'])
+            
+                    for row in row_data:
+                        if row['Contig'] not in connected_contigs and row['Contig'] != current_visualization_mode['selected_contig']:
+                            row['Visibility'] = 0
+                        
+            # Apply visibility filter if checkbox is selected
+            if 'filter' in filter_value:
+                filter_model['Visibility'] = {
+                    "filterType": "number",
+                    "operator": "OR",
+                    "conditions": [
+                        {
+                            "filter": 0,
+                            "filterType": "number",
+                            "type": "notEqual",
+                        }
+                    ]
+                }
+            return filter_model
+    
+        # Update based on the selected tab and apply filters
+        if selected_tab == 'bin':
+            bin_style = {'display': 'block'}
+            contig_style = {'display': 'none'}
+            display_table = bin_information_display
+            information_data = bin_information
+            bin_colors, annotation_colors = get_node_colors(cyto_elements, information_data)
+            style_conditions = styling_information_table(display_table, information_data, bin_colors, annotation_colors, unique_annotations, selected_tab)
+            bin_col_def = {
+                "sortable": True,
+                "filter": True,
+                "resizable": True,
+                "cellStyle": {
+                    "styleConditions": style_conditions
+                }
+            }
+            bin_filter_model = apply_filter_logic(bin_row_data)
+            contig_filter_model = {}
+            
+        elif selected_tab == 'contig':
+            bin_style = {'display': 'none'}
+            contig_style = {'display': 'block'}
+            display_table = contig_information_display
+            information_data = contig_information
+            contig_colors, annotation_colors = get_node_colors(cyto_elements, information_data)
+            style_conditions = styling_information_table(display_table, information_data, contig_colors, annotation_colors, unique_annotations, selected_tab)
+            contig_col_def = {
+                "sortable": True,
+                "filter": True,
+                "resizable": True,
+                "cellStyle": {
+                    "styleConditions": style_conditions
+                }
+            }
+            bin_filter_model = {}
+            contig_filter_model = apply_filter_logic(contig_row_data)
+        
+        row_count_text = f"Total Number of Rows: {sum(1 for row in contig_row_data if row['Visibility'] == 1)}"
+    
+        return (
+            bin_row_data, bin_style, bin_filter_model, bin_col_def,
+            contig_row_data, contig_style, contig_filter_model, contig_col_def,
+            row_count_text
+        )
+    
+    @app.callback(
+        [Output('visualization-selector', 'value'),
+         Output('annotation-selector', 'value'),
+         Output('annotation-selector', 'style'),
+         Output('bin-selector', 'value'),
+         Output('bin-selector', 'style'),
+         Output('contig-selector', 'value'),
+         Output('contig-selector', 'style'),
+         Output('table-tabs', 'value'),
+         Output('contact-table', 'active_cell'),
+         Output('bin-info-table', 'selectedRows'),
+         Output('contig-info-table', 'selectedRows')],
+        [Input('reset-btn', 'n_clicks'),
+         Input('visualization-selector', 'value'),
+         Input('contact-table', 'active_cell'),
+         Input('bin-info-table', 'selectedRows'),
+         Input('contig-info-table', 'selectedRows'),
+         Input('cyto-graph', 'selectedNodeData'),
+         Input('table-tabs', 'value')],
+        [State('taxonomy-level-selector', 'value'),
+         State('user-folder', 'data'),
+         State('data-loaded', 'data')]
+    )
+    def sync_selectors(reset_clicks, visualization_type, contact_table_active_cell, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, user_folder, data_loaded):      
+        bin_information = load_from_redis(f'{user_folder}:bin-information')
+        contig_information = load_from_redis(f'{user_folder}:contig-information')
+        contact_matrix_display = load_from_redis(f'{user_folder}:contact-matrix-display')
+        
+        ctx = callback_context
+        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+        # Initialize the styles as hidden
+        annotation_selector_style = {'display': 'none'}
+        bin_selector_style = {'display': 'none'}
+        contig_selector_style = {'display': 'none'}
+        tab_value = current_tab  # Default to the current tab
+    
+        # Reset selections if reset button is clicked
+        if triggered_id == 'reset-btn':
+            visualization_type = 'taxonomy_hierarchy'
+            selected_annotation = None
+            selected_bin = None
+            selected_contig = None
+        else:
+            selected_annotation, selected_bin, selected_contig = synchronize_selections(
+                triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, current_tab,
+                bin_information, contig_information, contact_matrix_display
+            )
+            
+        if triggered_id == 'table-tabs':
+            visualization_type = current_tab
+                
+        # Update styles, tab, and visualization type based on selections
+        if selected_bin or visualization_type == 'bin':
+            visualization_type = 'bin'
+            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
+            bin_selector_style = {'width': '300px', 'display': 'inline-block'}
+            tab_value = 'bin'  # Switch to bin tab
+    
+        elif selected_contig or visualization_type == 'contig':
+            visualization_type = 'contig'
+            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
+            contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+            tab_value = 'contig'  # Switch to contig tab
+    
+        elif selected_annotation and visualization_type == 'basic':
+            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
+    
+        return (visualization_type, selected_annotation, annotation_selector_style,
+                selected_bin, bin_selector_style, selected_contig, contig_selector_style,
+                tab_value, None, [], [])
+    
+    def synchronize_selections(triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, table_tab_value, bin_information, contig_information, contact_matrix_display):
+        selected_annotation = None
+        selected_bin = None
+        selected_contig = None
+    
+        # Node selected in the network
+        if triggered_id == 'cyto-graph' and selected_node_data:
+            selected_node_id = selected_node_data[0]['id']
+            
+            # Check if the node exists in both bin and contig information
+            is_in_bin = selected_node_id in bin_information['Bin'].values
+            is_in_contig = selected_node_id in contig_information['Contig'].values
+    
+            # Decide based on the active tab
+            if is_in_bin and is_in_contig:
+                if table_tab_value == 'bin':
+                    # Use bin info if the bin tab is active
+                    bin_info = bin_information[bin_information['Bin'] == selected_node_id].iloc[0]
+                    selected_annotation = bin_info['Annotation']
+                    selected_bin = bin_info['Bin']
+                elif table_tab_value == 'contig':
+                    # Use contig info if the contig tab is active
+                    contig_info = contig_information[contig_information['Contig'] == selected_node_id].iloc[0]
+                    selected_annotation = contig_info['Annotation']
+                    selected_contig = contig_info['Contig']
+            elif is_in_bin:
+                # If only in bin, select bin info
+                bin_info = bin_information[bin_information['Bin'] == selected_node_id].iloc[0]
+                selected_annotation = bin_info['Annotation']
+                selected_bin = bin_info['Bin']
+            elif is_in_contig:
+                # If only in contig, select contig info
+                contig_info = contig_information[contig_information['Contig'] == selected_node_id].iloc[0]
+                selected_annotation = contig_info['Annotation']
+                selected_contig = contig_info['Contig']
+            else:
+                # Default to treating it as an annotation
+                selected_annotation = selected_node_id
+    
+        # Row selected in bin-info-table
+        elif triggered_id == 'bin-info-table' and bin_info_selected_rows:
+            selected_row = bin_info_selected_rows[0]
+            if taxonomy_level in selected_row and 'Bin' in selected_row:
+                selected_annotation = selected_row[taxonomy_level]
+                selected_bin = selected_row['Bin']
+    
+        # Row selected in contig-info-table
+        elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
+            selected_row = contig_info_selected_rows[0]
+            if taxonomy_level in selected_row and 'Contig' in selected_row:
+                selected_annotation = selected_row[taxonomy_level]
+                selected_contig = selected_row['Contig']
+    
+        # Cell selected in contact-table
+        elif triggered_id == 'contact-table' and contact_table_active_cell:
+            row_id = contact_table_active_cell['row']
+            row_annotation = contact_matrix_display.iloc[row_id]['Annotation']
+            selected_annotation = row_annotation
+    
+        logger.info(f'Current selected: Annotation={selected_annotation}, Bin={selected_bin}, Contig={selected_contig}')
+    
+        return selected_annotation, selected_bin, selected_contig
+    
+    # Callback to update the visualizationI want to 
+    @app.callback(
+        [Output('cyto-graph', 'elements'),
+         Output('cyto-graph', 'style'),
+         Output('bar-chart', 'figure'),
+         Output('treemap-graph', 'figure'),
+         Output('treemap-graph', 'style')],
+        [Input('reset-btn', 'n_clicks'),
+         Input('confirm-btn', 'n_clicks')],
+        [State('visualization-selector', 'value'),
+         State('annotation-selector', 'value'),
+         State('bin-selector', 'value'),
+         State('contig-selector', 'value'),
+         State('contact-table', 'data'),
+         State('table-tabs', 'value'),
+         State('user-folder', 'data'),
+         State('data-loaded', 'data')]
+    )
+    def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, table_data, selected_tab, user_folder, data_loaded):
+        logger.info("update_visualization triggered.")
+        logger.info(f"Visualization type: {visualization_type}")
+        logger.info(f"Selected annotation: {selected_annotation}")
+        logger.info(f"Selected bin: {selected_bin}")
+        logger.info(f"Selected contig: {selected_contig}")
+        
+        # Load user-specific data from Redis
+        bin_information_intact = load_from_redis(f'{user_folder}:bin-information-intact')
+        bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
+        contig_dense_matrix = load_from_redis(f'{user_folder}:contig-dense-matrix')
+        bin_information = load_from_redis(f'{user_folder}:bin-information')
+        contig_information = load_from_redis(f'{user_folder}:contig-information')
+        unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
+        contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
+        current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
+        logger.info("Successfully loaded all necessary data from Redis.")
+    
+        ctx = callback_context
+        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        logger.info(f"Triggered by: {triggered_id}")
+    
+        if triggered_id == 'reset-btn':
+            logger.info("Reset button clicked, switching to taxonomy_hierarchy visualization.")
+            current_visualization_mode = {
+                'visualization_type': 'taxonomy_hierarchy',
+                'selected_annotation': None,
+                'selected_bin': None,
+                'selected_contig': None
+            }
             treemap_fig, bar_fig = taxonomy_visualization(bin_information_intact, bin_information, unique_annotations, contact_matrix)
             treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+    
+        elif triggered_id == 'confirm-btn':
+            logger.info("Confirm button clicked, updating visualization mode with selected values.")
+            current_visualization_mode.update({
+                'visualization_type': visualization_type,
+                'selected_annotation': selected_annotation,
+                'selected_bin': selected_bin,
+                'selected_contig': selected_contig
+            })
+            save_to_redis(f'{user_folder}:current-visualization-mode', current_visualization_mode)
+            logger.info(f"Updated current_visualization_mode and saved to Redis with key: {user_folder}:current-visualization-mode")
+    
+            if visualization_type == 'taxonomy_hierarchy':
+                logger.info("Displaying taxonomy_hierarchy visualization.")
+                treemap_fig, bar_fig = taxonomy_visualization(bin_information_intact, bin_information, unique_annotations, contact_matrix)
+                treemap_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+                cyto_elements = []
+                cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+                
+            elif visualization_type == 'basic' or (selected_annotation and not selected_bin and not selected_contig):
+                logger.info("Displaying basic annotation visualization.")
+                cyto_elements, bar_fig, _ = annotation_visualization(bin_information, unique_annotations, contact_matrix)
+                treemap_fig = go.Figure()
+                treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+                cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+    
+            elif visualization_type == 'bin' and selected_bin:
+                logger.info(f"Displaying bin visualization for selected bin: {selected_bin}.")
+                cyto_elements, bar_fig = bin_visualization(selected_annotation, selected_bin, bin_information, bin_dense_matrix, unique_annotations)
+                treemap_fig = go.Figure()
+                treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+                cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+    
+            elif visualization_type == 'contig' and selected_contig:
+                logger.info(f"Displaying contig visualization for selected contig: {selected_contig}.")
+                cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig, contig_information, contig_dense_matrix, unique_annotations)
+                treemap_fig = go.Figure()
+                treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+                cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+    
+        # Log which tab is selected and return the appropriate layout
+        logger.info(f"Selected tab: {selected_tab}")
+        if selected_tab == 'bin':
+            logger.info("Returning elements and layout for bin tab.")
+            return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
+        elif selected_tab == 'contig':
+            logger.info("Returning elements and layout for contig tab.")
+            return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
+    
+        
+    @app.callback(
+        [Output('cyto-graph', 'elements', allow_duplicate=True),
+         Output('cyto-graph', 'stylesheet'),
+         Output('hover-info', 'children'),
+         Output('cyto-graph', 'layout')],
+        [Input('annotation-selector', 'value'),
+         Input('bin-selector', 'value'),
+         Input('contig-selector', 'value')],
+        [State('user-folder', 'data'),
+        State('data-loaded', 'data')],
+       prevent_initial_call=True
+    )
+    def update_selected_styles(selected_annotation, selected_bin, selected_contig, user_folder, data_loaded):
+        bin_information = load_from_redis(f'{user_folder}:bin-information')
+        contig_information = load_from_redis(f'{user_folder}:contig-information')
+        unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
+        contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
+        current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')    
             
-        elif visualization_type == 'basic' or (selected_annotation and not selected_bin and not selected_contig):
-            logger.info("Displaying basic annotation visualization.")
-            cyto_elements, bar_fig, _ = annotation_visualization(bin_information, unique_annotations, contact_matrix)
-            treemap_fig = go.Figure()
-            treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-
-        elif visualization_type == 'bin' and selected_bin:
-            logger.info(f"Displaying bin visualization for selected bin: {selected_bin}.")
-            cyto_elements, bar_fig = bin_visualization(selected_annotation, selected_bin, bin_information, bin_dense_matrix, unique_annotations)
-            treemap_fig = go.Figure()
-            treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-
-        elif visualization_type == 'contig' and selected_contig:
-            logger.info(f"Displaying contig visualization for selected contig: {selected_contig}.")
-            cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig, contig_information, contig_dense_matrix, unique_annotations)
-            treemap_fig = go.Figure()
-            treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-
-    # Log which tab is selected and return the appropriate layout
-    logger.info(f"Selected tab: {selected_tab}")
-    if selected_tab == 'bin':
-        logger.info("Returning elements and layout for bin tab.")
-        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
-    elif selected_tab == 'contig':
-        logger.info("Returning elements and layout for contig tab.")
-        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
-
+        selected_nodes = []
+        selected_edges = []
+        hover_info = "No selection"
+        cyto_elements = dash.no_update
+        cyto_style = dash.no_update
     
-@app.callback(
-    [Output('cyto-graph', 'elements', allow_duplicate=True),
-     Output('cyto-graph', 'stylesheet'),
-     Output('hover-info', 'children'),
-     Output('cyto-graph', 'layout')],
-    [Input('annotation-selector', 'value'),
-     Input('bin-selector', 'value'),
-     Input('contig-selector', 'value')],
-    [State('user-folder', 'data'),
-    State('data-loaded', 'data')],
-   prevent_initial_call=True
-)
-def update_selected_styles(selected_annotation, selected_bin, selected_contig, user_folder, data_loaded):
-    if not data_loaded:
-        raise PreventUpdate
-        
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
-    unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-    contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
-    current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')    
-        
-    selected_nodes = []
-    selected_edges = []
-    hover_info = "No selection"
-    cyto_elements = dash.no_update  # Default to no update for elements
-    cyto_style = dash.no_update  # Default to no update for layout style
-
-    # Determine which selection to use based on the active tab
-    if  selected_bin:
-        selected_nodes.append(selected_bin)
-        bin_info = bin_information[bin_information['Bin'] == selected_bin].iloc[0]
-        hover_info = f"Bin: {selected_bin}<br>Annotation: {bin_info['Annotation']}"
-        # No need to update cyto_elements or layout if a bin is selected
-
-    elif selected_contig:
-        selected_nodes.append(selected_contig)
-        contig_info = contig_information[contig_information['Contig'] == selected_contig].iloc[0]
-        hover_info = f"Contig: {selected_contig}<br>Annotation: {contig_info['Annotation']}"
-        # No need to update cyto_elements or layout if a contig is selected
-
-    if current_visualization_mode['visualization_type'] == 'basic':
-        selected_nodes.append(selected_annotation)
-        hover_info = f"Annotation: {selected_annotation}"
-
-        # Only call annotation_visualization in 'basic' mode
-        if selected_annotation:
-            # Show edges connected to the selected node using the contact matrix
-            annotation_index = unique_annotations.tolist().index(selected_annotation)
-            for i, contact_value in enumerate(contact_matrix.iloc[annotation_index]):
-                if contact_value > 0:
-                    connected_annotation = unique_annotations[i]
-                    selected_edges.append((selected_annotation, connected_annotation))
-
-            # Generate elements and layout with animation effect
-            cyto_elements, _, cyto_style = annotation_visualization(
-                bin_information, unique_annotations, contact_matrix, selected_node=selected_annotation
-            )
-        else:
-            cyto_elements, _, cyto_style = annotation_visualization(
-                bin_information, unique_annotations, contact_matrix
-            )
-
-    # Add selection styles for the selected nodes and edges
-    stylesheet = add_selection_styles(selected_nodes, selected_edges)
-
-    return cyto_elements, stylesheet, hover_info, cyto_style
-
-@app.callback(
-    [Output('annotation-selector', 'options'),
-     Output('bin-selector', 'options'),
-     Output('contig-selector', 'options')],
-    [Input('annotation-selector', 'value')],
-    [State('visualization-selector', 'value'),
-     State('table-tabs', 'value'),
-     State('user-folder', 'data'),
-     State('data-loaded', 'data')]
-)
-def update_dropdowns(selected_annotation, visualization_type, selected_tab, user_folder, data_loaded):
-    if not data_loaded:
-        raise PreventUpdate
-        
-    bin_information = load_from_redis(f'{user_folder}:bin-information')
-    contig_information = load_from_redis(f'{user_folder}:contig-information')
+        # Determine which selection to use based on the active tab
+        if  selected_bin:
+            selected_nodes.append(selected_bin)
+            bin_info = bin_information[bin_information['Bin'] == selected_bin].iloc[0]
+            hover_info = f"Bin: {selected_bin}<br>Annotation: {bin_info['Annotation']}"
+            # No need to update cyto_elements or layout if a bin is selected
     
-    # Initialize empty lists for dropdown options
-    annotation_options = []
-    bin_options = []
-    contig_options = []
-
-    # Determine which dataset to use based on selected_tab
-    if selected_tab == 'bin':
-        # Populate annotation options for bin information
-        annotation_options = [{'label': annotation, 'value': annotation} for annotation in bin_information['Annotation'].unique()]
-
-        # Populate bin options if a specific annotation is selected
-        if visualization_type == 'bin' and selected_annotation:
-            bin_index_dict = get_indexes(selected_annotation, bin_information)
-            bin_indexes = bin_index_dict[selected_annotation]
-            bins = bin_information.loc[bin_indexes, 'Bin']
-            bin_options = [{'label': bin, 'value': bin} for bin in bins]
-
-    elif selected_tab == 'contig':
-        # Populate annotation options for contig information
-        annotation_options = [{'label': annotation, 'value': annotation} for annotation in contig_information['Annotation'].unique()]
-
-        # Populate contig options if a specific annotation is selected
-        if visualization_type == 'contig' and selected_annotation:
-            contig_index_dict = get_indexes(selected_annotation, contig_information)
-            contig_indexes = contig_index_dict[selected_annotation]
-            contigs = contig_information.loc[contig_indexes, 'Contig']
-            contig_options = [{'label': contig, 'value': contig} for contig in contigs]
-
-    return annotation_options, bin_options, contig_options
-
-# Dash callback to use ChatGPT
-@app.callback(
-    Output('gpt-answer', 'children'),
-    [Input('interval-component', 'n_intervals'), 
-     Input('interpret-button', 'n_clicks')],
-    [State('chatgpt-input', 'value')]
-)
-def update_logs_and_gpt(n, interpret_clicks, gpt_query):
-    # Capture logs
-    logs = dash_logger_handler.get_logs()
-
-    # If the interpret button is clicked, handle the GPT query
-    if interpret_clicks > 0 and gpt_query:
-        gpt_response = get_chatgpt_response(gpt_query)
-        logger.info(f"GPT Answer: {gpt_response}")  # Log GPT's answer
-
-    return logs if logs else "No logs yet"
-
-# Client-side callback to scroll to the bottom when 'scroll-trigger' is True
-app.clientside_callback(
-    """
-    function(scrollTrigger) {
-        if (scrollTrigger) {
-            var gptAnswerDiv = document.getElementById('gpt-answer');
-            gptAnswerDiv.scrollTop = gptAnswerDiv.scrollHeight;
+        elif selected_contig:
+            selected_nodes.append(selected_contig)
+            contig_info = contig_information[contig_information['Contig'] == selected_contig].iloc[0]
+            hover_info = f"Contig: {selected_contig}<br>Annotation: {contig_info['Annotation']}"
+            # No need to update cyto_elements or layout if a contig is selected
+    
+        if current_visualization_mode['visualization_type'] == 'basic':
+            selected_nodes.append(selected_annotation)
+            hover_info = f"Annotation: {selected_annotation}"
+    
+            # Only call annotation_visualization in 'basic' mode
+            if selected_annotation:
+                # Show edges connected to the selected node using the contact matrix
+                annotation_index = unique_annotations.tolist().index(selected_annotation)
+                for i, contact_value in enumerate(contact_matrix.iloc[annotation_index]):
+                    if contact_value > 0:
+                        connected_annotation = unique_annotations[i]
+                        selected_edges.append((selected_annotation, connected_annotation))
+    
+                # Generate elements and layout with animation effect
+                cyto_elements, _, cyto_style = annotation_visualization(
+                    bin_information, unique_annotations, contact_matrix, selected_node=selected_annotation
+                )
+            else:
+                cyto_elements, _, cyto_style = annotation_visualization(
+                    bin_information, unique_annotations, contact_matrix
+                )
+    
+        # Add selection styles for the selected nodes and edges
+        stylesheet = add_selection_styles(selected_nodes, selected_edges)
+    
+        return cyto_elements, stylesheet, hover_info, cyto_style
+    
+    @app.callback(
+        [Output('annotation-selector', 'options'),
+         Output('bin-selector', 'options'),
+         Output('contig-selector', 'options')],
+        [Input('annotation-selector', 'value')],
+        [State('visualization-selector', 'value'),
+         State('table-tabs', 'value'),
+         State('user-folder', 'data'),
+         State('data-loaded', 'data')]
+    )
+    def update_dropdowns(selected_annotation, visualization_type, selected_tab, user_folder, data_loaded):
+        bin_information = load_from_redis(f'{user_folder}:bin-information')
+        contig_information = load_from_redis(f'{user_folder}:contig-information')
+        
+        # Initialize empty lists for dropdown options
+        annotation_options = []
+        bin_options = []
+        contig_options = []
+    
+        # Determine which dataset to use based on selected_tab
+        if selected_tab == 'bin':
+            # Populate annotation options for bin information
+            annotation_options = [{'label': annotation, 'value': annotation} for annotation in bin_information['Annotation'].unique()]
+    
+            # Populate bin options if a specific annotation is selected
+            if visualization_type == 'bin' and selected_annotation:
+                bin_index_dict = get_indexes(selected_annotation, bin_information)
+                bin_indexes = bin_index_dict[selected_annotation]
+                bins = bin_information.loc[bin_indexes, 'Bin']
+                bin_options = [{'label': bin, 'value': bin} for bin in bins]
+    
+        elif selected_tab == 'contig':
+            # Populate annotation options for contig information
+            annotation_options = [{'label': annotation, 'value': annotation} for annotation in contig_information['Annotation'].unique()]
+    
+            # Populate contig options if a specific annotation is selected
+            if visualization_type == 'contig' and selected_annotation:
+                contig_index_dict = get_indexes(selected_annotation, contig_information)
+                contig_indexes = contig_index_dict[selected_annotation]
+                contigs = contig_information.loc[contig_indexes, 'Contig']
+                contig_options = [{'label': contig, 'value': contig} for contig in contigs]
+    
+        return annotation_options, bin_options, contig_options
+    
+    # Dash callback to use ChatGPT
+    @app.callback(
+        Output('gpt-answer', 'children'),
+        [Input('interval-component', 'n_intervals'), 
+         Input('interpret-button', 'n_clicks')],
+        [State('chatgpt-input', 'value')]
+    )
+    def update_logs_and_gpt(n, interpret_clicks, gpt_query):
+        # Capture logs
+        logs = dash_logger_handler.get_logs()
+    
+        # If the interpret button is clicked, handle the GPT query
+        if interpret_clicks > 0 and gpt_query:
+            gpt_response = get_chatgpt_response(gpt_query)
+            logger.info(f"GPT Answer: {gpt_response}")  # Log GPT's answer
+    
+        return logs if logs else "No logs yet"
+    
+    # Client-side callback to scroll to the bottom when 'scroll-trigger' is True
+    app.clientside_callback(
+        """
+        function(scrollTrigger) {
+            if (scrollTrigger) {
+                var gptAnswerDiv = document.getElementById('gpt-answer');
+                gptAnswerDiv.scrollTop = gptAnswerDiv.scrollHeight;
+            }
+            return false;  // Reset the scroll-trigger
         }
-        return false;  // Reset the scroll-trigger
-    }
-    """,
-    Output('scroll-trigger', 'data'),
-    Input('scroll-trigger', 'data')
-)
-if __name__ == '__main__':
-    app.run_server(debug=True)
+        """,
+        Output('scroll-trigger', 'data'),
+        Input('scroll-trigger', 'data')
+    )

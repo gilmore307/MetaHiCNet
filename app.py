@@ -12,8 +12,11 @@ from stages.a_preparation import (
 from stages.b_normalization import (
     create_normalization_layout, 
     register_normalization_callbacks)
+from stages.c_visualization import (
+    create_visualization_layout, 
+    register_visualization_callbacks)
 import logging
-import io
+import redis
 
 # Part 1: Initialize the Dash app
 app = dash.Dash(
@@ -24,11 +27,37 @@ app = dash.Dash(
 )
 app.enable_dev_tools(debug=True, dev_tools_hot_reload=False)
 
+class DashLoggerHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.logs = []  # Store logs in a list
+
+    def emit(self, record):
+        log_entry = self.format(record)
+        self.logs.append(log_entry)
+
+    def get_logs(self):
+        return '\n'.join(self.logs)
+
+    def clear_logs(self):
+        self.logs.clear()
+
+# Initialize the global logger and attach the Dash logger handler
 logger = logging.getLogger("app_logger")
 logger.setLevel(logging.INFO)
-log_stream = io.StringIO()
-stream_handler = logging.StreamHandler(log_stream)
-logger.addHandler(stream_handler)
+
+dash_logger_handler = DashLoggerHandler()
+dash_logger_handler.setLevel(logging.INFO)
+logger.addHandler(dash_logger_handler)
+
+redis_url = 'redis://localhost:6379/0'
+r = redis.StrictRedis.from_url(redis_url, decode_responses=False)
+try:
+    r.ping()
+    logger.info("Connected to Redis!")
+except redis.ConnectionError:
+    logger.info("Failed to connect to Redis.")
+
 
 stages_mapping = {
     'method1': ['Preparation', 'Normalization', 'Visualization'],
@@ -247,6 +276,8 @@ def update_layout(selected_method, current_stage, user_folder):
             return no_update, no_update
     elif current_stage == 'Normalization':
         content = create_normalization_layout()
+    elif current_stage == 'Visualization':
+        content = create_visualization_layout()
     else:
         return no_update, no_update
 
@@ -258,13 +289,14 @@ def update_layout(selected_method, current_stage, user_folder):
     [Input("log-interval", "n_intervals")]
 )
 def update_log_box(n):
-    log_stream.seek(0)  # Go to the start of the log
-    log_content = log_stream.read()  # Read the current log content
-    return log_content  # Display the latest logs
+    # Use the instance dash_logger_handler to retrieve logs
+    log_content = dash_logger_handler.get_logs()  # Retrieve logs from DashLoggerHandler instance
+    return log_content if log_content else "No logs yet"  # Display the latest logs
 
 # Part 7: Run the Dash app
 register_preparation_callbacks(app)
 register_normalization_callbacks(app)
+register_visualization_callbacks(app)
 
 if __name__ == '__main__':
     app.run_server(debug=True)
