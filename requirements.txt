@@ -14,3 +14,4 @@ Requests==2.32.3
 scipy==1.14.1
 statsmodels==0.14.4
 tqdm==4.66.4
+pytest
