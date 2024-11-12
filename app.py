@@ -17,6 +17,7 @@ from stages.c_visualization import (
     register_visualization_callbacks)
 import logging
 import redis
+import os
 
 # Part 1: Initialize the Dash app
 app = dash.Dash(
@@ -50,7 +51,7 @@ dash_logger_handler = DashLoggerHandler()
 dash_logger_handler.setLevel(logging.INFO)
 logger.addHandler(dash_logger_handler)
 
-redis_url = 'redis://localhost:6379/0'
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 r = redis.StrictRedis.from_url(redis_url, decode_responses=False)
 try:
     r.ping()
@@ -77,23 +78,6 @@ def create_flowchart(current_stage, method='method1'):
     return html.Div(buttons, style={'display': 'flex', 'align-items': 'center', 'justify-content': 'center'})
 
 # Part 3: Define the layout of the app
-log_text = dcc.Textarea(
-    id="log-box",
-    value="Logger Initialized...\n",  # Initial log message
-    style={
-        'width': '100%',
-        'height': '200px',
-        'resize': 'none',
-        'border': '1px solid #ccc',
-        'padding': '10px',
-        'overflow': 'auto',
-        'backgroundColor': '#f9f9f9',
-        'color': '#333',
-        'fontFamily': 'monospace'
-    },
-    readOnly=True
-)
-
 app.layout = dbc.Container([
     # Stores for app state management
     dcc.Store(id='current-method', data='method1'),
@@ -381,4 +365,4 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=os.getenv("DEBUG", "False") == "True")
