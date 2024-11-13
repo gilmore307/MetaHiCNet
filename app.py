@@ -18,6 +18,9 @@ from stages.c_visualization import (
 import logging
 import redis
 import os
+import io
+import datetime
+import shutil
 
 # Part 1: Initialize the Dash app
 app = dash.Dash(
@@ -28,28 +31,12 @@ app = dash.Dash(
 )
 app.enable_dev_tools(debug=os.getenv("DEBUG", "False") == "True", dev_tools_hot_reload=False)
 
-class DashLoggerHandler(logging.Handler):
-    def __init__(self):
-        super().__init__()
-        self.logs = []  # Store logs in a list
-
-    def emit(self, record):
-        log_entry = self.format(record)
-        self.logs.append(log_entry)
-
-    def get_logs(self):
-        return '\n'.join(self.logs)
-
-    def clear_logs(self):
-        self.logs.clear()
-
 # Initialize the global logger and attach the Dash logger handler
 logger = logging.getLogger("app_logger")
 logger.setLevel(logging.INFO)
-
-dash_logger_handler = DashLoggerHandler()
-dash_logger_handler.setLevel(logging.INFO)
-logger.addHandler(dash_logger_handler)
+log_stream = io.StringIO()
+stream_handler = logging.StreamHandler(log_stream)
+logger.addHandler(stream_handler)
 
 # Connect to Redis using REDISCLOUD_URL from environment variables
 redis_url = os.getenv("REDISCLOUD_URL")
@@ -86,7 +73,10 @@ app.layout = dbc.Container([
     dcc.Store(id='preparation-status-method2', data=False),
     dcc.Store(id='preparation-status-method3', data=False),
     dcc.Store(id='normalization-status', data=False),
-    dcc.Store(id='user-folder', data=str(uuid.uuid4())),
+    dcc.Store(id='user-folder', storage_type='session'), # Unique folder for each visit
+    dcc.Location(id='url', refresh=False),  # Detects a new session/visit
+    dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
+    dcc.Interval(id='refresh-ttl', interval=5*60*1000),
 
     # Main content container, dynamically updated by callback
     html.Div(id="main-content", children=[
@@ -121,7 +111,6 @@ app.layout = dbc.Container([
         ),
         
         # Log interval and log display
-        dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
         dcc.Textarea(
             id="log-box",
             value="Logger Initialized...\n",  # Initial log message
@@ -140,6 +129,48 @@ app.layout = dbc.Container([
         )
     ])
 ], fluid=True)
+
+@app.callback(
+    Output('user-folder', 'data'),
+    Input('url', 'pathname'),  # Trigger on page load
+    prevent_initial_call=True  # Prevent this callback from running on app start
+)
+def initialize_user_folder(pathname):
+    # Generate a unique folder ID for the session
+    unique_folder = str(uuid.uuid4())
+    logger.info(f"Session Code: {unique_folder}")
+    return unique_folder
+
+@app.callback(
+    Input('refresh-ttl', 'n_intervals'),
+    State('user-folder', 'data')
+)
+def refresh_session_ttl(n, user_folder):
+    if user_folder:
+        try:
+            # Set the session TTL in seconds
+            SESSION_TTL = 900  # 15 minutes in seconds
+            
+            # Refresh TTL for active session data in Redis
+            r.expire(user_folder, SESSION_TTL)
+
+            # Check the remaining TTL in seconds
+            remaining_ttl = r.ttl(user_folder)
+            if remaining_ttl == -2:
+                # If the TTL is -2, the session has expired; proceed with cleanup
+                session_folder_path = os.path.join("output", user_folder)
+                if os.path.exists(session_folder_path):
+                    shutil.rmtree(session_folder_path)
+                    logger.info(f"{datetime.datetime.now()} - Session expired. Folder deleted for user: {user_folder}")
+            else:
+                # Calculate remaining time in minutes and seconds for logging
+                remaining_minutes, remaining_seconds = divmod(remaining_ttl, 60)
+                logger.info(f"{datetime.datetime.now()} - Session active. {remaining_minutes} minutes {remaining_seconds} seconds remaining.")
+        
+        except Exception as e:
+            # Log any errors that occur during TTL refresh or cleanup
+            logger.error(f"{datetime.datetime.now()} - Error refreshing TTL or deleting folder: {str(e)}")
+
 
 @app.callback(
     [Output('tab-method1', 'disabled'),
@@ -355,9 +386,9 @@ def update_layout(selected_method, current_stage, user_folder):
     [Input("log-interval", "n_intervals")]
 )
 def update_log_box(n):
-    # Use the instance dash_logger_handler to retrieve logs
-    log_content = dash_logger_handler.get_logs()  # Retrieve logs from DashLoggerHandler instance
-    return log_content if log_content else "No logs yet"  # Display the latest logs
+    log_stream.seek(0)  # Go to the start of the log
+    log_content = log_stream.read()  # Read the current log content
+    return log_content  # Display the latest logs
 
 # Part 7: Run the Dash app
 register_preparation_callbacks(app)

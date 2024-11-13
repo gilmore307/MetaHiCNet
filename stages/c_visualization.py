@@ -3,7 +3,6 @@ import pandas as pd
 import networkx as nx
 from scipy.sparse import coo_matrix
 import dash
-import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output, State
@@ -15,7 +14,6 @@ import plotly.express as px
 import plotly.colors as colors
 import math 
 from math import sqrt, sin, cos
-from openai import OpenAI
 import os
 import io
 from io import StringIO
@@ -24,24 +22,6 @@ import logging
 import pickle
 import json
 import py7zr
-
-class DashLoggerHandler(logging.Handler):
-    def __init__(self):
-        super().__init__()
-        self.logs = []  # Store logs in a list
-
-    def emit(self, record):
-        # This is the method that is called for each log message
-        log_entry = self.format(record)
-        self.logs.append(log_entry)
-
-    def get_logs(self):
-        # Return the logs as a string (joining the list)
-        return '\n'.join(self.logs)
-
-    def clear_logs(self):
-        # Clear the log list
-        self.logs.clear()
 
 def save_to_redis(key, data):
     from app import r
@@ -241,16 +221,6 @@ def create_bar_chart(data_dict):
 
     bar_fig = go.Figure(data=traces, layout=bar_layout)
     return bar_fig
-
-# Function to call OpenAI API using GPT-4 with the new API format
-def get_chatgpt_response(prompt):
-    response = client.chat.completions.create(model="gpt-4o-mini",
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": prompt}
-    ],
-    max_tokens=150)
-    return response.choices[0].message.content
 
 # Function to add opacity to a hex color
 def add_opacity_to_color(hex_color, opacity):
@@ -965,19 +935,10 @@ def prepare_data(bin_information_intact, contig_information_intact, bin_dense_ma
 
 
 # Create a logger and add the custom Dash logger handler
-logger = logging.getLogger(__name__)
-dash_logger_handler = DashLoggerHandler()
-dash_logger_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-dash_logger_handler.setFormatter(formatter)
-logger.addHandler(dash_logger_handler)
-logger.setLevel(logging.INFO)
+logger = logging.getLogger("app_logger")
 
 # Example of logging messages
 logger.info("App started")
-
-# Set OpenAI API key
-client = OpenAI(api_key='')
  
 type_colors = {
     'chromosome': '#4472C4',
@@ -1082,18 +1043,6 @@ def create_visualization_layout():
         'vertical-align': 'middle'
     }
     
-    help_modal = html.Div([
-        dbc.Modal([
-            dbc.ModalHeader("Help"),
-            dbc.ModalBody([
-                # help content will be added soon
-            ]),
-            dbc.ModalFooter(
-                dbc.Button("Close", id="close-help", className="ml-auto")
-            )
-        ], id="modal", size="lg", is_open=False)
-    ])
-    
     # Use the styling functions in the Dash layout
     return dcc.Loading(
         id="loading-spinner",
@@ -1102,20 +1051,11 @@ def create_visualization_layout():
         delay_show=1000,
         children=[
             html.Div([
-                dcc.Interval(
-                    id='interval-component',
-                    interval=1000,
-                    n_intervals=0
-                ),
                 html.Div([
                     dcc.Store(id='data-loaded', data=False),
-                    
                     html.Button("Download", id="download-btn", style={**common_style}),
                     dcc.Download(id="download"),
-                    
                     html.Button("Reset", id="reset-btn", style={**common_style}),
-                    html.Button("Help", id="open-help", style={**common_style}),
-                    dcc.Download(id="download-dataframe-csv"),
                     dcc.Dropdown(
                         id='visualization-selector',
                         options=[
@@ -1241,13 +1181,12 @@ def create_visualization_layout():
                         html.Div(id='hover-info', style={'height': '20vh', 'width': '19vw', 'background-color': 'white', 'padding': '5px', 'border': '1px solid #ccc', 'margin-top': '3px'}),
                         html.Div([
                             dcc.Textarea(
-                                id='chatgpt-input',
-                                placeholder='Enter your query here...',
+                                id='help',
+                                placeholder='Page instruction.',
                                 style={'width': '100%', 'height': '15vh', 'display': 'inline-block'}
-                            ),
-                            html.Button('Interpret Data', id='interpret-button', n_clicks=0, style={'width': '100%', 'display': 'inline-block'})
+                            )
                         ], style={'width': '19vw', 'display': 'inline-block'}),
-                        html.Div(id='gpt-answer',
+                        html.Div(id='log-box',
                                  style={'height': '45vh',
                                         'width': '19vw',
                                         'whiteSpace': 'pre-wrap',
@@ -1257,8 +1196,7 @@ def create_visualization_layout():
                                         'border': '1px solid #ccc',
                                         'margin-top': '3px',
                                         'overflowY': 'auto'}
-                        ),
-                        dcc.Store(id='scroll-trigger', data=False)
+                        )
                     ], style={'display': 'inline-block', 'vertical-align': 'top', 'margin-left': '20px'}),
                 ], style={'width': '100%', 'display': 'flex'}),
                 html.Div([
@@ -1273,8 +1211,7 @@ def create_visualization_layout():
                         fixed_rows={'headers': True},
                         fixed_columns={'headers': True, 'data': 1}
                     )
-                ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
-                help_modal
+                ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'})
             ], style={'height': '100vh', 'overflowY': 'auto', 'width': '100%'})
         ]
     )
@@ -1975,36 +1912,3 @@ def register_visualization_callbacks(app):
                 contig_options = [{'label': contig, 'value': contig} for contig in contigs]
     
         return annotation_options, bin_options, contig_options
-    
-    # Dash callback to use ChatGPT
-    @app.callback(
-        Output('gpt-answer', 'children'),
-        [Input('interval-component', 'n_intervals'), 
-         Input('interpret-button', 'n_clicks')],
-        [State('chatgpt-input', 'value')]
-    )
-    def update_logs_and_gpt(n, interpret_clicks, gpt_query):
-        # Capture logs
-        logs = dash_logger_handler.get_logs()
-    
-        # If the interpret button is clicked, handle the GPT query
-        if interpret_clicks > 0 and gpt_query:
-            gpt_response = get_chatgpt_response(gpt_query)
-            logger.info(f"GPT Answer: {gpt_response}")  # Log GPT's answer
-    
-        return logs if logs else "No logs yet"
-    
-    # Client-side callback to scroll to the bottom when 'scroll-trigger' is True
-    app.clientside_callback(
-        """
-        function(scrollTrigger) {
-            if (scrollTrigger) {
-                var gptAnswerDiv = document.getElementById('gpt-answer');
-                gptAnswerDiv.scrollTop = gptAnswerDiv.scrollHeight;
-            }
-            return false;  // Reset the scroll-trigger
-        }
-        """,
-        Output('scroll-trigger', 'data'),
-        Input('scroll-trigger', 'data')
-    )
