@@ -18,9 +18,8 @@ from stages.c_visualization import (
 import logging
 import redis
 import os
-import io
-import datetime
 import shutil
+import json
 
 # Part 1: Initialize the Dash app
 app = dash.Dash(
@@ -29,23 +28,41 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
     prevent_initial_callbacks='initial_duplicate'  # Set globally
 )
-app.enable_dev_tools(debug=os.getenv("DEBUG", "False") == "True", dev_tools_hot_reload=False)
+app.enable_dev_tools(debug=True, dev_tools_hot_reload=False)
 
-# Initialize the global logger and attach the Dash logger handler
-logger = logging.getLogger("app_logger")
+# Initialize the logger
+class SessionLogHandler(logging.Handler):
+    def __init__(self, session_id, app):
+        super().__init__()
+        self.session_id = session_id
+        self.app = app
+    
+    def emit(self, record):
+        log_entry = self.format(record)
+        redis_key = f"{self.session_id}:log"
+        
+        # Fetch the current logs from Redis
+        current_logs = r.get(redis_key)
+        
+        # If no logs are found, initialize an empty list
+        if current_logs is None:
+            current_logs = []
+        else:
+            current_logs = json.loads(current_logs)  # Deserialize the existing logs
+
+        # Add the new log entry to the list
+        current_logs.append(log_entry)
+        
+        # Save the updated logs back to Redis after serializing the list
+        r.set(redis_key, json.dumps(current_logs), ex=SESSION_TTL) 
+
+logger = logging.getLogger('app_logger')
 logger.setLevel(logging.INFO)
-log_stream = io.StringIO()
-stream_handler = logging.StreamHandler(log_stream)
-logger.addHandler(stream_handler)
 
 # Connect to Redis using REDISCLOUD_URL from environment variables
-redis_url = os.getenv("REDISCLOUD_URL")
-r = redis.from_url(redis_url, decode_responses=True)
-try:
-    r.ping()
-    logger.info("Connected to Redis!")
-except redis.ConnectionError:
-    logger.info("Failed to connect to Redis.")
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+r = redis.StrictRedis.from_url(redis_url, decode_responses=False)
+SESSION_TTL = 20
     
 stages_mapping = {
     'method1': ['Preparation', 'Normalization', 'Visualization'],
@@ -67,41 +84,31 @@ def create_flowchart(current_stage, method='method1'):
 # Part 3: Define the layout of the app
 app.layout = dbc.Container([
     # Stores for app state management
-    dcc.Store(id='current-method', data='method1'),
-    dcc.Store(id='current-stage', data='Preparation'),
-    dcc.Store(id='preparation-status-method1', data=False),
-    dcc.Store(id='preparation-status-method2', data=False),
-    dcc.Store(id='preparation-status-method3', data=False),
-    dcc.Store(id='normalization-status', data=False),
-    dcc.Store(id='user-folder', storage_type='session'), # Unique folder for each visit
-    dcc.Location(id='url', refresh=False),  # Detects a new session/visit
-    dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
-    dcc.Interval(id='refresh-ttl', interval=5*60*1000),
-
-    # Main content container, dynamically updated by callback
+    dcc.Store(id='current-method', data='method1', storage_type='session'),
+    dcc.Store(id='current-stage', data='Preparation', storage_type='session'),
+    dcc.Store(id='preparation-status-method1', data=False, storage_type='session'),
+    dcc.Store(id='preparation-status-method2', data=False, storage_type='session'),
+    dcc.Store(id='preparation-status-method3', data=False, storage_type='session'),
+    dcc.Store(id='normalization-status', data=False, storage_type='session'),
+    dcc.Store(id='user-folder', storage_type='session'),
+    dcc.Interval(id="log-interval", interval=1000),
+    dcc.Interval(id="ttl-interval", interval=5000),
+    dcc.Location(id='url', refresh=True),  # Detects a new session/visit
+    html.Div(id="dummy-output", style={"display": "none"}),
     html.Div(id="main-content", children=[
-        # Header
         html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
-        
-        # Tabs for different methods
         dcc.Tabs(id='tabs-method', value='method1', children=[
             dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
             dcc.Tab(label="Upload Unnormalized Data for New Normalization Method", value='method2', id='tab-method2'),
             dcc.Tab(label="Resume Visualization with Previously Normalized Data", value='method3', id='tab-method3')
         ]),
-        
-        # Flowchart container
         html.Div(id='flowchart-container', className="my-4"),
-
-        # Loading spinner and primary dynamic content area
         dcc.Loading(
             id="loading-spinner",
             type="default",
             delay_show=500,
             children=[
                 html.Div(id='dynamic-content', className="my-4"),
-                
-                # Navigation buttons
                 dbc.Row([
                     dbc.Col(dbc.Button("Previous", id="previous-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
                     dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2),
@@ -109,11 +116,8 @@ app.layout = dbc.Container([
                 ], justify="between", align="center", className="mt-3")
             ]
         ),
-        
-        # Log interval and log display
         dcc.Textarea(
             id="log-box",
-            value="Logger Initialized...\n",  # Initial log message
             style={
                 'width': '100%',
                 'height': '200px',
@@ -131,46 +135,61 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 @app.callback(
-    Output('user-folder', 'data'),
-    Input('url', 'pathname'),  # Trigger on page load
-    prevent_initial_call=True  # Prevent this callback from running on app start
+    [Output('user-folder', 'data'),
+     Output('current-method', 'data', allow_duplicate=True),
+     Output('current-stage', 'data', allow_duplicate=True),
+     Output('preparation-status-method1', 'data', allow_duplicate=True),
+     Output('preparation-status-method2', 'data', allow_duplicate=True),
+     Output('preparation-status-method3', 'data', allow_duplicate=True),
+     Output('normalization-status', 'data', allow_duplicate=True)],
+     Input('url', 'pathname'),
+     prevent_initial_call=True
 )
-def initialize_user_folder(pathname):
-    # Generate a unique folder ID for the session
+def setup_user_id(pathname):
+    # Generate a unique session ID for the user
     unique_folder = str(uuid.uuid4())
-    logger.info(f"Session Code: {unique_folder}")
-    return unique_folder
+    
+    # Store the session marker key with TTL in Redis
+    r.set(f"{unique_folder}", "", ex=SESSION_TTL)
+
+    # Initialize the session log handler dynamically with the generated session ID
+    session_log_handler = SessionLogHandler(session_id=unique_folder, app=app)
+    logger.addHandler(session_log_handler)
+    
+    logger.info(f"Session created with ID: {unique_folder}")
+
+    # Return initial states
+    return unique_folder, "method1", "Preparation", False, False, False, False
 
 @app.callback(
-    Input('refresh-ttl', 'n_intervals'),
+    Output('dummy-output', 'children'),
+    Input('ttl-interval', 'n_intervals'),
     State('user-folder', 'data')
 )
-def refresh_session_ttl(n, user_folder):
+def refresh_and_cleanup(n, user_folder):
+    # 1. Refresh TTL for active session
     if user_folder:
-        try:
-            # Set the session TTL in seconds
-            SESSION_TTL = 900  # 15 minutes in seconds
-            
-            # Refresh TTL for active session data in Redis
-            r.expire(user_folder, SESSION_TTL)
+        # Refresh TTL for all keys with the user_folder prefix
+        keys_to_refresh = r.keys(f"{user_folder}*")
+        for key in keys_to_refresh:
+            r.expire(key, SESSION_TTL)
+        print(f"TTL refreshed for all keys of session: user_folder:{user_folder}")
 
-            # Check the remaining TTL in seconds
-            remaining_ttl = r.ttl(user_folder)
-            if remaining_ttl == -2:
-                # If the TTL is -2, the session has expired; proceed with cleanup
-                session_folder_path = os.path.join("output", user_folder)
+    # 2. Perform cleanup for expired session folders on disk
+    output_path = "output"
+    if os.path.exists(output_path):
+        # List all session folders in the output directory
+        for folder_name in os.listdir(output_path):
+            session_folder_path = os.path.join(output_path, folder_name)
+            
+            # Check if the Redis session key for this folder still exists
+            if not r.exists(f"{folder_name}"):  # Base key without suffix
+                # If the base key doesn't exist in Redis, the session has expired
                 if os.path.exists(session_folder_path):
                     shutil.rmtree(session_folder_path)
-                    logger.info(f"{datetime.datetime.now()} - Session expired. Folder deleted for user: {user_folder}")
-            else:
-                # Calculate remaining time in minutes and seconds for logging
-                remaining_minutes, remaining_seconds = divmod(remaining_ttl, 60)
-                logger.info(f"{datetime.datetime.now()} - Session active. {remaining_minutes} minutes {remaining_seconds} seconds remaining.")
-        
-        except Exception as e:
-            # Log any errors that occur during TTL refresh or cleanup
-            logger.error(f"{datetime.datetime.now()} - Error refreshing TTL or deleting folder: {str(e)}")
-
+                    print(f"Deleted folder for expired session: {folder_name}")
+    
+    return no_update
 
 @app.callback(
     [Output('tab-method1', 'disabled'),
@@ -346,10 +365,10 @@ def update_main_content(current_stage, selected_method):
         ]
 
 @app.callback(
-    [Output('flowchart-container', 'children'),  # Single container for flowchart
-     Output('dynamic-content', 'children')],  # Add output for URL redirection
-    [Input('tabs-method', 'value'),  # Track selected method
-     Input('current-stage', 'data')],  # Track current stage
+    [Output('flowchart-container', 'children'),
+     Output('dynamic-content', 'children')],
+    [Input('tabs-method', 'value'),
+     Input('current-stage', 'data')],
     [State('user-folder', 'data')]
 )
 def update_layout(selected_method, current_stage, user_folder):
@@ -357,8 +376,6 @@ def update_layout(selected_method, current_stage, user_folder):
     if ctx.triggered:
         trigger = ctx.triggered[0]
         logger.info(f"Triggered by element ID: {trigger['prop_id']} with value: {trigger['value']}")
-    else:
-        logger.info("Callback triggered without a specific input (e.g., initial load).")
 
     # Generate the flowchart for the current method and stage
     flowchart = create_flowchart(current_stage, method=selected_method)
@@ -380,15 +397,21 @@ def update_layout(selected_method, current_stage, user_folder):
 
     return flowchart, content
 
-# Part 6: Periodic callback to update the log box content
 @app.callback(
-    Output("log-box", "value"),
-    [Input("log-interval", "n_intervals")]
+    Output('log-box', 'value'),
+    Input('log-interval', 'n_intervals'),
+    State('user-folder', 'data'),
+    prevent_initial_call=True
 )
-def update_log_box(n):
-    log_stream.seek(0)  # Go to the start of the log
-    log_content = log_stream.read()  # Read the current log content
-    return log_content  # Display the latest logs
+def update_log_box(n_intervals, session_id):
+    redis_key = f"{session_id}:log"
+    logs = r.get(redis_key)
+    
+    if logs:
+        logs = json.loads(logs.decode())
+        return "\n".join(logs)
+    
+    return "No logs yet."
 
 # Part 7: Run the Dash app
 register_preparation_callbacks(app)
@@ -396,5 +419,4 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8050))  # Default to 8050 if PORT is not set
-    app.run_server(debug=os.getenv("DEBUG", "False") == "True", port=port, host="0.0.0.0")
+    app.run_server(debug=os.getenv("DEBUG", "True") == "True")

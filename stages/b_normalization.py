@@ -41,13 +41,13 @@ def create_normalization_layout():
                 dcc.Checklist(
                     id='remove-unmapped-contigs',
                     options=[{'label': 'Remove Unmapped Contigs', 'value': 'remove_unmapped'}],
-                    value=[],  # Default is unchecked
+                    value=['remove_unmapped'],
                     style={'margin-right': '20px'}
                 ),
                 dcc.Checklist(
                     id='remove-host-host',
                     options=[{'label': 'Remove Host-Host Interactions', 'value': 'remove_host'}],
-                    value=[],  # Default is unchecked
+                    value=['remove_host'],
                 )
             ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}),
 
