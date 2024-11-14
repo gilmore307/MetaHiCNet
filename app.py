@@ -154,6 +154,8 @@ def setup_user_id(pathname):
 
     # Initialize the session log handler dynamically with the generated session ID
     session_log_handler = SessionLogHandler(session_id=unique_folder, app=app)
+    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
+    session_log_handler.setFormatter(formatter)
     logger.addHandler(session_log_handler)
     
     logger.info(f"Session created with ID: {unique_folder}")
@@ -419,4 +421,4 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == '__main__':
-    app.run_server(debug=os.getenv("DEBUG", "True") == "True")
+    app.run_server(debug=os.getenv("DEBUG", "False") == "True")
