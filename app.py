@@ -175,7 +175,6 @@ def refresh_and_cleanup(n, user_folder):
         keys_to_refresh = r.keys(f"{user_folder}*")
         for key in keys_to_refresh:
             r.expire(key, SESSION_TTL)
-        print(f"TTL refreshed for all keys of session: user_folder:{user_folder}")
 
     # 2. Perform cleanup for expired session folders on disk
     output_path = "output"
@@ -421,4 +420,4 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == '__main__':
-    app.run_server(debug=os.getenv("DEBUG", "False") == "True")
+    app.run_server(debug=os.getenv("DEBUG", "True") == "True")

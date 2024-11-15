@@ -1053,9 +1053,11 @@ def create_visualization_layout():
         children=[
             html.Div([
                 dcc.Store(id='data-loaded', data=False),
-                html.Button("Download", id="download-btn", style={**common_text_style}),
                 dcc.Download(id="download"),
-                html.Button("Reset", id="reset-btn", style={**common_text_style}),
+
+                html.Button("Download Files", id="download-btn", style={**common_text_style}),
+                html.Button("Reset Selection", id="reset-btn", style={**common_text_style}),
+                
                 dcc.Dropdown(
                     id='visualization-selector',
                     options=[
@@ -1581,6 +1583,7 @@ def register_visualization_callbacks(app):
             contig_filter_model = apply_filter_logic(contig_row_data)
         
         row_count_text = f"Total Number of Rows: {sum(1 for row in contig_row_data if row['Visibility'] == 1)}"
+        print(row_count_text)
     
         return (
             bin_row_data, bin_style, bin_filter_model, bin_col_def,
@@ -1954,3 +1957,94 @@ def register_visualization_callbacks(app):
             return "\n".join(logs)
         
         return "No logs yet."
+    
+    @app.callback(
+        Output('help', 'value'),
+        [Input('download-btn', 'hoverData'),
+         Input('reset-btn', 'hoverData'),
+         Input('confirm-btn', 'hoverData'),
+         Input('bar-chart', 'hoverData'),
+         Input('table-container', 'hoverData'),
+         Input('treemap-graph', 'hoverData'),
+         Input('cyto-graph', 'hoverData'),
+         Input('contact-table', 'hoverData'),
+         Input('visualization-selector', 'hoverData'),
+         Input('taxonomy-level-selector', 'hoverData'),
+         Input('annotation-selector', 'hoverData'),
+         Input('bin-selector', 'hoverData'),
+         Input('contig-selector', 'hoverData')]
+    )
+    def update_help_section(d, r, c, b, t, tr, cy, ct, v, tl, a, bns, cns):
+        triggered = callback_context.triggered_id
+        print(f"Triggered Component: {triggered}")
+
+        
+        hover_info = {
+            'download-btn': 
+                ("Download Button allows users to download the dataset they are currently viewing or working with.  \n"
+                 "This downloaded data can be re-uploaded to the app when visiting the website again, "
+                 "enabling returning users to continue from where they left off with their previously analyzed data."),
+                
+            'reset-btn': 
+                ("Reset Button resets all user selections and filters, bringing the visualization back to its default state."),
+                
+            'confirm-btn': 
+                ("Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly."),
+                
+            'bar-chart': 
+                ("Each bar represents an element in the main figure (either the Cytoscape Graph or Treemap Graph).  \n"
+                 "The color coding and labels align with the elements shown in the main visualization, providing a consistent reference across views."),
+                
+            'table-container': 
+                ("Row Count displays the total number of rows currently visible in the table, "
+                 "updating dynamically based on filters and selections.  \n"
+                 "Visibility Filter checkbox filters the table to display only elements represented in the main visualization. "
+                 "Bin Info Tab displays data specific to bins, and Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n"
+                 "Users can select individual rows to select specific bins or contigs.  \n"
+                 "The table allows users to filter and sort columns to organize data according to taxonomic groups, and metrics."),
+            
+            'treemap-graph': 
+                ("Treemap Graph provides a hierarchical view of taxonomic data, showing relationships between groups at different taxonomic levels.  \n"
+                 "Each box represents a taxonomic level or group. Darker colors indicate higher taxonomy levels (e.g., Domain), "
+                 "while lighter colors represent lower levels within the hierarchy (e.g., Species). "
+                 "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, phage).  \n"
+                 "This visual encoding allows users to quickly identify dominant groups, their levels, and types within the dataset."),
+                
+            'cyto-graph': 
+                ("The Cytoscape Graph is a network-style visualization that represents relationships between annotations, "
+                 "bins, or contigs, depending on the selected visualization type.  \n"
+                 "Click on a node to select it. Selecting a node may highlight its connected nodes, showing relationships within the network.  \n"
+                 "Colors may vary based on element types, such as chromosomes, plasmids, or phages. "
+                 "This color coding helps users quickly identify the biological role of each node.  \n"
+                 "Nodes are sized based on coverage within the dataset. A node with higher coverage may appear larger, making it stand out in the graph.  \n"
+                 "Nodes that are densely connected may form clusters, allowing users to identify groups of closely related elements. "
+                 "Conversely, nodes with fewer connections may appear on the periphery, creating a natural separation in the graph based on interaction strength."),
+            
+            'contact-table': 
+                ("The Contact Table provides a tabular view of interactions between annotations, allowing users to explore contact data in more detail.  \n"
+                 "Click on the row title to select a annotation."),
+            
+            'visualization-selector': 
+                ("Visualization Selector allows users to switch between different visualization types, such as taxonomy_hierarchy, basic, bin, and contig."),
+            
+            'taxonomy-level-selector': 
+                ("Taxonomy Level Selector determines the taxonomy level at which bins or contigs are divided in the visualization.  \n"
+                 "This allows users to adjust the hierarchy based on their desired level of detail."),
+                
+            'annotation-selector': 
+                ("Annotation Selector allows users to select a specific annotation (taxonomic group) to display in the visualization."),
+            
+            'bin-selector': 
+                ("Bin Selector allows users to select a specific bin for visualization."),
+            
+            'contig-selector': 
+                ("Contig Selector allows users to select a specific contig for visualization.")
+        }
+    
+        # Determine which component is hovered
+        if triggered:
+            text = hover_info.get(triggered, "Hover over any component for more details.")
+            print(text)
+            return text
+        
+        return "Hover over a component for more information."
