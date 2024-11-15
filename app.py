@@ -28,7 +28,7 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
     prevent_initial_callbacks='initial_duplicate'  # Set globally
 )
-app.enable_dev_tools(debug=True, dev_tools_hot_reload=False)
+app.enable_dev_tools(debug=os.getenv("DEBUG", "False") == "True", dev_tools_hot_reload=False)
 
 # Initialize the logger
 class SessionLogHandler(logging.Handler):
@@ -60,9 +60,10 @@ logger = logging.getLogger('app_logger')
 logger.setLevel(logging.INFO)
 
 # Connect to Redis using REDISCLOUD_URL from environment variables
-redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-r = redis.StrictRedis.from_url(redis_url, decode_responses=False)
-SESSION_TTL = 20
+redis_url = os.getenv("REDISCLOUD_URL")
+r = redis.from_url(redis_url, decode_responses=True)
+                   
+SESSION_TTL = 60
     
 stages_mapping = {
     'method1': ['Preparation', 'Normalization', 'Visualization'],
@@ -91,8 +92,7 @@ app.layout = dbc.Container([
     dcc.Store(id='preparation-status-method3', data=False, storage_type='session'),
     dcc.Store(id='normalization-status', data=False, storage_type='session'),
     dcc.Store(id='user-folder', storage_type='session'),
-    dcc.Interval(id="log-interval", interval=1000),
-    dcc.Interval(id="ttl-interval", interval=5000),
+    dcc.Interval(id="ttl-interval", interval=SESSION_TTL*250),
     dcc.Location(id='url', refresh=True),  # Detects a new session/visit
     html.Div(id="dummy-output", style={"display": "none"}),
     html.Div(id="main-content", children=[
@@ -116,6 +116,7 @@ app.layout = dbc.Container([
                 ], justify="between", align="center", className="mt-3")
             ]
         ),
+        dcc.Interval(id="log-interval", interval=2000),
         dcc.Textarea(
             id="log-box",
             style={
@@ -420,4 +421,5 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == '__main__':
-    app.run_server(debug=os.getenv("DEBUG", "True") == "True")
+    port = int(os.environ.get("PORT", 8050)) 
+    app.run_server(debug=os.getenv("DEBUG", "False") == "True", port=port, host="0.0.0.0")

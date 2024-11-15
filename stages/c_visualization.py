@@ -23,17 +23,19 @@ import pickle
 import json
 import py7zr
 
-def save_to_redis(key, data, ttl=20):  # ttl is set to 600 seconds (10 minutes) by default
+def save_to_redis(key, data):  # ttl is set to 600 seconds (10 minutes) by default
     from app import r
+    from app import SESSION_TTL
+    
     if isinstance(data, pd.DataFrame):
         json_data = data.to_json(orient='split')
-        r.set(key, json_data.encode('utf-8'), ex=ttl)  # Set TTL for DataFrame
+        r.set(key, json_data.encode('utf-8'), ex=SESSION_TTL)  # Set TTL for DataFrame
     elif isinstance(data, np.ndarray):
         binary_data = pickle.dumps(data)
-        r.set(key, binary_data, ex=ttl)  # Set TTL for numpy array
+        r.set(key, binary_data, ex=SESSION_TTL)  # Set TTL for numpy array
     elif isinstance(data, list) or isinstance(data, dict):
         json_data = json.dumps(data)
-        r.set(key, json_data.encode('utf-8'), ex=ttl)  # Set TTL for list or dict
+        r.set(key, json_data.encode('utf-8'), ex=SESSION_TTL)  # Set TTL for list or dict
     else:
         raise ValueError("Unsupported data type")
 
@@ -214,7 +216,6 @@ def create_bar_chart(data_dict):
             rangeslider=dict(visible=True, thickness=0.05)
         ),
         yaxis=dict(title="Value", tickfont=dict(size=15)),
-        height=400,
         margin=dict(t=0, b=0, l=0, r=0),
         legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="center", x=0.5)
     )
@@ -973,7 +974,55 @@ base_stylesheet = [
     }
 ]
 
+hover_info = {
+    'download-btn': 
+        ("Download Button allows users to download the dataset they are currently viewing or working with.  \n"
+         "This downloaded data can be re-uploaded to the app when visiting the website again, "
+         "enabling returning users to continue from where they left off with their previously analyzed data."),
+        
+    'reset-btn': 
+        ("Reset Button resets all user selections and filters, bringing the visualization back to its default state."),
+        
+    'confirm-btn': 
+        ("Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly."),
+        
+    'bar-chart-container': 
+        ("Each bar represents an element in the main figure (either the Cytoscape Graph or Treemap Graph).  \n"
+         "The color coding and labels align with the elements shown in the main visualization, providing a consistent reference across views."),
+        
+    'info-table-container': 
+        ("Row Count displays the total number of rows currently visible in the table, "
+         "updating dynamically based on filters and selections.  \n"
+         "Visibility Filter checkbox filters the table to display only elements represented in the main visualization. "
+         "Bin Info Tab displays data specific to bins, and Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n"
+         "Users can select individual rows to select specific bins or contigs.  \n"
+         "The table allows users to filter and sort columns to organize data according to taxonomic groups, and metrics."),
+    
+    'treemap-graph-container': 
+        ("Treemap Graph provides a hierarchical view of taxonomic data, showing relationships between groups at different taxonomic levels.  \n"
+         "Each box represents a taxonomic level or group. Darker colors indicate higher taxonomy levels (e.g., Domain), "
+         "while lighter colors represent lower levels within the hierarchy (e.g., Species). "
+         "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, phage).  \n"
+         "This visual encoding allows users to quickly identify dominant groups, their levels, and types within the dataset."),
+        
+    'cyto-graph-container': 
+        ("The Cytoscape Graph is a network-style visualization that represents relationships between annotations, "
+         "bins, or contigs, depending on the selected visualization type.  \n"
+         "Click on a node to select it. Selecting a node may highlight its connected nodes, showing relationships within the network.  \n"
+         "Colors may vary based on element types, such as chromosomes, plasmids, or phages. "
+         "This color coding helps users quickly identify the biological role of each node.  \n"
+         "Nodes are sized based on coverage within the dataset. A node with higher coverage may appear larger, making it stand out in the graph.  \n"
+         "Nodes that are densely connected may form clusters, allowing users to identify groups of closely related elements. "
+         "Conversely, nodes with fewer connections may appear on the periphery, creating a natural separation in the graph based on interaction strength."),
+    
+    'contact-table-container': 
+        ("The Contact Table provides a tabular view of interactions between annotations, allowing users to explore contact data in more detail.  \n"
+         "Click on the row title to select an annotation.")
+}
+
+
 def create_visualization_layout():
+            
     bin_column_defs = [
         {
             "headerName": "Bin",
@@ -1051,205 +1100,256 @@ def create_visualization_layout():
         fullscreen=True,
         delay_show=1000,
         children=[
-            html.Div([
-                dcc.Store(id='data-loaded', data=False),
-                dcc.Download(id="download"),
-
-                html.Button("Download Files", id="download-btn", style={**common_text_style}),
-                html.Button("Reset Selection", id="reset-btn", style={**common_text_style}),
-                
-                dcc.Dropdown(
-                    id='visualization-selector',
-                    options=[
-                        {'label': 'Taxonomy Hierarchy', 'value': 'taxonomy_hierarchy'},
-                        {'label': 'Annotation Visualization', 'value': 'basic'},
-                        {'label': 'Bin Visualization', 'value': 'bin'},
-                        {'label': 'Contig Visualization', 'value': 'contig'}
-                    ],
-                    value='taxonomy_hierarchy',
-                    style={'width': '300px', 'display': 'inline-block'}
-                ),
-                dcc.Dropdown(
-                    id='taxonomy-level-selector',
-                    options=[
-                        {'label': 'Domain', 'value': 'Domain'},
-                        {'label': 'Kingdom', 'value': 'Kingdom'},
-                        {'label': 'Phylum', 'value': 'Phylum'},
-                        {'label': 'Class', 'value': 'Class'},
-                        {'label': 'Order', 'value': 'Order'},
-                        {'label': 'Family', 'value': 'Family'},
-                        {'label': 'Genus', 'value': 'Genus'},
-                        {'label': 'Species', 'value': 'Species'},
-                    ],
-                    value='Family',
-                    placeholder="Select Taxonomy Level",
-                    style={'width': '300px', 'display': 'inline-block'}
-                ),
-                dcc.Dropdown(
-                    id='annotation-selector',
-                    options=[],
-                    value=None,
-                    placeholder="Select an annotation",
-                    style={}
-                ),
-                dcc.Dropdown(
-                    id='bin-selector',
-                    options=[],
-                    value=None,
-                    placeholder="Select a bin",
-                    style={}
-                ),
-                dcc.Dropdown(
-                    id='contig-selector',
-                    options=[],
-                    value=None,
-                    placeholder="Select a contig",
-                    style={}
-                ),
-                html.Button("Confirm Selection", id="confirm-btn", style={**common_text_style}),
-            ], style={
-                'display': 'flex',
-                'justify-content': 'space-between',
-                'align-items': 'center',
-                'margin': '0px',
-                'position': 'fixed',
-                'top': '0',
-                'left': '0',
-                'width': '100%',
-                'z-index': '1000',
-                'background-color': 'lightgrey',
-                'padding': '10px',
-                'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'
-            }),
-            html.Div(style={'height': '60px'}),  # Placeholder for header height
-            
-            html.Div([
-                html.Div([
-                    dcc.Graph(id='bar-chart', 
-                              config={'displayModeBar': False}, 
-                              figure=go.Figure(), 
-                              style={'height': '40vh', 'width': '30vw', 'display': 'inline-block'}),
-                    html.Div(id='row-count', 
-                             style={'height': '2vh', 'display': 'inline-block'}),
-                    dcc.Checklist(
-                        id='visibility-filter',
-                        options=[{'label': '  Only show elements in the diagram', 'value': 'filter'}],
-                        value=['filter'],
-                        style={'display': 'inline-block', 'margin-right': '10px', 'float': 'right'}
-                    ),
-                    html.Div([
-                        dcc.Tabs(id='table-tabs', value='bin', 
-                                 children=[
-                                     dcc.Tab(label='Bin Info', value='bin', className="p-0"),
-                                     dcc.Tab(label='Contig Info', value='contig', className="p-0")
-                                 ]
-                        ),
-                        html.Div(
-                            id='table-container',
-                            children=[
-                                dag.AgGrid(
-                                    id='bin-info-table',
-                                    columnDefs=bin_column_defs,
-                                    rowData=[],
-                                    defaultColDef={},
-                                    style={'display': 'none'},
-                                    dashGridOptions={
-                                        'headerPinned': 'top',
-                                        'rowSelection': 'single'
-                                    }
-                                ),
-                                dag.AgGrid(
-                                    id='contig-info-table',
-                                    columnDefs=contig_column_defs,
-                                    rowData=[],
-                                    defaultColDef={},
-                                    style={'display': 'none'},
-                                    dashGridOptions={
-                                        'headerPinned': 'top',
-                                        'rowSelection': 'single'
-                                    }
-                                )
-                            ]
-                        ),
-                    ])
-                ], style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '30vw'}),
-                
-                html.Div([
-                    dcc.Graph(
-                        id='treemap-graph', 
-                        figure=go.Figure(), 
-                        config={'displayModeBar': False}, 
-                        style={'height': '85vh', 
-                               'width': '48vw', 
-                               'display': 'inline-block'}
-                    ),
-                    cyto.Cytoscape(
-                        id='cyto-graph',
-                        elements=[],
-                        stylesheet=base_stylesheet,
-                        style={},
-                        layout={'name': 'preset'},
-                        zoom=1,
-                        userZoomingEnabled=True,
-                        wheelSensitivity=0.1
-                    )
-                ], style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '49vw'}),
-                
-                html.Div([
-                    dcc.Interval(id="log-interval-visualization", interval=1000),
-                    dcc.Textarea(
-                        id='help', 
-                        style={'height': '25vh', 
-                               'width': '19vw', 
-                               'font-size': '12px',
-                               'background-color': 'white', 
-                               'padding': '5px', 
-                               'border': '1px solid #ccc', 
-                               'margin-top': '3px',
-                               'resize': 'none'},
-                        readOnly=True
-                    ),
-                    dcc.Textarea(
-                        id='hover-info',
-                        style={'height': '13vh',
-                               'width': '19vw',
-                               'font-size': '12px',
-                               'background-color': 'white',
-                               'padding': '5px',
-                               'border': '1px solid #ccc',
-                               'margin-top': '3px',
-                               'resize': 'none'},
-                        readOnly=True
-                    ),
-                    dcc.Textarea(
-                        id="log-box-visualization",
+            html.Div(
+                id="main-controls",
+                children=[
+                    dcc.Store(id='data-loaded', data=False),
+                    dcc.Download(id="download"),
+    
+                    html.Button("Download Files", id="download-btn", style={**common_text_style}, title=hover_info['download-btn']),
+                    html.Button("Reset Selection", id="reset-btn", style={**common_text_style}, title=hover_info['reset-btn']),
+                    html.Div(
+                        id="tooltip-toggle-container",
+                        children=[
+                            dcc.Checklist(
+                                id='tooltip-toggle',
+                                options=[{'label': '  Show Help Tooltip', 'value': 'show-tooltip'}],
+                                value=[],  # Default: No tooltip
+                                inline=True,
+                            ),
+                        ],
                         style={
-                            'height': '45vh',
-                            'width': '19vw',
-                            'font-size': '12px',
-                            'background-color': 'white',
-                            'padding': '5px',
-                            'border': '1px solid #ccc',
-                            'margin-top': '3px',
-                            'resize': 'none'},
-                     readOnly=True
-                    )
-                ], style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '18vw'}),
-            ], style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '98vw'}),
+                            'height': '38px',
+                            'width': '200px',
+                            'display': 'inline-block',
+                            'margin-right': '10px',
+                            'padding-top': '5px',
+                            'vertical-align': 'middle',
+                            'border': '2px solid black',
+                            'borderRadius': '0px',
+                            'backgroundColor': '#f8f9fa',
+                            'textAlign': 'center'
+                        }
+                    ),
+                    dcc.Dropdown(
+                        id='visualization-selector',
+                        options=[
+                            {'label': 'Taxonomy Hierarchy', 'value': 'taxonomy_hierarchy'},
+                            {'label': 'Annotation Visualization', 'value': 'basic'},
+                            {'label': 'Bin Visualization', 'value': 'bin'},
+                            {'label': 'Contig Visualization', 'value': 'contig'}
+                        ],
+                        value='taxonomy_hierarchy',
+                        style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                    ),
+                    dcc.Dropdown(
+                        id='taxonomy-level-selector',
+                        options=[
+                            {'label': 'Domain', 'value': 'Domain'},
+                            {'label': 'Kingdom', 'value': 'Kingdom'},
+                            {'label': 'Phylum', 'value': 'Phylum'},
+                            {'label': 'Class', 'value': 'Class'},
+                            {'label': 'Order', 'value': 'Order'},
+                            {'label': 'Family', 'value': 'Family'},
+                            {'label': 'Genus', 'value': 'Genus'},
+                            {'label': 'Species', 'value': 'Species'},
+                        ],
+                        value='Family',
+                        placeholder="Select Taxonomy Level",
+                        style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                    ),
+                    dcc.Dropdown(
+                        id='annotation-selector',
+                        options=[],
+                        value=None,
+                        placeholder="Select an annotation",
+                        style={}
+                    ),
+                    dcc.Dropdown(
+                        id='bin-selector',
+                        options=[],
+                        value=None,
+                        placeholder="Select a bin",
+                        style={}
+                    ),
+                    dcc.Dropdown(
+                        id='contig-selector',
+                        options=[],
+                        value=None,
+                        placeholder="Select a contig",
+                        style={}
+                    ),
+                    html.Button("Confirm Selection", id="confirm-btn", style={**common_text_style}, title=hover_info['confirm-btn']),
+                ], 
+                style={
+                    'display': 'flex',
+                    'justify-content': 'space-between',
+                    'align-items': 'center',
+                    'position': 'fixed',
+                    'top': '0',
+                    'left': '0',
+                    'width': '100%',
+                    'z-index': '1000',
+                    'background-color': 'lightgrey',
+                    'padding': '10px',
+                    'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'
+                }
+            ),
+            html.Div(style={'height': '70px'}),  # Placeholder for header height
             
-            html.Div([
-                dash_table.DataTable(
-                    id='contact-table',
-                    columns=[],
-                    data=[],
-                    style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
-                    style_data_conditional=[],
-                    style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
-                    style_header={'whiteSpace': 'normal', 'height': 'auto'},
-                    fixed_rows={'headers': True},
-                    fixed_columns={'headers': True, 'data': 1}
-                )
-            ], style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top'})
+            html.Div(
+                id="visualization-container",
+                children=[
+                    html.Div(
+                        id="left-column",
+                        children=[
+                            dcc.Interval(id="log-interval-visualization", interval=2000),
+                            dcc.Textarea(
+                                id="log-box-visualization",
+                                style={
+                                    'height': '30vh',
+                                    'width': '25vw',
+                                    'font-size': '12px',
+                                    'background-color': 'white',
+                                    'padding': '5px',
+                                    'border': '1px solid #ccc',
+                                    'margin-top': '3px',
+                                    'resize': 'none'},
+                             readOnly=True
+                            ),
+                            html.Div(
+                                id='info-table-container',
+                                children=[
+                                    dcc.Checklist(
+                                        id='visibility-filter',
+                                        options=[{'label': '  Only show elements in the diagram', 'value': 'filter'}],
+                                        value=['filter'],
+                                        style={'display': 'inline-block', 'width': '25vw'}
+                                    ),
+                                    html.Div(id='row-count', style={'height': '2vh', 'width': '25vw', 'display': 'inline-block'}),
+                                    dcc.Tabs(id='table-tabs', value='bin', 
+                                             children=[
+                                                 dcc.Tab(label='Bin Info', value='bin', className="p-0"),
+                                                 dcc.Tab(label='Contig Info', value='contig', className="p-0")
+                                             ]
+                                    ),
+                                    html.Div(
+                                        children=[
+                                            dag.AgGrid(
+                                                id='bin-info-table',
+                                                columnDefs=bin_column_defs,
+                                                rowData=[],
+                                                defaultColDef={},
+                                                style={'display': 'none'},
+                                                dashGridOptions={
+                                                    'headerPinned': 'top',
+                                                    'rowSelection': 'single'
+                                                }
+                                            ),
+                                            dag.AgGrid(
+                                                id='contig-info-table',
+                                                columnDefs=contig_column_defs,
+                                                rowData=[],
+                                                defaultColDef={},
+                                                style={'display': 'none'},
+                                                dashGridOptions={
+                                                    'headerPinned': 'top',
+                                                    'rowSelection': 'single'
+                                                }
+                                            )
+                                        ], 
+                                    ),
+                                ],
+                                title=hover_info['info-table-container']
+                            ),
+                        ], 
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '25vw'}
+                    ),
+                    html.Div(
+                        id="middle-column",
+                        children=[
+                            html.Div(
+                                id="treemap-graph-container",
+                                children=[
+                                    dcc.Graph(
+                                        id='treemap-graph', 
+                                        figure=go.Figure(), 
+                                        config={'displayModeBar': False}, 
+                                        style={'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
+                                    )
+                                ],
+                                title=hover_info['treemap-graph-container']
+                            ),
+                            html.Div(
+                                id="cyto-graph-container",
+                                children=[
+                                    cyto.Cytoscape(
+                                        id='cyto-graph',
+                                        elements=[],
+                                        stylesheet=base_stylesheet,
+                                        style={},
+                                        layout={'name': 'preset'},
+                                        zoom=1,
+                                        userZoomingEnabled=True,
+                                        wheelSensitivity=0.1
+                                    ),
+                                ],
+                                title=hover_info['cyto-graph-container']
+                            ),
+                        ], 
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '49vw'}
+                    ),
+                    html.Div(
+                        id="right-column",
+                        children=[
+                            dcc.Textarea(
+                                id='hover-info',
+                                style={'height': '10vh',
+                                       'width': '24vw',
+                                       'font-size': '12px',
+                                       'background-color': 'white',
+                                       'padding': '5px',
+                                       'border': '1px solid #ccc',
+                                       'margin-top': '3px',
+                                       'resize': 'none'},
+                                readOnly=True
+                            ),
+                            html.Div(
+                                id="bar-chart-container",
+                                children=[
+                                    dcc.Graph(id='bar-chart', 
+                                              config={'displayModeBar': False}, 
+                                              figure=go.Figure(), 
+                                              style={'height': '75vh', 'width': '24vw', 'display': 'inline-block'}                                 
+                                    ),
+                                ],
+                                title=hover_info['bar-chart-container']
+                            ),
+                        ],
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '24vw'}
+                    ),
+                ], 
+                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '98vw'}
+            ),
+            
+            html.Div(
+                id="contact-table-container",
+                children=[
+                    dash_table.DataTable(
+                        id='contact-table',
+                        columns=[],
+                        data=[],
+                        style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
+                        style_data_conditional=[],
+                        style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
+                        style_header={'whiteSpace': 'normal', 'height': 'auto'},
+                        fixed_rows={'headers': True},
+                        fixed_columns={'headers': True, 'data': 1},
+                    )
+                ], 
+                style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'}, 
+                title=hover_info['contact-table-container']
+            )
         ]
     )
            
@@ -1351,7 +1451,8 @@ def register_visualization_callbacks(app):
         [Input('data-loaded', 'data'),
          Input('taxonomy-level-selector', 'value')],
         [State('reset-btn', 'n_clicks'),
-        State('user-folder', 'data')]
+        State('user-folder', 'data')],
+        prevent_initial_call=True
     )
     def update_data(data_loaded, taxonomy_level, reset_clicks, user_folder):
         if not data_loaded:
@@ -1451,7 +1552,8 @@ def register_visualization_callbacks(app):
          Input('visibility-filter', 'value')],
         [State('cyto-graph', 'elements'),
          State('taxonomy-level-selector', 'value'),
-         State('user-folder', 'data')]
+         State('user-folder', 'data')],
+         prevent_initial_call=True
     )
     def display_info_table(data_loaded, selected_tab, bin_row_data, contig_row_data, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder):
         if not data_loaded:
@@ -1547,7 +1649,7 @@ def register_visualization_callbacks(app):
     
         # Update based on the selected tab and apply filters
         if selected_tab == 'bin':
-            bin_style = {'display': 'block'}
+            bin_style = {'display': 'block', 'height': '47vh'}
             contig_style = {'display': 'none'}
             display_table = bin_information_display
             information_data = bin_information
@@ -1563,10 +1665,11 @@ def register_visualization_callbacks(app):
             }
             bin_filter_model = apply_filter_logic(bin_row_data)
             contig_filter_model = {}
+            row_count_text = f"Total Number of Rows: {sum(1 for row in bin_row_data if row['Visibility'] == 1)}"
             
         elif selected_tab == 'contig':
             bin_style = {'display': 'none'}
-            contig_style = {'display': 'block'}
+            contig_style = {'display': 'block', 'height': '47vh'}
             display_table = contig_information_display
             information_data = contig_information
             contig_colors, annotation_colors = get_node_colors(cyto_elements, information_data)
@@ -1581,9 +1684,7 @@ def register_visualization_callbacks(app):
             }
             bin_filter_model = {}
             contig_filter_model = apply_filter_logic(contig_row_data)
-        
-        row_count_text = f"Total Number of Rows: {sum(1 for row in contig_row_data if row['Visibility'] == 1)}"
-        print(row_count_text)
+            row_count_text = f"Total Number of Rows: {sum(1 for row in contig_row_data if row['Visibility'] == 1)}"
     
         return (
             bin_row_data, bin_style, bin_filter_model, bin_col_def,
@@ -1612,7 +1713,8 @@ def register_visualization_callbacks(app):
          Input('cyto-graph', 'selectedNodeData'),
          Input('table-tabs', 'value')],
         [State('taxonomy-level-selector', 'value'),
-         State('user-folder', 'data')]
+         State('user-folder', 'data')],
+         prevent_initial_call=True
     )
     def sync_selectors(data_loaded, reset_clicks, visualization_type, contact_table_active_cell, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, user_folder):      
         if not data_loaded:
@@ -1649,18 +1751,18 @@ def register_visualization_callbacks(app):
         # Update styles, tab, and visualization type based on selections
         if selected_bin or visualization_type == 'bin':
             visualization_type = 'bin'
-            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
-            bin_selector_style = {'width': '300px', 'display': 'inline-block'}
+            annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
             tab_value = 'bin'  # Switch to bin tab
     
         elif selected_contig or visualization_type == 'contig':
             visualization_type = 'contig'
-            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
-            contig_selector_style = {'width': '300px', 'display': 'inline-block'}
+            annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            contig_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
             tab_value = 'contig'  # Switch to contig tab
     
         elif selected_annotation and visualization_type == 'basic':
-            annotation_selector_style = {'width': '300px', 'display': 'inline-block'}
+            annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
     
         return (visualization_type, selected_annotation, annotation_selector_style,
                 selected_bin, bin_selector_style, selected_contig, contig_selector_style,
@@ -1745,7 +1847,8 @@ def register_visualization_callbacks(app):
          State('contig-selector', 'value'),
          State('contact-table', 'data'),
          State('table-tabs', 'value'),
-         State('user-folder', 'data')]
+         State('user-folder', 'data')],
+         prevent_initial_call=True
     )
     def update_visualization(data_loaded, reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, table_data, selected_tab, user_folder):
         if not data_loaded:
@@ -1837,7 +1940,8 @@ def register_visualization_callbacks(app):
          Input('annotation-selector', 'value'),
          Input('bin-selector', 'value'),
          Input('contig-selector', 'value')],
-        [State('user-folder', 'data')]
+        [State('user-folder', 'data')],
+        prevent_initial_call=True
     )
     def update_selected_styles(data_loaded, selected_annotation, selected_bin, selected_contig, user_folder):
         if not data_loaded:
@@ -1902,7 +2006,8 @@ def register_visualization_callbacks(app):
          Input('annotation-selector', 'value')],
         [State('visualization-selector', 'value'),
          State('table-tabs', 'value'),
-         State('user-folder', 'data')]
+         State('user-folder', 'data')],
+         prevent_initial_call=True
     )
     def update_dropdowns(data_loaded, selected_annotation, visualization_type, selected_tab, user_folder):
         if not data_loaded:
@@ -1959,92 +2064,25 @@ def register_visualization_callbacks(app):
         return "No logs yet."
     
     @app.callback(
-        Output('help', 'value'),
-        [Input('download-btn', 'hoverData'),
-         Input('reset-btn', 'hoverData'),
-         Input('confirm-btn', 'hoverData'),
-         Input('bar-chart', 'hoverData'),
-         Input('table-container', 'hoverData'),
-         Input('treemap-graph', 'hoverData'),
-         Input('cyto-graph', 'hoverData'),
-         Input('contact-table', 'hoverData'),
-         Input('visualization-selector', 'hoverData'),
-         Input('taxonomy-level-selector', 'hoverData'),
-         Input('annotation-selector', 'hoverData'),
-         Input('bin-selector', 'hoverData'),
-         Input('contig-selector', 'hoverData')]
+        [Output('download-btn', 'title'),
+         Output('reset-btn', 'title'),
+         Output('confirm-btn', 'title'),
+         Output('bar-chart-container', 'title'),
+         Output('info-table-container', 'title'),
+         Output('treemap-graph-container', 'title'),
+         Output('cyto-graph-container', 'title'),
+         Output('contact-table-container', 'title')],
+        [Input('tooltip-toggle', 'value')]
     )
-    def update_help_section(d, r, c, b, t, tr, cy, ct, v, tl, a, bns, cns):
-        triggered = callback_context.triggered_id
-        print(f"Triggered Component: {triggered}")
-
-        
-        hover_info = {
-            'download-btn': 
-                ("Download Button allows users to download the dataset they are currently viewing or working with.  \n"
-                 "This downloaded data can be re-uploaded to the app when visiting the website again, "
-                 "enabling returning users to continue from where they left off with their previously analyzed data."),
-                
-            'reset-btn': 
-                ("Reset Button resets all user selections and filters, bringing the visualization back to its default state."),
-                
-            'confirm-btn': 
-                ("Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly."),
-                
-            'bar-chart': 
-                ("Each bar represents an element in the main figure (either the Cytoscape Graph or Treemap Graph).  \n"
-                 "The color coding and labels align with the elements shown in the main visualization, providing a consistent reference across views."),
-                
-            'table-container': 
-                ("Row Count displays the total number of rows currently visible in the table, "
-                 "updating dynamically based on filters and selections.  \n"
-                 "Visibility Filter checkbox filters the table to display only elements represented in the main visualization. "
-                 "Bin Info Tab displays data specific to bins, and Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n"
-                 "Users can select individual rows to select specific bins or contigs.  \n"
-                 "The table allows users to filter and sort columns to organize data according to taxonomic groups, and metrics."),
-            
-            'treemap-graph': 
-                ("Treemap Graph provides a hierarchical view of taxonomic data, showing relationships between groups at different taxonomic levels.  \n"
-                 "Each box represents a taxonomic level or group. Darker colors indicate higher taxonomy levels (e.g., Domain), "
-                 "while lighter colors represent lower levels within the hierarchy (e.g., Species). "
-                 "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, phage).  \n"
-                 "This visual encoding allows users to quickly identify dominant groups, their levels, and types within the dataset."),
-                
-            'cyto-graph': 
-                ("The Cytoscape Graph is a network-style visualization that represents relationships between annotations, "
-                 "bins, or contigs, depending on the selected visualization type.  \n"
-                 "Click on a node to select it. Selecting a node may highlight its connected nodes, showing relationships within the network.  \n"
-                 "Colors may vary based on element types, such as chromosomes, plasmids, or phages. "
-                 "This color coding helps users quickly identify the biological role of each node.  \n"
-                 "Nodes are sized based on coverage within the dataset. A node with higher coverage may appear larger, making it stand out in the graph.  \n"
-                 "Nodes that are densely connected may form clusters, allowing users to identify groups of closely related elements. "
-                 "Conversely, nodes with fewer connections may appear on the periphery, creating a natural separation in the graph based on interaction strength."),
-            
-            'contact-table': 
-                ("The Contact Table provides a tabular view of interactions between annotations, allowing users to explore contact data in more detail.  \n"
-                 "Click on the row title to select a annotation."),
-            
-            'visualization-selector': 
-                ("Visualization Selector allows users to switch between different visualization types, such as taxonomy_hierarchy, basic, bin, and contig."),
-            
-            'taxonomy-level-selector': 
-                ("Taxonomy Level Selector determines the taxonomy level at which bins or contigs are divided in the visualization.  \n"
-                 "This allows users to adjust the hierarchy based on their desired level of detail."),
-                
-            'annotation-selector': 
-                ("Annotation Selector allows users to select a specific annotation (taxonomic group) to display in the visualization."),
-            
-            'bin-selector': 
-                ("Bin Selector allows users to select a specific bin for visualization."),
-            
-            'contig-selector': 
-                ("Contig Selector allows users to select a specific contig for visualization.")
-        }
-    
-        # Determine which component is hovered
-        if triggered:
-            text = hover_info.get(triggered, "Hover over any component for more details.")
-            print(text)
-            return text
-        
-        return "Hover over a component for more information."
+    def update_tooltips(show_tooltip):
+        if 'show-tooltip' in show_tooltip:
+            return (hover_info['download-btn'], 
+                    hover_info['reset-btn'], 
+                    hover_info['confirm-btn'], 
+                    hover_info['bar-chart-container'],
+                    hover_info['info-table-container'], 
+                    hover_info['treemap-graph-container'],
+                    hover_info['cyto-graph-container'],
+                    hover_info['contact-table-container'])
+        else:
+            return (None, None, None, None, None, None, None, None)
