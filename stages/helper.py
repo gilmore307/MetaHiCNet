@@ -14,7 +14,6 @@ import statsmodels.api as sm
 logger = logging.getLogger("app_logger")
 
 def save_file_to_user_folder(contents, filename, user_folder, folder_name='output'):
-
     # Ensure the user folder exists
     user_folder_path = os.path.join(folder_name, user_folder)
     os.makedirs(user_folder_path, exist_ok=True)
@@ -655,7 +654,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         return None
 
 def get_contig_indexes(annotations, contig_information):
-    num_threads = 4 * os.cpu_count()
+    num_threads = os.cpu_count()
     
     if isinstance(annotations, str):
         annotations = [annotations]

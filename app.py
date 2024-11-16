@@ -28,7 +28,11 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
     prevent_initial_callbacks='initial_duplicate'  # Set globally
 )
-app.enable_dev_tools(debug=os.getenv("DEBUG", "False") == "True", dev_tools_hot_reload=False)
+app.enable_dev_tools(debug=True, dev_tools_hot_reload=False)
+
+# Connect to Redis using REDISCLOUD_URL from environment variables
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+r = redis.StrictRedis.from_url(redis_url, decode_responses=False)
 
 # Initialize the logger
 class SessionLogHandler(logging.Handler):
@@ -41,27 +45,17 @@ class SessionLogHandler(logging.Handler):
         log_entry = self.format(record)
         redis_key = f"{self.session_id}:log"
         
-        # Fetch the current logs from Redis
         current_logs = r.get(redis_key)
-        
-        # If no logs are found, initialize an empty list
         if current_logs is None:
             current_logs = []
         else:
-            current_logs = json.loads(current_logs)  # Deserialize the existing logs
-
-        # Add the new log entry to the list
+            current_logs = json.loads(current_logs)
         current_logs.append(log_entry)
         
-        # Save the updated logs back to Redis after serializing the list
         r.set(redis_key, json.dumps(current_logs), ex=SESSION_TTL) 
 
 logger = logging.getLogger('app_logger')
 logger.setLevel(logging.INFO)
-
-# Connect to Redis using REDISCLOUD_URL from environment variables
-redis_url = os.getenv("REDISCLOUD_URL")
-r = redis.from_url(redis_url, decode_responses=True)
                    
 SESSION_TTL = 60
     
@@ -159,6 +153,7 @@ def setup_user_id(pathname):
     session_log_handler.setFormatter(formatter)
     logger.addHandler(session_log_handler)
     
+    logger.info("App started")
     logger.info(f"Session created with ID: {unique_folder}")
 
     # Return initial states
@@ -189,7 +184,6 @@ def refresh_and_cleanup(n, user_folder):
                 # If the base key doesn't exist in Redis, the session has expired
                 if os.path.exists(session_folder_path):
                     shutil.rmtree(session_folder_path)
-                    print(f"Deleted folder for expired session: {folder_name}")
     
     return no_update
 
@@ -312,6 +306,7 @@ def update_execute_button(current_stage, prep_status1, prep_status2, prep_status
     [Input('current-stage', 'data')],
     [State('current-method', 'data')]
 )
+
 def update_main_content(current_stage, selected_method):
     if current_stage == 'Visualization':
         # Replace main-content with visualization layout
@@ -350,7 +345,6 @@ def update_main_content(current_stage, selected_method):
             dcc.Interval(id="log-interval", interval=2000, n_intervals=0),  # Update every 2 seconds
             dcc.Textarea(
                 id="log-box",
-                value="Logger Initialized...\n",  # Initial log message
                 style={
                     'width': '100%',
                     'height': '200px',
@@ -373,12 +367,8 @@ def update_main_content(current_stage, selected_method):
      Input('current-stage', 'data')],
     [State('user-folder', 'data')]
 )
-def update_layout(selected_method, current_stage, user_folder):
-    ctx = dash.callback_context
-    if ctx.triggered:
-        trigger = ctx.triggered[0]
-        logger.info(f"Triggered by element ID: {trigger['prop_id']} with value: {trigger['value']}")
 
+def update_layout(selected_method, current_stage, user_folder):
     # Generate the flowchart for the current method and stage
     flowchart = create_flowchart(current_stage, method=selected_method)
 
@@ -402,8 +392,7 @@ def update_layout(selected_method, current_stage, user_folder):
 @app.callback(
     Output('log-box', 'value'),
     Input('log-interval', 'n_intervals'),
-    State('user-folder', 'data'),
-    prevent_initial_call=True
+    State('user-folder', 'data')
 )
 def update_log_box(n_intervals, session_id):
     redis_key = f"{session_id}:log"
@@ -421,5 +410,4 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8050)) 
-    app.run_server(debug=os.getenv("DEBUG", "False") == "True", port=port, host="0.0.0.0")
+    app.run_server(debug=os.getenv("DEBUG", "True") == "True")

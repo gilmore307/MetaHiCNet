@@ -4,7 +4,6 @@ from dash.dependencies import Input, Output, State
 import logging
 import os
 import py7zr
-import gc
 import numpy as np
 from stages.helper import (
     preprocess_normalization,
@@ -112,6 +111,7 @@ def register_normalization_callbacks(app):
          Output('tol-container', 'style')],
         Input('normalization-method', 'value')
     )
+
     def update_parameters(normalization_method):
         # Determine styles based on the selected normalization method
         thres_style = {'display': 'block'} if normalization_method in ['Raw', 'normCC', 'HiCzin', 'bin3C', 'MetaTOR'] else {'display': 'none'}
@@ -137,6 +137,7 @@ def register_normalization_callbacks(app):
          State('current-stage', 'data')],
         prevent_initial_call=True
     )
+
     def execute_normalization(n_clicks, normalization_method, epsilon, threshold, max_iter, tolerance,
                               remove_unmapped_contigs, remove_host_host, user_folder, selected_method, current_stage):
         # Only trigger if in the 'Normalization' stage for the selected methods
@@ -218,9 +219,6 @@ def register_normalization_callbacks(app):
             col=contig_contact_matrix.col,
             shape=contig_contact_matrix.shape
         )
-        
-        del bin_data, contig_info, bin_contact_matrix, contig_contact_matrix, normalized_matrix
-        gc.collect()
 
         # Compress saved files into normalized_information.7z
         normalized_archive_path = os.path.join(user_output_path, 'normalized_information.7z')

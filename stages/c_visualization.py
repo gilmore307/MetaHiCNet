@@ -22,6 +22,7 @@ import logging
 import pickle
 import json
 import py7zr
+import gc
 
 def save_to_redis(key, data):  # ttl is set to 600 seconds (10 minutes) by default
     from app import r
@@ -939,7 +940,8 @@ def prepare_data(bin_information_intact, contig_information_intact, bin_dense_ma
 logger = logging.getLogger("app_logger")
 
 # Example of logging messages
-logger.info("App started")
+
+gc.collect()
  
 type_colors = {
     'chromosome': '#4472C4',
@@ -1360,7 +1362,7 @@ def register_visualization_callbacks(app):
     )
     def load_data(user_folder):
         # Path setup for user-specific data
-        logger.info(f"Loading data for user: {user_folder}")
+        logger.info("Loading data for user")
         
         user_output_path = f'output/{user_folder}'
         bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
@@ -1457,7 +1459,7 @@ def register_visualization_callbacks(app):
     def update_data(data_loaded, taxonomy_level, reset_clicks, user_folder):
         if not data_loaded:
             raise PreventUpdate
-        logger.info(f"Updating data for user folder: {user_folder} with taxonomy level: {taxonomy_level or 'Family'}")
+        logger.info("Updating data for user.")
 
         # Define Redis keys that incorporate the user_folder to avoid concurrency issues
         bin_info_key = f'{user_folder}:bin-information-intact'
@@ -1856,8 +1858,7 @@ def register_visualization_callbacks(app):
             
         ctx = callback_context
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]            
-        logger.info(f"Triggered by: {triggered_id}")
-        logger.info("Updateing visualization.")
+        logger.info(f"Updating visulization. Triggered by: {triggered_id}")
         logger.info(f"Visualization type: {visualization_type}")
         logger.info(f"Selected annotation: {selected_annotation}")
         logger.info(f"Selected bin: {selected_bin}")
