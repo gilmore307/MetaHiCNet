@@ -87,46 +87,9 @@ app.layout = dbc.Container([
     dcc.Store(id='normalization-status', data=False, storage_type='session'),
     dcc.Store(id='user-folder', storage_type='session'),
     dcc.Interval(id="ttl-interval", interval=SESSION_TTL*250),
-    dcc.Location(id='url', refresh=True),  # Detects a new session/visit
+    dcc.Location(id='url', refresh=True),
     html.Div(id="dummy-output", style={"display": "none"}),
-    html.Div(id="main-content", children=[
-        html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
-        dcc.Tabs(id='tabs-method', value='method1', children=[
-            dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
-            dcc.Tab(label="Upload Unnormalized Data for New Normalization Method", value='method2', id='tab-method2'),
-            dcc.Tab(label="Resume Visualization with Previously Normalized Data", value='method3', id='tab-method3')
-        ]),
-        html.Div(id='flowchart-container', className="my-4"),
-        dcc.Loading(
-            id="loading-spinner",
-            type="default",
-            delay_show=500,
-            children=[
-                html.Div(id='dynamic-content', className="my-4"),
-                dbc.Row([
-                    dbc.Col(dbc.Button("Previous", id="previous-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
-                    dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2),
-                    dbc.Col(dbc.Button("Next", id="next-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
-                ], justify="between", align="center", className="mt-3")
-            ]
-        ),
-        dcc.Interval(id="log-interval", interval=2000),
-        dcc.Textarea(
-            id="log-box",
-            style={
-                'width': '100%',
-                'height': '200px',
-                'resize': 'none',
-                'border': '1px solid #ccc',
-                'padding': '10px',
-                'overflow': 'auto',
-                'backgroundColor': '#f9f9f9',
-                'color': '#333',
-                'fontFamily': 'monospace'
-            },
-            readOnly=True
-        )
-    ])
+    html.Div(id="main-content", children=[])
 ], fluid=True)
 
 @app.callback(
@@ -318,8 +281,8 @@ def update_main_content(current_stage, selected_method):
             
             dcc.Tabs(id='tabs-method', value=selected_method, children=[
                 dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
-                dcc.Tab(label="Upload Unnormalized Data for New Normalization Method", value='method2', id='tab-method2'),
-                dcc.Tab(label="Resume Visualization with Previously Normalized Data", value='method3', id='tab-method3')
+                dcc.Tab(label="Upload Unnormalized Data to Apply New Normalization Method", value='method2', id='tab-method2'),
+                dcc.Tab(label="Upload Normalized Data to Retrieve Visualization", value='method3', id='tab-method3')
             ]),
             
             html.Div(id='flowchart-container', className="my-4"),

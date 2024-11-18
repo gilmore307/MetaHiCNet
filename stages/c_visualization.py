@@ -17,6 +17,7 @@ from math import sqrt, sin, cos
 import os
 import io
 from io import StringIO
+from scipy.sparse import isspmatrix_coo
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import pickle
@@ -27,20 +28,27 @@ import gc
 def save_to_redis(key, data):  # ttl is set to 600 seconds (10 minutes) by default
     from app import r
     from app import SESSION_TTL
-    
+
     if isinstance(data, pd.DataFrame):
+        # Convert DataFrame to JSON
         json_data = data.to_json(orient='split')
         r.set(key, json_data.encode('utf-8'), ex=SESSION_TTL)  # Set TTL for DataFrame
-    elif isinstance(data, np.ndarray):
+    elif isspmatrix_coo(data):  # Check if the data is a COO sparse matrix
+        # Serialize sparse matrix using pickle
         binary_data = pickle.dumps(data)
-        r.set(key, binary_data, ex=SESSION_TTL)  # Set TTL for numpy array
+        r.set(key, binary_data, ex=SESSION_TTL)  # Set TTL for COO matrix
+    elif isinstance(data, np.ndarray):
+        # Serialize NumPy array using pickle
+        binary_data = pickle.dumps(data)
+        r.set(key, binary_data, ex=SESSION_TTL)  # Set TTL for NumPy array
     elif isinstance(data, list) or isinstance(data, dict):
+        # Convert list or dict to JSON
         json_data = json.dumps(data)
         r.set(key, json_data.encode('utf-8'), ex=SESSION_TTL)  # Set TTL for list or dict
     else:
-        raise ValueError("Unsupported data type")
+        # Raise an error for unsupported types
+        raise ValueError(f"Unsupported data type: {type(data)}")
 
-# Function to load from Redis
 def load_from_redis(key):
     from app import r
     data = r.get(key)
@@ -48,9 +56,13 @@ def load_from_redis(key):
     if data is None:
         raise KeyError(f"No data found in Redis for key: {key}")
 
-    # First, try loading as binary data with pickle (for NumPy arrays or other binary objects)
+    # First, try loading as binary data with pickle (for NumPy arrays, sparse matrices, etc.)
     try:
-        return pickle.loads(data)
+        obj = pickle.loads(data)
+        # If the object is a COO matrix, convert it to a dense array
+        if isspmatrix_coo(obj):
+            return obj.toarray()  # Convert COO matrix to dense array
+        return obj  # Return as-is for other pickled objects
     except (pickle.UnpicklingError, TypeError):
         pass  # If binary loading fails, continue to JSON loading
 
@@ -65,6 +77,7 @@ def load_from_redis(key):
             return json.loads(decoded_data)
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise ValueError(f"Unable to load data from Redis for key: {key}, unknown format.")
+
             
 # Function to get bin indexes based on annotation in a specific part of the dataframe
 def get_indexes(annotations, bin_information):
@@ -136,7 +149,7 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
                 'source': edge[0],
                 'target': edge[1],
                 'width': edge[2].get('width', 1),
-                'color': edge[2].get('color', '#ccc'),
+                'color': edge[2].get('color', '#ddd'),
                 'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element'
             }
         })
@@ -539,9 +552,9 @@ def taxonomy_visualization(bin_information_intact, bin_information, unique_annot
         node_colors[annotation] = color
 
     data_dict = {
-        'Total Inter-Annotation Contact': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-        'Total Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-        'Bin Number': pd.DataFrame({'name': unique_annotations, 'value': bin_counts, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
+        'Across Taxonomy Hi-C Contacts': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
+        'Taxonomy Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
+        'Number of Bins': pd.DataFrame({'name': unique_annotations, 'value': bin_counts, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
     }
 
     bar_fig = create_bar_chart(data_dict)
@@ -618,9 +631,9 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         bin_counts = bin_information['Annotation'].value_counts()
     
         data_dict = {
-            'Total Inter-Annotation Contact': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-            'Total Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-            'Bin Number': pd.DataFrame({'name': unique_annotations, 'value': bin_counts, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
+            'Across Taxonomy Hi-C Contacts': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
+            'Taxonomy Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
+            'Number of Bins': pd.DataFrame({'name': unique_annotations, 'value': bin_counts, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
         }
     
         bar_fig = create_bar_chart(data_dict)
@@ -756,8 +769,8 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
         annotation_data = pd.DataFrame()  # or assign None if that fits better with your app
 
     data_dict = {
-        'Bin Contacts': bin_data,
-        'Annotation Contacts': annotation_data
+        'Across Bin Hi-C Contacts': bin_data,
+        'Across Taxonomy Hi-C Contact': annotation_data
     }
 
     bar_fig = create_bar_chart(data_dict)
@@ -892,8 +905,8 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
 
     data_dict = {
-        'contig Contacts': contig_data,
-        'Annotation Contacts': annotation_data
+        'Across Contig Hi-C Contacts': contig_data,
+        'Across Taxonomy Hi-C Contact': annotation_data
     }
 
     bar_fig = create_bar_chart(data_dict)
@@ -978,7 +991,7 @@ base_stylesheet = [
 
 hover_info = {
     'download-btn': 
-        ("Download Button allows users to download the dataset they are currently viewing or working with.  \n"
+        ("Download Button allows users to download the dataset they are currently viewing or working with.  \n\n"
          "This downloaded data can be re-uploaded to the app when visiting the website again, "
          "enabling returning users to continue from where they left off with their previously analyzed data."),
         
@@ -989,36 +1002,35 @@ hover_info = {
         ("Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly."),
         
     'bar-chart-container': 
-        ("Each bar represents an element in the main figure (either the Cytoscape Graph or Treemap Graph).  \n"
+        ("Each bar represents an element in the main figure (either the Cytoscape Graph or Treemap Graph).  \n\n"
          "The color coding and labels align with the elements shown in the main visualization, providing a consistent reference across views."),
         
     'info-table-container': 
-        ("Row Count displays the total number of rows currently visible in the table, "
-         "updating dynamically based on filters and selections.  \n"
+        ("Row Count displays the total number of rows currently visible in the table, updating dynamically based on filters and selections.  \n\n"
          "Visibility Filter checkbox filters the table to display only elements represented in the main visualization. "
-         "Bin Info Tab displays data specific to bins, and Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n"
-         "Users can select individual rows to select specific bins or contigs.  \n"
+         "Bin Info Tab displays data specific to bins, and Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n\n"
+         "Users can select individual rows to select specific bins or contigs.  \n\n"
          "The table allows users to filter and sort columns to organize data according to taxonomic groups, and metrics."),
     
     'treemap-graph-container': 
-        ("Treemap Graph provides a hierarchical view of taxonomic data, showing relationships between groups at different taxonomic levels.  \n"
+        ("Treemap Graph provides a hierarchical view of taxonomic data, showing relationships between groups at different taxonomic levels.  \n\n"
          "Each box represents a taxonomic level or group. Darker colors indicate higher taxonomy levels (e.g., Domain), "
          "while lighter colors represent lower levels within the hierarchy (e.g., Species). "
-         "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, phage).  \n"
+         "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, phage).  \n\n"
          "This visual encoding allows users to quickly identify dominant groups, their levels, and types within the dataset."),
         
     'cyto-graph-container': 
         ("The Cytoscape Graph is a network-style visualization that represents relationships between annotations, "
-         "bins, or contigs, depending on the selected visualization type.  \n"
-         "Click on a node to select it. Selecting a node may highlight its connected nodes, showing relationships within the network.  \n"
+         "bins, or contigs, depending on the selected visualization type.  \n\n"
+         "Click on a node to select it. Selecting a node may highlight its connected nodes, showing relationships within the network.  \n\n"
          "Colors may vary based on element types, such as chromosomes, plasmids, or phages. "
-         "This color coding helps users quickly identify the biological role of each node.  \n"
-         "Nodes are sized based on coverage within the dataset. A node with higher coverage may appear larger, making it stand out in the graph.  \n"
+         "This color coding helps users quickly identify the biological role of each node.  \n\n"
+         "Nodes are sized based on coverage within the dataset. A node with higher coverage may appear larger, making it stand out in the graph.  \n\n"
          "Nodes that are densely connected may form clusters, allowing users to identify groups of closely related elements. "
          "Conversely, nodes with fewer connections may appear on the periphery, creating a natural separation in the graph based on interaction strength."),
     
     'contact-table-container': 
-        ("The Contact Table provides a tabular view of interactions between annotations, allowing users to explore contact data in more detail.  \n"
+        ("The Contact Table provides a tabular view of interactions between annotations, allowing users to explore contact data in more detail.  \n\n"
          "Click on the row title to select an annotation.")
 }
 
@@ -1048,7 +1060,7 @@ def create_visualization_layout():
         {
             "headerName": "Contact Information",
             "children": [
-                {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Numer of Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
                 {"headerName": "Length", "field": "Length", "width": 140, "wrapHeaderText": True},
                 {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
                 {"headerName": "Visibility", "field": "Visibility", "hide": True}
@@ -1079,8 +1091,8 @@ def create_visualization_layout():
         {
             "headerName": "Contact Information",
             "children": [
-                {"headerName": "Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Length", "field": "Length", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Numer of Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Bin Size", "field": "Length", "width": 140, "wrapHeaderText": True},
                 {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
                 {"headerName": "Visibility", "field": "Visibility", "hide": True}
             ]
@@ -1106,9 +1118,6 @@ def create_visualization_layout():
                 id="main-controls",
                 children=[
                     dcc.Store(id='data-loaded', data=False),
-                    dcc.Download(id="download"),
-    
-                    html.Button("Download Files", id="download-btn", style={**common_text_style}, title=hover_info['download-btn']),
                     html.Button("Reset Selection", id="reset-btn", style={**common_text_style}, title=hover_info['reset-btn']),
                     html.Div(
                         id="tooltip-toggle-container",
@@ -1136,10 +1145,10 @@ def create_visualization_layout():
                     dcc.Dropdown(
                         id='visualization-selector',
                         options=[
-                            {'label': 'Taxonomy Hierarchy', 'value': 'taxonomy_hierarchy'},
-                            {'label': 'Annotation Visualization', 'value': 'basic'},
-                            {'label': 'Bin Visualization', 'value': 'bin'},
-                            {'label': 'Contig Visualization', 'value': 'contig'}
+                            {'label': 'Taxonomy Frameworf', 'value': 'taxonomy_hierarchy'},
+                            {'label': 'Taxonomy Interaction', 'value': 'basic'},
+                            {'label': 'Bin Interaction', 'value': 'bin'},
+                            {'label': 'Contig Interaction', 'value': 'contig'}
                         ],
                         value='taxonomy_hierarchy',
                         style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
@@ -1343,7 +1352,7 @@ def create_visualization_layout():
                         data=[],
                         style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
                         style_data_conditional=[],
-                        style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px'},
+                        style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px', 'font-family': 'Arial, sans-serif'},
                         style_header={'whiteSpace': 'normal', 'height': 'auto'},
                         fixed_rows={'headers': True},
                         fixed_columns={'headers': True, 'data': 1},
@@ -1400,7 +1409,7 @@ def register_visualization_callbacks(app):
             contig_dense_matrix = coo_matrix(
                 (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
                 shape=tuple(contig_matrix_data['shape'])
-            ).toarray()
+            )
         except Exception as e:
             logger.error(f"Error loading data from files: {e}")
             return [False]
@@ -1425,23 +1434,19 @@ def register_visualization_callbacks(app):
         }
         
         # Save the loaded data to Redis with keys specific to the user folder
-        try:
-            save_to_redis(bin_info_key, bin_information_intact)       
-            save_to_redis(bin_matrix_key, bin_dense_matrix)
-            save_to_redis(bin_display_key, bin_information_display)
-            save_to_redis(contig_info_key, contig_information_intact)
-            save_to_redis(contig_matrix_key, contig_dense_matrix)
-            save_to_redis(contig_display_key, contig_information_display)
-            save_to_redis(bin_information_key, bin_information)
-            save_to_redis(contig_information_key, contig_information)
-            save_to_redis(unique_annotations_key, unique_annotations)
-            save_to_redis(contact_matrix_key, contact_matrix)
-            save_to_redis(contact_matrix_display_key, contact_matrix_display)
-            save_to_redis(visualization_mode_key, current_visualization_mode)
-        except Exception as e:
-            logger.error(f"Error saving data to Redis: {e}")
-            return [False]
-    
+        save_to_redis(bin_info_key, bin_information_intact)       
+        save_to_redis(bin_matrix_key, bin_dense_matrix)
+        save_to_redis(bin_display_key, bin_information_display)
+        save_to_redis(contig_info_key, contig_information_intact)
+        save_to_redis(contig_matrix_key, contig_dense_matrix)
+        save_to_redis(contig_display_key, contig_information_display)
+        save_to_redis(bin_information_key, bin_information)
+        save_to_redis(contig_information_key, contig_information)
+        save_to_redis(unique_annotations_key, unique_annotations)
+        save_to_redis(contact_matrix_key, contact_matrix)
+        save_to_redis(contact_matrix_display_key, contact_matrix_display)
+        save_to_redis(visualization_mode_key, current_visualization_mode)
+
         logger.info("Data loaded and saved to Redis successfully.")
         return [True]
     
@@ -1904,21 +1909,21 @@ def register_visualization_callbacks(app):
                 cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
                 
             elif visualization_type == 'basic' or (selected_annotation and not selected_bin and not selected_contig):
-                logger.info("Displaying basic annotation visualization.")
+                logger.info("Displaying basic Taxonomy Interaction.")
                 cyto_elements, bar_fig, _ = annotation_visualization(bin_information, unique_annotations, contact_matrix)
                 treemap_fig = go.Figure()
                 treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
                 cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
     
             elif visualization_type == 'bin' and selected_bin:
-                logger.info(f"Displaying bin visualization for selected bin: {selected_bin}.")
+                logger.info(f"Displaying bin Interaction for selected bin: {selected_bin}.")
                 cyto_elements, bar_fig = bin_visualization(selected_annotation, selected_bin, bin_information, bin_dense_matrix, unique_annotations)
                 treemap_fig = go.Figure()
                 treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
                 cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
     
             elif visualization_type == 'contig' and selected_contig:
-                logger.info(f"Displaying contig visualization for selected contig: {selected_contig}.")
+                logger.info(f"Displaying contig Interaction for selected contig: {selected_contig}.")
                 cyto_elements, bar_fig = contig_visualization(selected_annotation, selected_contig, contig_information, contig_dense_matrix, unique_annotations)
                 treemap_fig = go.Figure()
                 treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}

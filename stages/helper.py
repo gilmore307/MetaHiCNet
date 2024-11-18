@@ -10,6 +10,8 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.sparse import coo_matrix, spdiags, isspmatrix_csr
 import statsmodels.api as sm
+from joblib import Parallel, delayed
+from itertools import combinations, product
 
 logger = logging.getLogger("app_logger")
 
@@ -546,7 +548,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         
         # Return the balanced matrix and the scale vector 'x'
         X = spdiags(x, 0, n, n, 'csr')  # Create a diagonal matrix with x
-        balanced_matrix = X.T.dot(_orig.dot(X)) * 100000
+        balanced_matrix = X.T.dot(_orig.dot(X)) * 1000000
         return balanced_matrix 
 
     try:
@@ -654,28 +656,28 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         return None
 
 def get_contig_indexes(annotations, contig_information):
-    num_threads = os.cpu_count()
-    
+    # Ensure annotations is a list
     if isinstance(annotations, str):
         annotations = [annotations]
-    
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = {}
-        for annotation in annotations:
-            futures[executor.submit(
-                lambda ann: (ann, contig_information[contig_information['Bin'] == ann].index.tolist()),
-                annotation)] = annotation
-        
-        contig_indexes = {}
 
-        for future in futures:
-            annotation = futures[future]
-            try:
-                annotation, indexes = future.result()
-                contig_indexes[annotation] = indexes
-            except Exception as e:
-                print(f'Error fetching contig indexes for annotation: {annotation}, error: {e}')
-        
+    # Parallel computation using joblib
+    def fetch_indexes(annotation):
+        try:
+            indexes = contig_information[contig_information['Bin'] == annotation].index.tolist()
+            return annotation, indexes
+        except Exception as e:
+            print(f'Error fetching contig indexes for annotation: {annotation}, error: {e}')
+            return annotation, []
+
+    # Execute in parallel
+    results = Parallel(n_jobs=-1)(
+        delayed(fetch_indexes)(annotation) for annotation in annotations
+    )
+
+    # Aggregate results
+    contig_indexes = {annotation: indexes for annotation, indexes in results}
+
+    # If there's only one annotation, return its indexes directly
     if len(contig_indexes) == 1:
         return list(contig_indexes.values())[0]
 
@@ -698,79 +700,80 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         contig_contact_matrix = dense_matrix.copy()
 
     # Aggregate bin data
-    bin_data = contig_info.groupby('Bin').agg({
+    bin_info = contig_info.groupby('Bin').agg({
         'Contig': lambda x: ', '.join(x),
         'Restriction sites': 'sum',
         'Length': 'sum',
-        'Coverage': 'sum',
+        'Coverage': lambda x: (x * contig_info.loc[x.index, 'Length']).sum() / contig_info.loc[x.index, 'Restriction sites'].sum(),
         'Self Contact': 'sum',
-        'Type': lambda x: x.mode()[0],
-        'Domain': lambda x: x.mode()[0],
-        'Kingdom': lambda x: x.mode()[0],
-        'Phylum': lambda x: x.mode()[0],
-        'Class': lambda x: x.mode()[0],
-        'Order': lambda x: x.mode()[0],
-        'Family': lambda x: x.mode()[0],
-        'Genus': lambda x: x.mode()[0],
-        'Species': lambda x: x.mode()[0]
+        'Type': 'first',
+        'Domain': 'first',
+        'Kingdom': 'first',
+        'Phylum': 'first',
+        'Class': 'first',
+        'Order': 'first',
+        'Family': 'first',
+        'Genus': 'first',
+        'Species': 'first'
     }).reset_index()
+    
+    bin_info['Coverage'] = bin_info['Coverage'].astype(int)
 
-    unique_annotations = bin_data['Bin']
+    # Create a mapping for temporary renaming
+    rename_map = {
+        'phage': 'a_phage',
+        'plasmid': 'b_plasmid',
+        'chromosome': 'c_chromosome'
+    }
+    reverse_map = {v: k for k, v in rename_map.items()}
+    
+    bin_info['Type'] = bin_info['Type'].replace(rename_map)
+    contig_info['Type'] = contig_info['Type'].replace(rename_map)
+
+    bin_info = bin_info.sort_values(by='Type', ascending=True)
+    contig_info = contig_info.sort_values(by='Type', ascending=True)
+
+    bin_info['Type'] = bin_info['Type'].replace(reverse_map)
+    contig_info['Type'] = contig_info['Type'].replace(reverse_map)
+
+    unique_annotations = bin_info['Bin']
     contig_indexes_dict = get_contig_indexes(unique_annotations, contig_info)
 
-    host_annotations = bin_data[bin_data['Type'] == 'chromosome']['Bin'].tolist()
-    non_host_annotations = bin_data[~bin_data['Type'].isin(['chromosome'])]['Bin'].tolist()
+    host_annotations = bin_info[bin_info['Type'] == 'chromosome']['Bin'].tolist()
+    non_host_annotations = bin_info[~bin_info['Type'].isin(['chromosome'])]['Bin'].tolist()
 
     # Create the bin contact matrix
     bin_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
 
+    # Helper function for processing submatrix
+    def calculate_submatrix_sum(pair):
+        annotation_i, annotation_j = pair
+        indexes_i = contig_indexes_dict[annotation_i]
+        indexes_j = contig_indexes_dict[annotation_j]
+        sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
+        return annotation_i, annotation_j, sub_matrix.sum()
+
+    # Combine pairs of all necessary interactions
     if remove_host_host:
-        # Step 1: Process interactions between non-host annotations
-        for annotation_i in tqdm(non_host_annotations, desc="Processing non-host to non-host interactions"):
-            for annotation_j in non_host_annotations:
-                indexes_i = contig_indexes_dict[annotation_i]
-                indexes_j = contig_indexes_dict[annotation_j]
-                
-                # Extract the submatrix and sum values
-                sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
-                bin_contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
-
-        # Step 2: Add interactions between host and non-host annotations
-        for annotation_i in tqdm(host_annotations, desc="Processing host to non-host interactions"):
-            for annotation_j in non_host_annotations:
-                indexes_i = contig_indexes_dict[annotation_i]
-                indexes_j = contig_indexes_dict[annotation_j]
-                
-                # Extract submatrix and sum values
-                sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
-                bin_contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
-                bin_contact_matrix.at[annotation_j, annotation_i] = sub_matrix.sum()
-        
-        # Step 3: Remove host-host interactions
-        host_indexes = []
-        for host_annotation in host_annotations:
-            host_indexes.extend(contig_indexes_dict[host_annotation])
-        
-        # Mask to exclude host-host contacts
-        host_mask = np.ones(dense_matrix.shape[0], dtype=bool)
-        host_mask[host_indexes] = False
-        
-        # Remove host-host interactions
-        contig_contact_matrix = dense_matrix[host_mask, :][:, host_mask]
-
+        non_host_pairs = list(combinations(non_host_annotations, 2))
+        non_host_self_pairs = [(x, x) for x in non_host_annotations]
+        host_non_host_pairs = list(product(host_annotations, non_host_annotations))
+        all_pairs = non_host_pairs + non_host_self_pairs + host_non_host_pairs
     else:
-        # Process all interactions including host-host
-        for annotation_i in tqdm(unique_annotations, desc="Processing contact matrix"):
-            for annotation_j in unique_annotations:
-                indexes_i = contig_indexes_dict[annotation_i]
-                indexes_j = contig_indexes_dict[annotation_j]
-                
-                # Extract submatrix and sum values
-                sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
-                bin_contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
+        non_self_pairs = list(combinations(unique_annotations, 2))
+        self_pairs = [(x, x) for x in unique_annotations]
+        all_pairs = non_self_pairs + self_pairs
+        
+    results = Parallel(n_jobs=-1)(
+        delayed(calculate_submatrix_sum)(pair) for pair in tqdm(all_pairs, desc="Processing annotation pairs")
+    )
+    
+    for annotation_i, annotation_j, value in results:
+        bin_contact_matrix.at[annotation_i, annotation_j] = value
+        bin_contact_matrix.at[annotation_j, annotation_i] = value
 
     # Convert to COO sparse matrices for storage
     bin_contact_matrix = coo_matrix(bin_contact_matrix)
     contig_contact_matrix = coo_matrix(contig_contact_matrix)
 
-    return bin_data, contig_info, bin_contact_matrix, contig_contact_matrix
+    return bin_info, contig_info, bin_contact_matrix, contig_contact_matrix

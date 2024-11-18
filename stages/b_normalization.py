@@ -98,7 +98,9 @@ def create_normalization_layout():
                 )
             ], id='tol-container', className="my-3")
 
-        ], id='normalization-parameters', className="my-3")
+        ], id='normalization-parameters', className="my-3"),
+                    dcc.Download(id="download"),
+                    html.Button("Download Files", id="download-btn"),
     ])
 
     return layout
