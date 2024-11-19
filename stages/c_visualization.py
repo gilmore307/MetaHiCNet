@@ -1530,7 +1530,6 @@ def register_visualization_callbacks(app):
          Output('contig-info-table', 'style'),
          Output('contig-info-table', 'filterModel'),
          Output('contig-info-table', 'defaultColDef'),
-         Output('row-count', 'children'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('table-tabs', 'value'),
          Input('bin-info-table', 'rowData'),
