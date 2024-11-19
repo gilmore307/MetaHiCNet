@@ -102,7 +102,6 @@ def generate_gradient_values(input_array, range_A, range_B):
 
 # Function to convert NetworkX graph to Cytoscape elements with sizes and colors
 def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
-    logger.info('Converting to cyto element.')
     elements = []
     for node in G.nodes:
         elements.append({
@@ -128,12 +127,11 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
                 'source': edge[0],
                 'target': edge[1],
                 'width': edge[2].get('width', 1),
-                'color': edge[2].get('color', '#ddd'),
+                'color': edge[2].get('color', '#ccc'),
                 'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element'
             }
         })
     return elements
-
 
 def add_selection_styles(selected_nodes=None, selected_edges=None):
     cyto_stylesheet = base_stylesheet.copy()
@@ -645,9 +643,6 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
     else:
         contacts_annotation = bin_information.loc[contacts_indices, 'Annotation']
         contacts_bins = bin_information.loc[contacts_indices, 'Bin']
-    
-    logger.info(f"Contacts Annotation: {contacts_annotation}")
-    logger.info(f"Contacts Bins: {contacts_bins}")
 
     G = nx.Graph()
 
@@ -781,9 +776,6 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
     else:
         contacts_annotation = contig_information.loc[contacts_indices, 'Annotation']
         contacts_contigs = contig_information.loc[contacts_indices, 'Contig']
-    
-    logger.info(f"Contacts Annotation: {contacts_annotation}")
-    logger.info(f"Contacts Contigs: {contacts_contigs}")
 
     G = nx.Graph()
 
@@ -1095,7 +1087,7 @@ def create_visualization_layout():
         id="loading-spinner",
         type="default",
         fullscreen=True,
-        delay_show=1000,
+        delay_show=2000,
         children=[
             html.Div(
                 id="main-controls",
@@ -1200,7 +1192,7 @@ def create_visualization_layout():
                     html.Div(
                         id="left-column",
                         children=[
-                            dcc.Interval(id="log-interval-visualization", interval=2000),
+                            html.Button(id='invisible-logger-button', n_clicks=0, style={'display': 'none'}),
                             dcc.Textarea(
                                 id="log-box-visualization",
                                 style={
@@ -1349,7 +1341,8 @@ def create_visualization_layout():
            
 def register_visualization_callbacks(app):
     @app.callback(
-        [Output('data-loaded', 'data')],
+        [Output('data-loaded', 'data'),
+         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
         [Input('user-folder', 'data')]
     )
     def load_data(user_folder):
@@ -1389,7 +1382,7 @@ def register_visualization_callbacks(app):
             )
         except Exception as e:
             logger.error(f"Error loading data from files: {e}")
-            return [False]
+            return False, 1
     
         # Prepare display data
         bin_display_columns = ['Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Restriction sites', 'Length', 'Coverage']
@@ -1409,13 +1402,14 @@ def register_visualization_callbacks(app):
         save_to_redis(contig_display_key, contig_information_display)
 
         logger.info("Data loaded and saved to Redis successfully.")
-        return [True]
+        return True, 1
     
     @app.callback(
         [Output('contact-table', 'columns'),
          Output('contact-table', 'data'),
          Output('contact-table', 'style_data_conditional'),
-         Output('reset-btn', 'n_clicks')],
+         Output('reset-btn', 'n_clicks'),
+         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
         [Input('data-loaded', 'data'),
          Input('taxonomy-level-selector', 'value')],
         [State('reset-btn', 'n_clicks'),
@@ -1473,10 +1467,11 @@ def register_visualization_callbacks(app):
         
         reset_clicks = (reset_clicks or 0) + 1
         
-        return table_columns, table_data, style_conditions, reset_clicks
+        return table_columns, table_data, style_conditions, reset_clicks, 1
     
     @app.callback(
-        Output("download", "data"),
+        [Output("download", "data"),
+         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
         [Input("download-btn", "n_clicks")],
         [State("user-folder", "data")]
     )
@@ -1501,7 +1496,7 @@ def register_visualization_callbacks(app):
         return dcc.send_bytes(
             memory_file.getvalue(),
             filename=f"{user_folder}.7z"
-        )
+        ), 1
 
     @app.callback(
         [Output('bin-info-table', 'rowData'),
@@ -1512,7 +1507,8 @@ def register_visualization_callbacks(app):
          Output('contig-info-table', 'style'),
          Output('contig-info-table', 'filterModel'),
          Output('contig-info-table', 'defaultColDef'),
-         Output('row-count', 'children')],
+         Output('row-count', 'children'),
+         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
         [Input('table-tabs', 'value'),
          Input('bin-info-table', 'rowData'),
          Input('contig-info-table', 'rowData'),
@@ -1658,7 +1654,7 @@ def register_visualization_callbacks(app):
         return (
             bin_row_data, bin_style, bin_filter_model, bin_col_def,
             contig_row_data, contig_style, contig_filter_model, contig_col_def,
-            row_count_text
+            row_count_text, 1
         )
     
     @app.callback(
@@ -1672,7 +1668,8 @@ def register_visualization_callbacks(app):
          Output('table-tabs', 'value'),
          Output('contact-table', 'active_cell'),
          Output('bin-info-table', 'selectedRows'),
-         Output('contig-info-table', 'selectedRows')],
+         Output('contig-info-table', 'selectedRows'),
+         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
          Input('visualization-selector', 'value'),
          Input('contact-table', 'active_cell'),
@@ -1735,7 +1732,7 @@ def register_visualization_callbacks(app):
                 
         return (visualization_type, selected_annotation, annotation_selector_style,
                 selected_bin, bin_selector_style, selected_contig, contig_selector_style,
-                tab_value, None, [], [])
+                tab_value, None, [], [], 1)
     
     def synchronize_selections(triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, table_tab_value, bin_information, contig_information, contact_matrix_display):
         selected_annotation = None
@@ -1806,7 +1803,8 @@ def register_visualization_callbacks(app):
          Output('cyto-graph', 'style'),
          Output('bar-chart', 'figure'),
          Output('treemap-graph', 'figure'),
-         Output('treemap-graph', 'style')],
+         Output('treemap-graph', 'style'),
+         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
          Input('confirm-btn', 'n_clicks')],
         [State('visualization-selector', 'value'),
@@ -1891,13 +1889,14 @@ def register_visualization_callbacks(app):
                 treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
                 cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
     
-        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style
+        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, 1
     
     @app.callback(
         [Output('cyto-graph', 'elements', allow_duplicate=True),
          Output('cyto-graph', 'stylesheet'),
          Output('hover-info', 'value'),
-         Output('cyto-graph', 'layout')],
+         Output('cyto-graph', 'layout'),
+         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
         [Input('annotation-selector', 'value'),
          Input('bin-selector', 'value'),
          Input('contig-selector', 'value')],
@@ -1958,12 +1957,13 @@ def register_visualization_callbacks(app):
         # Add selection styles for the selected nodes and edges
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
             
-        return cyto_elements, stylesheet, hover_info, cyto_style
+        return cyto_elements, stylesheet, hover_info, cyto_style, 1
     
     @app.callback(
         [Output('annotation-selector', 'options'),
          Output('bin-selector', 'options'),
-         Output('contig-selector', 'options')],
+         Output('contig-selector', 'options'),
+         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
         [Input('annotation-selector', 'value')],
         [State('visualization-selector', 'value'),
          State('table-tabs', 'value'),
@@ -1990,7 +1990,7 @@ def register_visualization_callbacks(app):
     
             # Populate bin options if a specific annotation is selected
             if visualization_type == 'bin' and selected_annotation:
-                bin_index_dict = get_indexes(selected_annotation, bin_information)
+                bin_index_dict = get_indexes(selected_annotation, bin_information, 'Annotation')
                 bin_indexes = bin_index_dict[selected_annotation]
                 bins = bin_information.loc[bin_indexes, 'Bin']
                 bin_options = [{'label': bin, 'value': bin} for bin in bins]
@@ -2001,16 +2001,16 @@ def register_visualization_callbacks(app):
     
             # Populate contig options if a specific annotation is selected
             if visualization_type == 'contig' and selected_annotation:
-                contig_index_dict = get_indexes(selected_annotation, contig_information)
+                contig_index_dict = get_indexes(selected_annotation, contig_information, 'Annotation')
                 contig_indexes = contig_index_dict[selected_annotation]
                 contigs = contig_information.loc[contig_indexes, 'Contig']
                 contig_options = [{'label': contig, 'value': contig} for contig in contigs]
                     
-        return annotation_options, bin_options, contig_options
+        return annotation_options, bin_options, contig_options, 1
     
     @app.callback(
         Output('log-box-visualization', 'value'),
-        Input('log-interval-visualization', 'n_intervals'),
+        Input('invisible-logger-button', 'n_clicks'),
         State('user-folder', 'data'),
         prevent_initial_call=True
     )
@@ -2036,7 +2036,7 @@ def register_visualization_callbacks(app):
         }
         """,
         Output('log-box-visualization', 'value', allow_duplicate=True),  # Dummy output to trigger the callback
-        Input('log-interval-visualization', 'n_intervals')
+        Input('invisible-logger-button', 'n_clicks')
     )
     
     @app.callback(
@@ -2061,4 +2061,4 @@ def register_visualization_callbacks(app):
                     hover_info['cyto-graph-container'],
                     hover_info['contact-table-container'])
         else:
-            return (None, None, None, None, None, None, None, None)
+            raise PreventUpdate

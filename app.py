@@ -28,6 +28,7 @@ app = dash.Dash(
     prevent_initial_callbacks='initial_duplicate'  # Set globally
 )
 app.enable_dev_tools(debug=False)
+server = app.server
 
 # Connect to Redis using REDISCLOUD_URL from environment variables
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -328,4 +329,4 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == "__main__":
-    app.run_server(debug=False, host="0.0.0.0", port=8050)
+    app.run_server(debug=True, host="0.0.0.0", port=8050)

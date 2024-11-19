@@ -676,10 +676,6 @@ def get_indexes(annotations, information_table, column):
     # Aggregate results
     contig_indexes = {annotation: indexes for annotation, indexes in results}
 
-    # If there's only one annotation, return its indexes directly
-    if len(contig_indexes) == 1:
-        return list(contig_indexes.values())[0]
-
     return contig_indexes
 
 def calculate_submatrix_sum(pair, contig_indexes_dict, matrix):
