@@ -26,7 +26,6 @@ def create_normalization_layout():
     layout = html.Div([
         html.Div([
             html.Label("Select Normalization Method:"),
-            html.Div(id='blank-element', style={'display': 'none'}),
             dcc.Dropdown(
                 id='normalization-method',
                 options=normalization_methods,
@@ -98,9 +97,7 @@ def create_normalization_layout():
                 )
             ], id='tol-container', className="my-3")
 
-        ], id='normalization-parameters', className="my-3"),
-                    dcc.Download(id="download"),
-                    html.Button("Download Files", id="download-btn"),
+        ], id='normalization-parameters', className="my-3")
     ])
 
     return layout
@@ -125,7 +122,7 @@ def register_normalization_callbacks(app):
 
     @app.callback(
         [Output('normalization-status', 'data'),
-         Output('blank-element', 'children')],
+         Output('blank-element', 'children', allow_duplicate=True)],
         [Input('execute-button', 'n_clicks')],
         [State('normalization-method', 'value'),
          State('epsilon-input', 'value'),

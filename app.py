@@ -1,7 +1,6 @@
 import uuid
 import dash
 from dash import dcc, html, no_update
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 from stages.a_preparation import (
@@ -44,6 +43,14 @@ class SessionLogHandler(logging.Handler):
     def emit(self, record):
         log_entry = self.format(record)
         redis_key = f"{self.session_id}:log"
+
+        # Add symbols based on log level
+        if record.levelname == "ERROR":
+            log_entry = f"❌ {log_entry}"
+        elif record.levelname == "INFO":
+            log_entry = f"✅ {log_entry}"
+        elif record.levelname == "WARNING":
+            log_entry = f"⚠️ {log_entry}"
         
         current_logs = r.get(redis_key)
         if current_logs is None:
@@ -52,7 +59,7 @@ class SessionLogHandler(logging.Handler):
             current_logs = json.loads(current_logs)
         current_logs.append(log_entry)
         
-        r.set(redis_key, json.dumps(current_logs), ex=SESSION_TTL) 
+        r.set(redis_key, json.dumps(current_logs), ex=SESSION_TTL)
 
 logger = logging.getLogger('app_logger')
 logger.setLevel(logging.INFO)
@@ -116,14 +123,13 @@ def setup_user_id(pathname):
     session_log_handler.setFormatter(formatter)
     logger.addHandler(session_log_handler)
     
-    logger.info("App started")
+    logger.info("App initiated")
     logger.info(f"Session created with ID: {unique_folder}")
 
     # Return initial states
     return unique_folder, "method1", "Preparation", False, False, False, False
 
 @app.callback(
-    Output('dummy-output', 'children'),
     Input('ttl-interval', 'n_intervals'),
     State('user-folder', 'data')
 )
@@ -147,8 +153,6 @@ def refresh_and_cleanup(n, user_folder):
                 # If the base key doesn't exist in Redis, the session has expired
                 if os.path.exists(session_folder_path):
                     shutil.rmtree(session_folder_path)
-    
-    return no_update
 
 @app.callback(
     [Output('tab-method1', 'disabled'),
@@ -164,82 +168,17 @@ def disable_other_tabs(current_stage, selected_method):
     return [False, False, False] 
 
 @app.callback(
-    [Output('current-method', 'data'),
-     Output('current-stage', 'data')],
-    [Input('tabs-method', 'value'),
-     Input('next-button', 'n_clicks'),
-     Input('previous-button', 'n_clicks')],
-    [State('current-method', 'data'),
-     State('current-stage', 'data')]
-)
-def update_current_method_and_stage(selected_method, next_click, prev_click, current_method, current_stage):
-    # Determine the new stage based on which button was clicked
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-        
-
-    method = selected_method
-    stages = stages_mapping[method]
-    current_index = stages.index(current_stage)
-
-    if ctx.triggered[0]['prop_id'] == 'next-button.n_clicks' and current_index < len(stages) - 1:
-        stage = stages[current_index + 1]
-    elif ctx.triggered[0]['prop_id'] == 'previous-button.n_clicks' and current_index > 0:
-        stage = stages[current_index - 1]
-    else:
-        stage = current_stage
-
-    return method, stage
-
-@app.callback(
-    [Output('previous-button', 'disabled'),
-     Output('next-button', 'disabled'),
-     Output('previous-button', 'color'),
-     Output('next-button', 'color')],
+    Output('current-stage', 'data'),
     [Input('current-stage', 'data'),
      Input('preparation-status-method1', 'data'),
      Input('preparation-status-method2', 'data'),
      Input('preparation-status-method3', 'data'),
-     Input('normalization-status', 'data')],  # Single normalization status for all methods
+     Input('normalization-status', 'data')],
     [State('current-method', 'data')]
 )
-def update_navigate_button_states(current_stage, prep_status1, prep_status2, prep_status3,
-                                  norm_status, selected_method):
-    
+def advance_stage(current_stage, prep_status1, prep_status2, prep_status3, norm_status, selected_method):
     stages = stages_mapping[selected_method]
-    prev_disabled = (stages.index(current_stage) == 0)
-    next_disabled = True
-    
-    # Logic to enable the Next button based on the current stage and status
-    if current_stage == 'Preparation' and {
-        'method1': prep_status1,
-        'method2': prep_status2,
-        'method3': prep_status3
-    }[selected_method]:
-        next_disabled = False
-    elif current_stage == 'Normalization' and norm_status:
-        next_disabled = False
-
-    # Set button colors based on their enabled/disabled state
-    prev_color = 'secondary' if prev_disabled else 'primary'
-    next_color = 'secondary' if next_disabled else 'primary'
-
-    return prev_disabled, next_disabled, prev_color, next_color
-
-@app.callback(
-    [Output('execute-button', 'children'),  # Set button text
-     Output('execute-button', 'disabled'),  # Set button enabled/disabled
-     Output('execute-button', 'color')],    # Set button color
-    [Input('current-stage', 'data'),
-     Input('preparation-status-method1', 'data'),
-     Input('preparation-status-method2', 'data'),
-     Input('preparation-status-method3', 'data'),
-     Input('normalization-status', 'data')],  # Single normalization status
-    [State('current-method', 'data')]
-)
-def update_execute_button(current_stage, prep_status1, prep_status2, prep_status3,
-                          norm_status, selected_method):
+    current_index = stages.index(current_stage)
 
     # Determine preparation status based on the selected method
     prep_status = {
@@ -248,28 +187,33 @@ def update_execute_button(current_stage, prep_status1, prep_status2, prep_status
         'method3': prep_status3
     }[selected_method]
 
-    # Set button text and disable conditions based on the current stage
+    # Logic to auto-advance to the next stage if conditions are met
+    if current_stage == 'Preparation' and prep_status and current_index < len(stages) - 1:
+        return stages[current_index + 1]
+    elif current_stage == 'Normalization' and norm_status and current_index < len(stages) - 1:
+        return stages[current_index + 1]
+
+    return current_stage
+
+@app.callback(
+    Output('execute-button', 'children'),
+    Input('current-stage', 'data')
+)
+def update_execute_button(current_stage):
     if current_stage == 'Preparation':
-        button_text = "Prepare Data"
-        disable_button = prep_status  # Disable if preparation is complete for this method
+        button_text = "Prepare and Validate Data"
     elif current_stage == 'Normalization':
         button_text = "Normalize Data"
-        disable_button = norm_status  # Disable if normalization is complete
     else:
-        button_text = "Execute"  # Default text in case of any unexpected stage
-        disable_button = True  # Disable by default for unexpected cases
+        button_text = "Execute"
 
-    # Set button color based on its disabled state
-    button_color = 'secondary' if disable_button else 'success'
-
-    return button_text, disable_button, button_color
+    return button_text
 
 @app.callback(
     Output('main-content', 'children'),  # Replace the entire content inside main-content
     [Input('current-stage', 'data')],
     [State('current-method', 'data')]
 )
-
 def update_main_content(current_stage, selected_method):
     if current_stage == 'Visualization':
         # Replace main-content with visualization layout
@@ -291,16 +235,12 @@ def update_main_content(current_stage, selected_method):
             dcc.Loading(
                 id="loading-spinner",
                 type="default",
-                delay_show=500,
                 children=[
                     html.Div(id='dynamic-content', className="my-4"),
-                    
-                    # Navigation buttons
+                    html.Div(id='blank-element', style={'display': 'none'}),
                     dbc.Row([
-                        dbc.Col(dbc.Button("Previous", id="previous-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
-                        dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2),
-                        dbc.Col(dbc.Button("Next", id="next-button", color="secondary", style={'width': '100%'}, disabled=True), width=2),
-                    ], justify="between", align="center", className="mt-3")
+                        dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2)
+                    ])
                 ]
             ),
             
@@ -314,10 +254,10 @@ def update_main_content(current_stage, selected_method):
                     'resize': 'none',
                     'border': '1px solid #ccc',
                     'padding': '10px',
-                    'overflow': 'auto',
+                    'overflowY': 'scroll', 
                     'backgroundColor': '#f9f9f9',
                     'color': '#333',
-                    'fontFamily': 'monospace'
+                    'fontFamily': 'Arial, sans-serif',
                 },
                 readOnly=True
             )
@@ -325,17 +265,17 @@ def update_main_content(current_stage, selected_method):
 
 @app.callback(
     [Output('flowchart-container', 'children'),
-     Output('dynamic-content', 'children')],
+     Output('dynamic-content', 'children'),
+     Output('current-method', 'data')],  # Add Output for current-method
     [Input('tabs-method', 'value'),
      Input('current-stage', 'data')],
     [State('user-folder', 'data')]
 )
-
 def update_layout(selected_method, current_stage, user_folder):
     # Generate the flowchart for the current method and stage
     flowchart = create_flowchart(current_stage, method=selected_method)
 
-    # Check the current method and stage to render the appropriate content
+    # Determine the appropriate content based on the current stage and method
     if current_stage == 'Preparation':
         if selected_method == 'method1':
             content = create_upload_layout_method1()
@@ -344,13 +284,14 @@ def update_layout(selected_method, current_stage, user_folder):
         elif selected_method == 'method3':
             content = create_upload_layout_method3()
         else:
-            return no_update, no_update
+            return no_update, no_update, no_update
     elif current_stage == 'Normalization':
         content = create_normalization_layout()
     else:
-        return no_update, no_update
+        return no_update, no_update, no_update
 
-    return flowchart, content
+    # Return flowchart, content, and updated current-method
+    return flowchart, content, selected_method
 
 @app.callback(
     Output('log-box', 'value'),
@@ -366,6 +307,20 @@ def update_log_box(n_intervals, session_id):
         return "\n".join(logs)
     
     return "No logs yet."
+
+app.clientside_callback(
+    """
+    function(n_intervals) {
+        const logBox = document.getElementById('log-box');
+        if (logBox) {
+            logBox.scrollTop = logBox.scrollHeight;  // Scroll to the bottom
+        }
+        return null;  // No output needed
+    }
+    """,
+    Output('log-box', 'value', allow_duplicate=True),  # Dummy output to trigger the callback
+    Input('log-interval', 'n_intervals')
+)
 
 # Part 7: Run the Dash app
 register_preparation_callbacks(app)

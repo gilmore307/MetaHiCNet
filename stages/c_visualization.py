@@ -18,12 +18,17 @@ import os
 import io
 from io import StringIO
 from scipy.sparse import isspmatrix_coo
-from concurrent.futures import ThreadPoolExecutor
 import logging
 import pickle
 import json
 import py7zr
 import gc
+from joblib import Parallel, delayed
+from itertools import combinations
+from stages.helper import (
+    get_indexes,
+    calculate_submatrix_sum
+)
 
 def save_to_redis(key, data):  # ttl is set to 600 seconds (10 minutes) by default
     from app import r
@@ -77,32 +82,6 @@ def load_from_redis(key):
             return json.loads(decoded_data)
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise ValueError(f"Unable to load data from Redis for key: {key}, unknown format.")
-
-            
-# Function to get bin indexes based on annotation in a specific part of the dataframe
-def get_indexes(annotations, bin_information):
-    num_threads = 4 * os.cpu_count()
-    bin_indexes = {}
-    
-    # Ensure annotations is a list even if a single annotation is provided
-    if isinstance(annotations, str):
-        annotations = [annotations]
-    
-    def fetch_indexes(annotation):
-        return annotation, bin_information[bin_information['Annotation'] == annotation].index
-
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = {executor.submit(fetch_indexes, annotation): annotation for annotation in annotations}
-        
-        for future in futures:
-            annotation = futures[future]
-            try:
-                annotation, indexes = future.result()
-                bin_indexes[annotation] = indexes
-            except Exception as e:
-                logger.error(f'Error fetching bin indexes for annotation: {annotation}, error: {e}')
-
-    return bin_indexes
 
 # Function to generate gradient values in a range [A, B]
 def generate_gradient_values(input_array, range_A, range_B):
@@ -933,21 +912,23 @@ def prepare_data(bin_information_intact, contig_information_intact, bin_dense_ma
 
     contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
     bin_indexes_dict = get_indexes(unique_annotations, bin_information)
-
-    # Use the pre-fetched indexes for calculating contacts
-    for annotation_i in unique_annotations:
-        for annotation_j in unique_annotations:   
-            indexes_i = bin_indexes_dict[annotation_i]
-            indexes_j = bin_indexes_dict[annotation_j]
-            sub_matrix = bin_dense_matrix[np.ix_(indexes_i, indexes_j)]
-            
-            contact_matrix.at[annotation_i, annotation_j] = sub_matrix.sum()
+    
+    non_self_pairs = list(combinations(unique_annotations, 2))
+    self_pairs = [(x, x) for x in unique_annotations]
+    all_pairs = non_self_pairs + self_pairs
+    
+    results = Parallel(n_jobs=-1)(
+        delayed(calculate_submatrix_sum)(pair, bin_indexes_dict, bin_dense_matrix) for pair in all_pairs
+    )
+    
+    for annotation_i, annotation_j, value in results:
+        contact_matrix.at[annotation_i, annotation_j] = value
+        contact_matrix.at[annotation_j, annotation_i] = value
 
     contact_matrix_display = contact_matrix.astype(int).copy()  # Convert to int for display
     contact_matrix_display.insert(0, 'Annotation', contact_matrix_display.index)  # Add the 'Annotation' column
 
     return bin_information, contig_information, unique_annotations, contact_matrix, contact_matrix_display
-
 
 # Create a logger and add the custom Dash logger handler
 logger = logging.getLogger("app_logger")
@@ -1118,7 +1099,10 @@ def create_visualization_layout():
                 id="main-controls",
                 children=[
                     dcc.Store(id='data-loaded', data=False),
-                    html.Button("Reset Selection", id="reset-btn", style={**common_text_style}, title=hover_info['reset-btn']),
+                    dcc.Download(id="download"),
+    
+                    html.Button("Download Files", id="download-btn", style={**common_text_style}),
+                    html.Button("Reset Selection", id="reset-btn", style={**common_text_style}),
                     html.Div(
                         id="tooltip-toggle-container",
                         children=[
@@ -1190,7 +1174,7 @@ def create_visualization_layout():
                         placeholder="Select a contig",
                         style={}
                     ),
-                    html.Button("Confirm Selection", id="confirm-btn", style={**common_text_style}, title=hover_info['confirm-btn']),
+                    html.Button("Confirm Selection", id="confirm-btn", style={**common_text_style}),
                 ], 
                 style={
                     'display': 'flex',
@@ -1221,6 +1205,8 @@ def create_visualization_layout():
                                     'height': '30vh',
                                     'width': '25vw',
                                     'font-size': '12px',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'overflowY': 'scroll', 
                                     'background-color': 'white',
                                     'padding': '5px',
                                     'border': '1px solid #ccc',
@@ -1270,8 +1256,7 @@ def create_visualization_layout():
                                             )
                                         ], 
                                     ),
-                                ],
-                                title=hover_info['info-table-container']
+                                ]
                             ),
                         ], 
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '25vw'}
@@ -1288,8 +1273,7 @@ def create_visualization_layout():
                                         config={'displayModeBar': False}, 
                                         style={'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
                                     )
-                                ],
-                                title=hover_info['treemap-graph-container']
+                                ]
                             ),
                             html.Div(
                                 id="cyto-graph-container",
@@ -1304,8 +1288,7 @@ def create_visualization_layout():
                                         userZoomingEnabled=True,
                                         wheelSensitivity=0.1
                                     ),
-                                ],
-                                title=hover_info['cyto-graph-container']
+                                ]
                             ),
                         ], 
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '49vw'}
@@ -1333,8 +1316,7 @@ def create_visualization_layout():
                                               figure=go.Figure(), 
                                               style={'height': '75vh', 'width': '24vw', 'display': 'inline-block'}                                 
                                     ),
-                                ],
-                                title=hover_info['bar-chart-container']
+                                ]
                             ),
                         ],
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '24vw'}
@@ -1358,8 +1340,7 @@ def create_visualization_layout():
                         fixed_columns={'headers': True, 'data': 1},
                     )
                 ], 
-                style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'}, 
-                title=hover_info['contact-table-container']
+                style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'}
             )
         ]
     )
@@ -2068,6 +2049,20 @@ def register_visualization_callbacks(app):
             return "\n".join(logs)
         
         return "No logs yet."
+    
+    app.clientside_callback(
+        """
+        function(n_intervals) {
+            const logBox = document.getElementById('log-box-visualization');
+            if (logBox) {
+                logBox.scrollTop = logBox.scrollHeight;  // Scroll to the bottom
+            }
+            return null;  // No output needed
+        }
+        """,
+        Output('log-box-visualization', 'value', allow_duplicate=True),  # Dummy output to trigger the callback
+        Input('log-interval-visualization', 'n_intervals')
+    )
     
     @app.callback(
         [Output('download-btn', 'title'),

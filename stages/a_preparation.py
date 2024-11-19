@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, no_update
+from dash import dcc, html
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
@@ -113,16 +113,6 @@ def create_upload_layout_method3():
             ))
         ])
     ])
-
-def create_processed_data_preview(combined_data):
-    if not combined_data.empty:
-        preview_table = dbc.Table.from_dataframe(combined_data.head(), striped=True, bordered=True, hover=True)
-        return html.Div([
-            html.H5('Processed Data Preview'),
-            preview_table
-        ], style={'margin': '20px 0'})
-    return html.Div("No data available for preview.", style={'color': 'red', 'margin': '20px 0'})
-
 
 def register_preparation_callbacks(app):
     # Callback for handling raw contig info upload with logging
@@ -278,7 +268,7 @@ def register_preparation_callbacks(app):
     # Callback for the 'Prepare Data' button (Method 1)
     @app.callback(
         [Output('preparation-status-method1', 'data'),
-         Output('dynamic-content', 'children', allow_duplicate=True)],
+         Output('blank-element', 'children')],
         [Input('execute-button', 'n_clicks')],
         [State('raw-contig-info', 'contents'),
          State('raw-contig-matrix', 'contents'),
@@ -309,7 +299,7 @@ def register_preparation_callbacks(app):
     
         if not all([contig_info, contig_matrix, binning_info, bin_taxonomy]):
             logger.error("Validation failed: Missing required files.")
-            return False, no_update
+            return False, ""
     
         try:
             # Parse and validate the contents directly
@@ -351,18 +341,14 @@ def register_preparation_callbacks(app):
                 with py7zr.SevenZipFile(unnormalized_archive_path, 'w') as archive:
                     archive.write(os.path.join(user_output_folder, 'raw_contact_matrix.npz'), 'raw_contact_matrix.npz')
                     archive.write(os.path.join(user_output_folder, 'contig_info_final.csv'), 'contig_info_final.csv')
-                
-                # Create preview component for display
-                preview_component = create_processed_data_preview(combined_data)
-                logger.info("Data preparation successful, and files saved.")
-                return True, preview_component
+                return True, ""
             else:
                 logger.error("Data preparation failed.")
-                return False, no_update
+                return False, ""
     
         except Exception as e:
             logger.error(f"Validation and preparation failed for Method 1: {e}")
-            return False, no_update
+            return False, ""
 
     @app.callback(
         [Output('overview-unnormalized-data-folder', 'children'),

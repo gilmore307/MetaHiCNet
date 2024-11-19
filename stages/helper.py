@@ -6,7 +6,6 @@ import requests
 import py7zr
 import pandas as pd
 import logging
-from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.sparse import coo_matrix, spdiags, isspmatrix_csr
 import statsmodels.api as sm
@@ -117,7 +116,7 @@ def query_plasmid_id(ids, fasta=False):
             # Submit all tasks to the executor
             future_to_id = {executor.submit(fetch_plasmid_data, plasmid_id, session): plasmid_id for plasmid_id in ids}
             
-            for future in tqdm(as_completed(future_to_id), total=len(future_to_id)):
+            for future in as_completed(future_to_id):
                 try:
                     result, not_found_result = future.result()
                     if result:
@@ -655,7 +654,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         logger.error(f"Error during {method} normalization: {e}")
         return None
 
-def get_contig_indexes(annotations, contig_information):
+def get_indexes(annotations, contig_information):
     # Ensure annotations is a list
     if isinstance(annotations, str):
         annotations = [annotations]
@@ -682,6 +681,13 @@ def get_contig_indexes(annotations, contig_information):
         return list(contig_indexes.values())[0]
 
     return contig_indexes
+
+def calculate_submatrix_sum(pair, contig_indexes_dict, matrix):
+    annotation_i, annotation_j = pair
+    indexes_i = contig_indexes_dict[annotation_i]
+    indexes_j = contig_indexes_dict[annotation_j]
+    sub_matrix = matrix[np.ix_(indexes_i, indexes_j)]
+    return annotation_i, annotation_j, sub_matrix.sum()
 
 def generating_bin_information(contig_info, contact_matrix, remove_unmapped_contigs=False, remove_host_host=False):
     # Ensure dense matrix for processing
@@ -737,21 +743,13 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
     contig_info['Type'] = contig_info['Type'].replace(reverse_map)
 
     unique_annotations = bin_info['Bin']
-    contig_indexes_dict = get_contig_indexes(unique_annotations, contig_info)
+    contig_indexes_dict = get_indexes(unique_annotations, contig_info)
 
     host_annotations = bin_info[bin_info['Type'] == 'chromosome']['Bin'].tolist()
     non_host_annotations = bin_info[~bin_info['Type'].isin(['chromosome'])]['Bin'].tolist()
 
     # Create the bin contact matrix
     bin_contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
-
-    # Helper function for processing submatrix
-    def calculate_submatrix_sum(pair):
-        annotation_i, annotation_j = pair
-        indexes_i = contig_indexes_dict[annotation_i]
-        indexes_j = contig_indexes_dict[annotation_j]
-        sub_matrix = dense_matrix[np.ix_(indexes_i, indexes_j)]
-        return annotation_i, annotation_j, sub_matrix.sum()
 
     # Combine pairs of all necessary interactions
     if remove_host_host:
@@ -765,7 +763,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         all_pairs = non_self_pairs + self_pairs
         
     results = Parallel(n_jobs=-1)(
-        delayed(calculate_submatrix_sum)(pair) for pair in tqdm(all_pairs, desc="Processing annotation pairs")
+        delayed(calculate_submatrix_sum)(pair, contig_indexes_dict, dense_matrix) for pair in all_pairs
     )
     
     for annotation_i, annotation_j, value in results:
