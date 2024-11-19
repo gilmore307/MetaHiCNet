@@ -1192,7 +1192,7 @@ def create_visualization_layout():
                     html.Div(
                         id="left-column",
                         children=[
-                            html.Button(id='invisible-logger-button', n_clicks=0, style={'display': 'none'}),
+                            html.Button(id='logger-button-visualization', n_clicks=0, style={'display': 'none'}),
                             dcc.Textarea(
                                 id="log-box-visualization",
                                 style={
@@ -1342,7 +1342,7 @@ def create_visualization_layout():
 def register_visualization_callbacks(app):
     @app.callback(
         [Output('data-loaded', 'data'),
-         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('user-folder', 'data')]
     )
     def load_data(user_folder):
@@ -1409,7 +1409,7 @@ def register_visualization_callbacks(app):
          Output('contact-table', 'data'),
          Output('contact-table', 'style_data_conditional'),
          Output('reset-btn', 'n_clicks'),
-         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('data-loaded', 'data'),
          Input('taxonomy-level-selector', 'value')],
         [State('reset-btn', 'n_clicks'),
@@ -1471,7 +1471,7 @@ def register_visualization_callbacks(app):
     
     @app.callback(
         [Output("download", "data"),
-         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input("download-btn", "n_clicks")],
         [State("user-folder", "data")]
     )
@@ -1508,7 +1508,7 @@ def register_visualization_callbacks(app):
          Output('contig-info-table', 'filterModel'),
          Output('contig-info-table', 'defaultColDef'),
          Output('row-count', 'children'),
-         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('table-tabs', 'value'),
          Input('bin-info-table', 'rowData'),
          Input('contig-info-table', 'rowData'),
@@ -1669,7 +1669,7 @@ def register_visualization_callbacks(app):
          Output('contact-table', 'active_cell'),
          Output('bin-info-table', 'selectedRows'),
          Output('contig-info-table', 'selectedRows'),
-         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
          Input('visualization-selector', 'value'),
          Input('contact-table', 'active_cell'),
@@ -1804,7 +1804,7 @@ def register_visualization_callbacks(app):
          Output('bar-chart', 'figure'),
          Output('treemap-graph', 'figure'),
          Output('treemap-graph', 'style'),
-         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
          Input('confirm-btn', 'n_clicks')],
         [State('visualization-selector', 'value'),
@@ -1896,7 +1896,7 @@ def register_visualization_callbacks(app):
          Output('cyto-graph', 'stylesheet'),
          Output('hover-info', 'value'),
          Output('cyto-graph', 'layout'),
-         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('annotation-selector', 'value'),
          Input('bin-selector', 'value'),
          Input('contig-selector', 'value')],
@@ -1963,7 +1963,7 @@ def register_visualization_callbacks(app):
         [Output('annotation-selector', 'options'),
          Output('bin-selector', 'options'),
          Output('contig-selector', 'options'),
-         Output('invisible-logger-button', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('annotation-selector', 'value')],
         [State('visualization-selector', 'value'),
          State('table-tabs', 'value'),
@@ -2010,7 +2010,7 @@ def register_visualization_callbacks(app):
     
     @app.callback(
         Output('log-box-visualization', 'value'),
-        Input('invisible-logger-button', 'n_clicks'),
+        Input('logger-button-visualization', 'n_clicks'),
         State('user-folder', 'data'),
         prevent_initial_call=True
     )
@@ -2036,7 +2036,7 @@ def register_visualization_callbacks(app):
         }
         """,
         Output('log-box-visualization', 'value', allow_duplicate=True),  # Dummy output to trigger the callback
-        Input('invisible-logger-button', 'n_clicks')
+        Input('logger-button-visualization', 'n_clicks')
     )
     
     @app.callback(
