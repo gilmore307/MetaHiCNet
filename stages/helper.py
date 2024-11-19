@@ -654,7 +654,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         logger.error(f"Error during {method} normalization: {e}")
         return None
 
-def get_indexes(annotations, contig_information):
+def get_indexes(annotations, information_table, column):
     # Ensure annotations is a list
     if isinstance(annotations, str):
         annotations = [annotations]
@@ -662,7 +662,7 @@ def get_indexes(annotations, contig_information):
     # Parallel computation using joblib
     def fetch_indexes(annotation):
         try:
-            indexes = contig_information[contig_information['Bin'] == annotation].index.tolist()
+            indexes = information_table[information_table[column] == annotation].index.tolist()
             return annotation, indexes
         except Exception as e:
             print(f'Error fetching contig indexes for annotation: {annotation}, error: {e}')
@@ -743,7 +743,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
     contig_info['Type'] = contig_info['Type'].replace(reverse_map)
 
     unique_annotations = bin_info['Bin']
-    contig_indexes_dict = get_indexes(unique_annotations, contig_info)
+    contig_indexes_dict = get_indexes(unique_annotations, contig_info, 'Bin')
 
     host_annotations = bin_info[bin_info['Type'] == 'chromosome']['Bin'].tolist()
     non_host_annotations = bin_info[~bin_info['Type'].isin(['chromosome'])]['Bin'].tolist()
