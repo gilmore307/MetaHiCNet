@@ -1122,7 +1122,7 @@ def create_visualization_layout():
         id="loading-spinner",
         type="default",
         fullscreen=True,
-        delay_show=5000,
+        delay_show=2000,
         children=[
             html.Div(
                 id="main-controls",
