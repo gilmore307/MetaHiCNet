@@ -196,7 +196,7 @@ def create_bar_chart(data_dict):
         traces.append(bar_trace)
 
     if not traces:
-        logger.warning("No valid traces created, returning empty figure.")
+        logger.warning("No valid traces created, returning empty histogram.")
         return go.Figure()  # Return an empty figure if no valid traces are created
     
     bar_layout = go.Layout(
@@ -260,125 +260,83 @@ def styling_annotation_table(contact_matrix_display, bin_information):
 
     return styles
 
-def styling_information_table(information_data, bin_colors, annotation_colors, unique_annotations, table_type='bin'):
-    # Define taxonomy columns common to both tables
-    taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
-
+def styling_information_table(information_data, id_colors, annotation_colors, unique_annotations, table_type='bin', taxonomy_level='Family'):
     # Define other columns based on table type
     columns = ['Restriction sites', 'Length', 'Coverage']
 
     styles = []
-
-    # Precompute bin and annotation colors
-    id_column = 'Bin' if table_type == 'bin' else 'Contig'
-    unique_ids = information_data[id_column].unique()
-    bin_colors_cache = {item: bin_colors.get(item, '#FFFFFF') for item in unique_ids}
-    annotation_colors_cache = {
-        item: annotation_colors.get(
-            information_data.loc[information_data[id_column] == item, 'Annotation'].values[0], '#FFFFFF'
-        ) if item in information_data[id_column].values else '#FFFFFF'
-        for item in unique_ids
-    }
-    combined_colors = {**annotation_colors_cache, **bin_colors_cache}
-
-    # Precompute colors with opacity
-    precomputed_opacity_colors = {
-        color: add_opacity_to_color(color, 0.6) for color in set(combined_colors.values())
-    }
-
-    # Parallelized processing for numeric column styles
-    def process_numeric_column(col):
-        numeric_values = np.log1p(information_data[col] + 1)
-        col_min, col_max = numeric_values.min(), numeric_values.max()
+    
+    # Style numeric columns (shared by both table types)
+    for col in columns:
+        numeric_df = information_data[[col]].select_dtypes(include=[np.number])
+        numeric_df += 1
+        col_min = np.log1p(numeric_df.values.min())
+        col_max = np.log1p(numeric_df.values.max())
         col_range = col_max - col_min
         n_bins = 10
-        bounds = np.linspace(col_min, col_max, n_bins + 1)
+        bounds = [i * (col_range / n_bins) + col_min for i in range(n_bins + 1)]
         opacity = 0.6
 
-        column_styles = []
         for i in range(1, len(bounds)):
-            min_bound, max_bound = bounds[i - 1], bounds[i]
+            min_bound = bounds[i - 1]
+            max_bound = bounds[i]
             if i == len(bounds) - 1:
                 max_bound += 1
 
-            column_styles.append({
+            styles.append({
                 "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
                 "style": {
-                    'backgroundColor': f"rgba({255 - int((min_bound - col_min) / col_range * 255)}, "
-                                       f"{255 - int((min_bound - col_min) / col_range * 255)}, 255, {opacity})",
+                    'backgroundColor': f"rgba({255 - int((min_bound - col_min) / col_range * 255)}, {255 - int((min_bound - col_min) / col_range * 255)}, 255, {opacity})",
                     'color': "white" if i > len(bounds) / 2.0 else "inherit"
                 }
             })
-        return column_styles
 
-    # Use joblib to process numeric column styles in parallel
-    numeric_column_styles = Parallel(n_jobs=-1)(delayed(process_numeric_column)(col) for col in columns)
-    for styles_batch in numeric_column_styles:
-        styles.extend(styles_batch)
-
-    # Style the "Bin" or "Contig" column
-    def process_id_styles(item):
-        color = combined_colors[item]
-        color_with_opacity = precomputed_opacity_colors[color]
-
-        return {
-            "condition": f"params.colDef.field == '{id_column}' && params.value == '{item}'",
-            "style": {
-                'backgroundColor': color_with_opacity,
-                'color': 'black'
-            }
-        }
-
-    # Use joblib to process ID styles in parallel
-    id_styles = Parallel(n_jobs=-1)(delayed(process_id_styles)(item) for item in unique_ids)
-    styles.extend(id_styles)
-
-    # Style the taxonomy columns for annotations
-    def process_taxonomy_styles(annotation):
-        annotation_color = annotation_colors.get(annotation, '#FFFFFF')
-        annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
-
-        annotation_styles = []
-        for taxonomy_column in taxonomy_columns:
-            annotation_styles.append({
-                "condition": f"params.colDef.field == '{taxonomy_column}' && params.value == '{annotation}'",
+    # Add style conditions for the "Bin" or "Contig" column based on table type
+    id_column = 'Bin' if table_type == 'bin' else 'Contig'
+    for item in information_data[id_column]:
+        color = id_colors.get(item, annotation_colors.get(information_data.loc[information_data[id_column] == item, 'Annotation'].values[0], '#FFFFFF'))
+        color_with_opacity = add_opacity_to_color(color, 0.6)
+        styles.append(
+            {
+                "condition": f"params.colDef.field == '{id_column}' && params.value == '{item}'",
                 "style": {
-                    'backgroundColor': annotation_color_with_opacity,
+                    'backgroundColor': color_with_opacity,
                     'color': 'black'
                 }
-            })
-        return annotation_styles
+            }
+        )
 
-    # Use joblib to process taxonomy styles in parallel
-    taxonomy_styles = Parallel(n_jobs=-1)(delayed(process_taxonomy_styles)(annotation) for annotation in unique_annotations)
-    for styles_batch in taxonomy_styles:
-        styles.extend(styles_batch)
+    # Add style conditions for the "Annotation" column
+    for annotation in unique_annotations:
+        annotation_color = annotation_colors.get(annotation, '#FFFFFF')
+        annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
+        styles.append({
+            "condition": f"params.colDef.field == '{taxonomy_level}' && params.value == '{annotation}'",
+            "style": {
+                'backgroundColor': annotation_color_with_opacity,
+                'color': 'black'
+            }
+        })
 
     return styles
 
 # Function to get bin colors from Cytoscape elements or use annotation color if not found
 def get_node_colors(cyto_elements, information_data):
-    bin_colors = {}
+    id_colors = {}
     annotation_colors = {}
 
     # Extract colors from Cytoscape elements
     if cyto_elements:
-        bin_colors = {
-            element['data']['id']: element['data']['color']
-            for element in cyto_elements
-            if 'data' in element and 'color' in element['data'] and 'id' in element['data']
-        }
-
-    # Optimize annotation colors by precomputing a mapping
-    annotation_to_type = information_data[['Annotation', 'Type']].drop_duplicates().set_index('Annotation')['Type']
+        for element in cyto_elements:
+            if 'data' in element and 'color' in element['data'] and 'id' in element['data']:
+                id_colors[element['data']['id']] = element['data']['color']
 
     # Map annotations to colors
-    annotation_colors = {
-        annotation: type_colors.get(bin_type, default_color)
-        for annotation, bin_type in annotation_to_type.items()
-    }
+    for annotation in information_data['Annotation'].unique():
+        bin_type = information_data[information_data['Annotation'] == annotation]['Type'].values[0]
+        annotation_colors[annotation] = type_colors.get(bin_type, default_color)
 
-    return bin_colors, annotation_colors
+    return id_colors, annotation_colors
 
 # Function to arrange bins
 def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center_position=(0, 0)):
@@ -654,7 +612,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         bar_fig = create_bar_chart(data_dict)
         return cyto_elements, bar_fig, cyto_style
 
-    # If a node is selected, don't return the bar chart
+    # If a node is selected, don't return the histogram
     return cyto_elements, None, cyto_style
 
 # Function to visualize bin relationships
@@ -755,7 +713,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
     
     cyto_elements = nx_to_cyto_elements(G, pos)
     
-    # Prepare data for bar chart
+    # Prepare data for histogram
     bin_contact_values = bin_dense_matrix[selected_bin_index, contacts_indices]
     
     try:
@@ -765,8 +723,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
             'color': [G.nodes[bin]['color'] for bin in contacts_bins],
             'hover': [f"({bin_information.loc[bin_information['Bin'] == bin, 'Annotation'].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
         })
-    except Exception as e:
-        logger.error(f"Error creating bin_data DataFrame: {e}")
+    except:
         bin_data = pd.DataFrame()
     
     # Attempt to create annotation_data DataFrame
@@ -776,8 +733,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
             'value': contact_values,
             'color': [G.nodes[annotation]['border_color'] for annotation in contacts_annotation.unique()]
         })
-    except Exception as e:
-        logger.error(f"Error creating annotation_data DataFrame: {e}")
+    except:
         annotation_data = pd.DataFrame()  # or assign None if that fits better with your app
 
     data_dict = {
@@ -886,7 +842,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     cyto_elements = nx_to_cyto_elements(G, pos)
     
-    # Prepare data for bar chart
+    # Prepare data for histogram
     contig_contact_values = contig_dense_matrix[selected_contig_index, contacts_indices]
 
     try:
@@ -896,9 +852,8 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
             'color': [G.nodes[contig]['color'] for contig in contacts_contigs],
             'hover': [f"({contig_information.loc[contig_information['Contig'] == contig, 'Annotation'].values[0]}, {value})" for contig, value in zip(contacts_contigs, contig_contact_values)]
         })
-    except Exception as e:
-        logger.error(f"Error creating contig_data DataFrame: {e}")
-        contig_data = pd.DataFrame()  # or assign None if appropriate for your app
+    except:
+        contig_data = pd.DataFrame()
     
     # Attempt to create annotation_data DataFrame
     try:
@@ -907,9 +862,8 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
             'value': contact_values,
             'color': [G.nodes[annotation]['border_color'] for annotation in contacts_annotation.unique()]
         })
-    except Exception as e:
-        logger.error(f"Error creating annotation_data DataFrame: {e}")
-        annotation_data = pd.DataFrame()  # or assign None if appropriate for your app
+    except:
+        annotation_data = pd.DataFrame()
 
 
     data_dict = {
@@ -1230,7 +1184,7 @@ def create_visualization_layout():
                                 id="log-box-visualization",
                                 style={
                                     'height': '30vh',
-                                    'width': '25vw',
+                                    'width': '30vw',
                                     'font-size': '12px',
                                     'fontFamily': 'Arial, sans-serif',
                                     'overflowY': 'scroll', 
@@ -1265,12 +1219,10 @@ def create_visualization_layout():
                                                 defaultColDef={},
                                                 style={'display': 'none'},
                                                 dashGridOptions={
-                                                    'pagination': True,
+                                                    "pagination": True,
                                                     'paginationPageSize': 50,
-                                                    'paginationStartRow': 0,
                                                     'rowSelection': 'single',
-                                                    'headerPinned': 'top',
-                                                }
+                                                    'headerPinned': 'top',}
                                             ),
                                             dag.AgGrid(
                                                 id='contig-info-table',
@@ -1279,19 +1231,17 @@ def create_visualization_layout():
                                                 defaultColDef={},
                                                 style={'display': 'none'},
                                                 dashGridOptions={
-                                                    'pagination': True,
+                                                    "pagination": True,
                                                     'paginationPageSize': 50,
-                                                    'paginationStartRow': 0,
                                                     'rowSelection': 'single',
-                                                    'headerPinned': 'top',
-                                                }
+                                                    'headerPinned': 'top',}
                                             )
                                         ], 
                                     ),
                                 ]
                             ),
                         ], 
-                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '25vw'}
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '30vw'}
                     ),
                     html.Div(
                         id="middle-column",
@@ -1331,7 +1281,7 @@ def create_visualization_layout():
                             dcc.Textarea(
                                 id='hover-info',
                                 style={'height': '10vh',
-                                       'width': '24vw',
+                                       'width': '19vw',
                                        'font-size': '12px',
                                        'background-color': 'white',
                                        'padding': '5px',
@@ -1346,12 +1296,12 @@ def create_visualization_layout():
                                     dcc.Graph(id='bar-chart', 
                                               config={'displayModeBar': False}, 
                                               figure=go.Figure(), 
-                                              style={'height': '75vh', 'width': '24vw', 'display': 'inline-block'}                                 
+                                              style={'height': '75vh', 'width': '19vw', 'display': 'inline-block'}                                 
                                     ),
                                 ]
                             ),
                         ],
-                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '24vw'}
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '19vw'}
                     ),
                 ], 
                 style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '98vw'}
@@ -1531,40 +1481,37 @@ def register_visualization_callbacks(app):
          Output('contig-info-table', 'filterModel'),
          Output('contig-info-table', 'defaultColDef'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input('table-tabs', 'value'),
-         Input('bin-info-table', 'rowData'),
-         Input('contig-info-table', 'rowData'),
+        [Input('reset-btn', 'n_clicks'),
+         Input('table-tabs', 'value'),
          Input('annotation-selector', 'value'),
-         Input('visibility-filter', 'value'),
-         Input('bin-info-table', 'paginationStartRow'),
-         Input('bin-info-table', 'paginationPageSize'),
-         Input('contig-info-table', 'paginationStartRow'),
-         Input('contig-info-table', 'paginationPageSize')],
+         Input('visibility-filter', 'value')],
         [State('cyto-graph', 'elements'),
          State('taxonomy-level-selector', 'value'),
          State('user-folder', 'data'),
          State('data-loaded', 'data')],
          prevent_initial_call=True
     )
-    def display_info_table(selected_tab, bin_row_data, contig_row_data, selected_annotation, filter_value, bin_start_row, bin_page_size, contig_start_row, contig_page_size,cyto_elements, taxonomy_level, user_folder, data_loaded):
+    def display_info_table(n_clicks, selected_tab, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
-
+        ctx = callback_context
+        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        print(triggered_id)
+        if triggered_id == 'reset-btn':  
+            selected_annotation = None
+            
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
         current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
         
         # Default styles to hide tables initially
         bin_style = {'display': 'none'}
         contig_style = {'display': 'none'}
-        
-        def paginate_data(data, start_row, page_size):
-            # Ensure start_row and page_size have default values
-            start_row = start_row or 0
-            page_size = page_size or 50
-            return data.iloc[start_row : start_row + page_size]
     
         # Apply filtering logic for the selected table and annotation
         def apply_filter_logic(row_data, dense_matrix):
+            if triggered_id == 'reset-btn':  
+                return {}, row_data
+            
             filter_model = {}
             # Set the default visibility to 1 for all rows initially
             for row in row_data:
@@ -1635,8 +1582,6 @@ def register_visualization_callbacks(app):
             bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
             bin_information = load_from_redis(f'{user_folder}:bin-information')
 
-            bin_start_row = bin_start_row or 0
-            bin_page_size = bin_page_size or 50
             bin_style = {'display': 'block', 'height': '47vh'}
             contig_style = {'display': 'none'}
         
@@ -1644,13 +1589,12 @@ def register_visualization_callbacks(app):
             bin_filter_model, edited_bin_data = apply_filter_logic(bin_information.to_dict('records'), bin_dense_matrix)
             edited_bin_data = pd.DataFrame(edited_bin_data)
         
-            # Paginate the filtered data
-            paginated_bin_data = paginate_data(edited_bin_data, bin_start_row, bin_page_size)
-        
-            bin_colors, annotation_colors = get_node_colors(cyto_elements, paginated_bin_data)
+            bin_colors, annotation_colors = get_node_colors(cyto_elements, edited_bin_data)
+
             style_conditions = styling_information_table(
-                paginated_bin_data, bin_colors, annotation_colors, unique_annotations, selected_tab
+                edited_bin_data, bin_colors, annotation_colors, unique_annotations, selected_tab, taxonomy_level
             )
+            
             edited_bin_data = edited_bin_data.to_dict('records')
             
             bin_col_def = {
@@ -1670,24 +1614,20 @@ def register_visualization_callbacks(app):
         elif selected_tab == 'contig':
             contig_dense_matrix = load_from_redis(f'{user_folder}:contig-dense-matrix')
             contig_information = load_from_redis(f'{user_folder}:contig-information')
-            
-            contig_start_row = contig_start_row or 0
-            contig_page_size = contig_page_size or 50
+
             bin_style = {'display': 'none'}
             contig_style = {'display': 'block', 'height': '47vh'}
         
             # Apply filter logic to all rows
             contig_filter_model, edited_contig_data = apply_filter_logic(contig_information.to_dict('records'), contig_dense_matrix)
             edited_contig_data = pd.DataFrame(edited_contig_data)
-            # Paginate the filtered data
-            paginated_contig_data = paginate_data(edited_contig_data, contig_start_row, contig_page_size)
             
-            contig_colors, annotation_colors = get_node_colors(cyto_elements, paginated_contig_data)
+            contig_colors, annotation_colors = get_node_colors(cyto_elements, edited_contig_data)
             style_conditions = styling_information_table(
-                paginated_contig_data, contig_colors, annotation_colors, unique_annotations, selected_tab
+                edited_contig_data, contig_colors, annotation_colors, unique_annotations, selected_tab, taxonomy_level
             )
-            edited_contig_data = edited_contig_data.to_dict('records')
             
+            edited_contig_data = edited_contig_data.to_dict('records')
             contig_col_def = {
                 "sortable": True,
                 "filter": True,
@@ -1866,7 +1806,7 @@ def register_visualization_callbacks(app):
             raise PreventUpdate
             
         ctx = callback_context
-        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]            
+        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
         logger.info(f"Updating visulization. Triggered by: {triggered_id}")
         logger.info(f"Visualization type: {visualization_type}")
         logger.info(f"Selected annotation: {selected_annotation}")
@@ -1883,7 +1823,7 @@ def register_visualization_callbacks(app):
         current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
     
         if triggered_id == 'reset-btn':
-            logger.info("Reset button clicked, switching to taxonomy_hierarchy visualization.")
+            logger.info("Reset button clicked, switching to taxonomy framework visualization.")
             current_visualization_mode = {
                 'visualization_type': 'taxonomy_hierarchy',
                 'selected_annotation': None,
