@@ -1769,7 +1769,7 @@ def register_visualization_callbacks(app):
     
         # Reset selections if reset button is clicked
         if triggered_id == 'reset-btn':
-            visualization_type = 'taxonomy_hierarchy'
+            visualization_type = 'basic'
             selected_annotation = None
             selected_bin = None
             selected_contig = None
@@ -1907,17 +1907,30 @@ def register_visualization_callbacks(app):
         current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
     
         if triggered_id == 'reset-btn':
-            logger.info("Reset button clicked, switching to taxonomy framework visualization.")
-            current_visualization_mode = {
-                'visualization_type': 'taxonomy_hierarchy',
-                'selected_annotation': None,
-                'selected_bin': None,
-                'selected_contig': None
-            }
-            treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix)
-            treemap_style = {'height': '83vh', 'width': '48vw', 'display': 'inline-block'}
-            cyto_elements = []
-            cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+            if reset_clicks == 1:
+                logger.info("Visualization initiated, displaying taxonomy framework visualization.")
+                current_visualization_mode = {
+                    'visualization_type': 'taxonomy_hierarchy',
+                    'selected_annotation': None,
+                    'selected_bin': None,
+                    'selected_contig': None
+                }
+                treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix)
+                treemap_style = {'height': '83vh', 'width': '48vw', 'display': 'inline-block'}
+                cyto_elements = []
+                cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+            else:    
+                logger.info("Reset button clicked, switching to Taxonomy Interaction visualization.")
+                current_visualization_mode = {
+                    'visualization_type': 'basic',
+                    'selected_annotation': None,
+                    'selected_bin': None,
+                    'selected_contig': None
+                }
+                cyto_elements, bar_fig, _ = annotation_visualization(bin_information, unique_annotations, contact_matrix)
+                treemap_fig = go.Figure()
+                treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+                cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
     
         else:
             current_visualization_mode.update({
@@ -1936,7 +1949,7 @@ def register_visualization_callbacks(app):
                 cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
                 
             elif visualization_type == 'basic' or (selected_annotation and not selected_bin and not selected_contig):
-                logger.info("Displaying Taxonomy Interaction Interaction.")
+                logger.info("Displaying Taxonomy Interaction.")
                 cyto_elements, bar_fig, _ = annotation_visualization(bin_information, unique_annotations, contact_matrix)
                 treemap_fig = go.Figure()
                 treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
