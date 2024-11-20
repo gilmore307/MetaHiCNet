@@ -4,7 +4,7 @@ import networkx as nx
 from scipy.sparse import coo_matrix
 import dash
 from dash.exceptions import PreventUpdate
-from dash import dcc, html, dash_table
+from dash import dcc, html
 from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
 import dash_ag_grid as dag
@@ -225,38 +225,64 @@ def add_opacity_to_color(hex_color, opacity):
         return f'rgba(255, 255, 255, {opacity})'
 
 # Function to style annotation contact table using Blugrn color scheme
-def styling_annotation_table(contact_matrix_display, bin_information):
+def styling_annotation_table(row_data, bin_information, unique_annotations):
     styles = []
-    numeric_df = contact_matrix_display.select_dtypes(include=[np.number])
-    log_max_value = np.log1p(numeric_df.values.max() + 1)
     opacity = 0.6
 
-    # Styling for numeric values in the table (excluding the "Annotation" column)
-    for i in range(len(numeric_df)):
-        for j in range(len(numeric_df.columns)):
-            value = numeric_df.iloc[i, j]
-            log_value = np.log1p(value)
+    # Styling for numeric columns
+    numeric_cols = [key for key in row_data[0].keys() if key != "index"]
+
+    for col in numeric_cols:
+        # Extract numeric data
+        numeric_df = pd.DataFrame([row[col] for row in row_data if isinstance(row[col], (int, float))], columns=[col])
+        
+        # Skip columns with no valid numeric data
+        if numeric_df.empty or numeric_df[col].isnull().all():
+            continue
+
+        # Add 1 to avoid log issues and calculate bounds
+        numeric_df += 1
+        col_min = np.log1p(numeric_df[col].min())
+        col_max = np.log1p(numeric_df[col].max())
+
+        # Skip if all values are the same (no range for styling)
+        if col_min == col_max:
+            continue
+
+        col_range = col_max - col_min
+        n_bins = 10
+        bounds = [i * (col_range / n_bins) + col_min for i in range(n_bins + 1)]
+
+        for i in range(1, len(bounds)):
+            min_bound = bounds[i - 1]
+            max_bound = bounds[i]
+            if i == len(bounds) - 1:
+                max_bound += 1
+
+            bg_color = f"rgba({255 - int((min_bound - col_min) / col_range * 255)}, {255 - int((min_bound - col_min) / col_range * 255)}, 255, {opacity})"
             styles.append({
-                'if': {
-                    'row_index': i,
-                    'column_id': numeric_df.columns[j]
-                },
-                'backgroundColor': f'rgba({255 - int(log_value / log_max_value * 255)}, {255 - int(log_value / log_max_value * 255)}, 255, {opacity})'  # Set background color for the contact matrix.
+                "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
+                "style": {
+                    'backgroundColor': bg_color,
+                    'color': "white" if i > len(bounds) / 2 else "inherit"
+                }
             })
 
-    # Styling for the first column ("Annotation") based on type_colors
-    for i, annotation in enumerate(contact_matrix_display['Annotation']):
-        bin_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Type'].values[0]
-        annotation_color = type_colors.get(bin_type, default_color)
-        annotation_color_with_opacity = add_opacity_to_color(annotation_color, opacity)
+    # Styling for the 'index' column
+    for i, row in enumerate(row_data):
+        annotation = row.get("index")  # Assuming 'index' contains annotation-like values
+        if annotation:
+            try:
+                bin_type = bin_information.loc[bin_information["Annotation"] == annotation, "Type"].values[0]
+                annotation_color = type_colors.get(bin_type, default_color)
+                annotation_color_with_opacity = add_opacity_to_color(annotation_color, opacity)
 
-        styles.append({
-            'if': {
-                'row_index': i,
-                'column_id': 'Annotation'
-            },
-            'backgroundColor': annotation_color_with_opacity,
-        })
+                styles.append({
+                    "condition": f"params.node.rowIndex == {i} && params.colDef.field == 'index'",
+                    "style": {"backgroundColor": annotation_color_with_opacity},
+                })
+            except Exception as e:
+                logger.error(f"Error styling index {annotation}: {e}")
 
     return styles
 
@@ -878,7 +904,6 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
     return cyto_elements, bar_fig
 
 def prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy_level = 'Family'):
-    global contact_matrix
     
     if taxonomy_level is None:
         taxonomy_level = 'Family'
@@ -905,10 +930,7 @@ def prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy
         contact_matrix.at[annotation_i, annotation_j] = value
         contact_matrix.at[annotation_j, annotation_i] = value
 
-    contact_matrix_display = contact_matrix.astype(int).copy()
-    contact_matrix_display.insert(0, 'Annotation', contact_matrix_display.index)  # Add the 'Annotation' column
-
-    return bin_information, contig_information, unique_annotations, contact_matrix, contact_matrix_display
+    return bin_information, contig_information, unique_annotations, contact_matrix
 
 # Create a logger and add the custom Dash logger handler
 logger = logging.getLogger("app_logger")
@@ -1053,7 +1075,7 @@ def create_visualization_layout():
         {
             "headerName": "Contact Information",
             "children": [
-                {"headerName": "Number of Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Number of Restriction Sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
                 {"headerName": "Length", "field": "Length", "width": 140, "wrapHeaderText": True},
                 {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
                 {"headerName": "Visibility", "field": "Visibility", "hide": True}
@@ -1108,17 +1130,6 @@ def create_visualization_layout():
                         }
                     ),
                     dcc.Dropdown(
-                        id='visualization-selector',
-                        options=[
-                            {'label': 'Taxonomy Framework', 'value': 'taxonomy_hierarchy'},
-                            {'label': 'Taxonomy Interaction', 'value': 'basic'},
-                            {'label': 'Bin Interaction', 'value': 'bin'},
-                            {'label': 'Contig Interaction', 'value': 'contig'}
-                        ],
-                        value='taxonomy_hierarchy',
-                        style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
-                    ),
-                    dcc.Dropdown(
                         id='taxonomy-level-selector',
                         options=[
                             {'label': 'Domain', 'value': 'Domain'},
@@ -1132,6 +1143,17 @@ def create_visualization_layout():
                         ],
                         value='Family',
                         placeholder="Select Taxonomy Level",
+                        style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                    ),
+                    dcc.Dropdown(
+                        id='visualization-selector',
+                        options=[
+                            {'label': 'Taxonomy Framework', 'value': 'taxonomy_hierarchy'},
+                            {'label': 'Taxonomy Interaction', 'value': 'basic'},
+                            {'label': 'Bin Interaction', 'value': 'bin'},
+                            {'label': 'Contig Interaction', 'value': 'contig'}
+                        ],
+                        value='taxonomy_hierarchy',
                         style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                     ),
                     dcc.Dropdown(
@@ -1310,16 +1332,13 @@ def create_visualization_layout():
             html.Div(
                 id="contact-table-container",
                 children=[
-                    dash_table.DataTable(
+                    dag.AgGrid(
                         id='contact-table',
-                        columns=[],
-                        data=[],
-                        style_table={'height': 'auto', 'overflowY': 'auto', 'overflowX': 'auto', 'width': '99vw', 'minWidth': '100%'},
-                        style_data_conditional=[],
-                        style_cell={'textAlign': 'left', 'minWidth': '120px', 'width': '120px', 'maxWidth': '180px', 'font-family': 'Arial, sans-serif'},
-                        style_header={'whiteSpace': 'normal', 'height': 'auto'},
-                        fixed_rows={'headers': True},
-                        fixed_columns={'headers': True, 'data': 1},
+                        rowData=[],
+                        columnDefs=[], 
+                        dashGridOptions = {
+                            "rowSelection": "single"
+                        }
                     )
                 ], 
                 style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'}
@@ -1380,9 +1399,10 @@ def register_visualization_callbacks(app):
         return True, 1
     
     @app.callback(
-        [Output('contact-table', 'columns'),
-         Output('contact-table', 'data'),
-         Output('contact-table', 'style_data_conditional'),
+        [Output('contact-table', 'rowData'),
+         Output('contact-table', 'columnDefs'),
+         Output('contact-table', 'defaultColDef'),
+         Output('contact-table', 'styleConditions'),
          Output('reset-btn', 'n_clicks'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('data-loaded', 'data'),
@@ -1402,7 +1422,6 @@ def register_visualization_callbacks(app):
         contig_info_key = f'{user_folder}:contig-information'
         unique_annotations_key = f'{user_folder}:unique-annotations'
         contact_matrix_key = f'{user_folder}:contact-matrix'
-        contact_matrix_display_key = f'{user_folder}:contact-matrix-display'
         visualization_mode_key = f'{user_folder}:current-visualization-mode'
     
         # Load user-specific data from Redis
@@ -1414,7 +1433,9 @@ def register_visualization_callbacks(app):
             logger.error(f"KeyError while loading data from Redis: {e}")
             raise PreventUpdate
            
-        bin_information, contig_information, unique_annotations, contact_matrix, contact_matrix_display = prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy_level)
+        bin_information, contig_information, unique_annotations, contact_matrix = prepare_data(
+            bin_information, contig_information, bin_dense_matrix, taxonomy_level
+        )
         
         # Update visualization mode state
         current_visualization_mode = {
@@ -1424,23 +1445,36 @@ def register_visualization_callbacks(app):
             'selected_bin': None,
             'selected_contig': None
         }
-    
-        # Define table columns and data for display
-        table_columns = [{"name": col, "id": col} for col in contact_matrix_display.columns]
-        table_data = contact_matrix_display.to_dict('records')
-        style_conditions = styling_annotation_table(contact_matrix_display, bin_information)
+        
+        # Create Annotation Table
+        column_defs = [
+            {"headerName": "Index", "field": "index", "pinned": "left", "width": 120}
+        ] + [
+            {"headerName": col, "field": col, "width": 120, "wrapHeaderText": True, "autoHeaderHeight": True} 
+            for col in contact_matrix.columns
+        ]
+
+        row_data = contact_matrix.reset_index().to_dict('records')
+
+        style_conditions = styling_annotation_table(row_data, bin_information, unique_annotations)
+        
+        default_col_def = {
+            "cellStyle": {
+                "textAlign": "center",
+                "styleConditions": style_conditions
+            }
+        }
     
         # Save updated data to Redis
         save_to_redis(bin_info_key, bin_information)
         save_to_redis(contig_info_key, contig_information)
         save_to_redis(unique_annotations_key, unique_annotations)
         save_to_redis(contact_matrix_key, contact_matrix)
-        save_to_redis(contact_matrix_display_key, contact_matrix_display)
         save_to_redis(visualization_mode_key, current_visualization_mode)
         
         reset_clicks = (reset_clicks or 0) + 1
         
-        return table_columns, table_data, style_conditions, reset_clicks, 1
+        return row_data, column_defs, default_col_def, style_conditions, reset_clicks, 1
     
     @app.callback(
         [Output("download", "data"),
@@ -1496,7 +1530,6 @@ def register_visualization_callbacks(app):
             raise PreventUpdate
         ctx = callback_context
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        print(triggered_id)
         if triggered_id == 'reset-btn':  
             selected_annotation = None
             
@@ -1603,7 +1636,7 @@ def register_visualization_callbacks(app):
                 "resizable": True,
                 "cellStyle": {
                     "styleConditions": style_conditions
-                },
+                }
             }
         
             return (
@@ -1634,7 +1667,7 @@ def register_visualization_callbacks(app):
                 "resizable": True,
                 "cellStyle": {
                     "styleConditions": style_conditions
-                },
+                }
             }        
             return (
                 [], bin_style, {}, {},  # Bin table remains empty
@@ -1650,13 +1683,13 @@ def register_visualization_callbacks(app):
          Output('contig-selector', 'value'),
          Output('contig-selector', 'style'),
          Output('table-tabs', 'value'),
-         Output('contact-table', 'active_cell'),
+         Output('contact-table', 'selectedRows'),
          Output('bin-info-table', 'selectedRows'),
          Output('contig-info-table', 'selectedRows'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
          Input('visualization-selector', 'value'),
-         Input('contact-table', 'active_cell'),
+         Input('contact-table', 'selectedRows'),
          Input('bin-info-table', 'selectedRows'),
          Input('contig-info-table', 'selectedRows'),
          Input('cyto-graph', 'selectedNodeData'),
@@ -1666,13 +1699,13 @@ def register_visualization_callbacks(app):
          State('data-loaded', 'data')],
          prevent_initial_call=True
     )
-    def sync_selectors(reset_clicks, visualization_type, contact_table_active_cell, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, user_folder, data_loaded):      
+    def sync_selectors(reset_clicks, visualization_type, contact_table_selected_rows, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, user_folder, data_loaded):      
         if not data_loaded:
             raise PreventUpdate
                     
         bin_information = load_from_redis(f'{user_folder}:bin-information')
         contig_information = load_from_redis(f'{user_folder}:contig-information')
-        contact_matrix_display = load_from_redis(f'{user_folder}:contact-matrix-display')
+        contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
         
         ctx = callback_context
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
@@ -1691,8 +1724,8 @@ def register_visualization_callbacks(app):
             selected_contig = None
         else:
             selected_annotation, selected_bin, selected_contig = synchronize_selections(
-                triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, current_tab,
-                bin_information, contig_information, contact_matrix_display
+                triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_selected_rows, 
+                taxonomy_level, current_tab, bin_information, contig_information, contact_matrix
             )
             
         if triggered_id == 'table-tabs':
@@ -1716,9 +1749,11 @@ def register_visualization_callbacks(app):
                 
         return (visualization_type, selected_annotation, annotation_selector_style,
                 selected_bin, bin_selector_style, selected_contig, contig_selector_style,
-                tab_value, None, [], [], 1)
+                tab_value, [], [], [], 1)
     
-    def synchronize_selections(triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_active_cell, taxonomy_level, table_tab_value, bin_information, contig_information, contact_matrix_display):
+    def synchronize_selections(
+            triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_selected_rows, 
+            taxonomy_level, table_tab_value, bin_information, contig_information, contact_matrix):
         selected_annotation = None
         selected_bin = None
         selected_contig = None
@@ -1772,10 +1807,9 @@ def register_visualization_callbacks(app):
                 selected_contig = selected_row['Contig']
     
         # Cell selected in contact-table
-        elif triggered_id == 'contact-table' and contact_table_active_cell:
-            row_id = contact_table_active_cell['row']
-            row_annotation = contact_matrix_display.iloc[row_id]['Annotation']
-            selected_annotation = row_annotation
+        elif triggered_id == 'contact-table' and contact_table_selected_rows:
+            selected_row = contact_table_selected_rows[0]
+            selected_annotation = selected_row['index']
     
         logger.info(f'Current selected: Annotation={selected_annotation}, Bin={selected_bin}, Contig={selected_contig}')
     
@@ -1795,13 +1829,12 @@ def register_visualization_callbacks(app):
          State('annotation-selector', 'value'),
          State('bin-selector', 'value'),
          State('contig-selector', 'value'),
-         State('contact-table', 'data'),
          State('table-tabs', 'value'),
          State('user-folder', 'data'),
          State('data-loaded', 'data')],
          prevent_initial_call=True
     )
-    def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, table_data, selected_tab, user_folder, data_loaded):
+    def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, selected_tab, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
             
