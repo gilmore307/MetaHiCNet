@@ -1536,11 +1536,9 @@ def register_visualization_callbacks(app):
         [Output('bin-info-table', 'rowData'),
          Output('bin-info-table', 'style'),
          Output('bin-info-table', 'filterModel'),
-         Output('bin-info-table', 'defaultColDef'),
          Output('contig-info-table', 'rowData'),
          Output('contig-info-table', 'style'),
          Output('contig-info-table', 'filterModel'),
-         Output('contig-info-table', 'defaultColDef'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
          Input('table-tabs', 'value'),
@@ -1555,12 +1553,12 @@ def register_visualization_callbacks(app):
     def display_info_table(n_clicks, selected_tab, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
+            
         ctx = callback_context
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
         if triggered_id == 'reset-btn':  
             selected_annotation = None
             
-        unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
         current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
         
         # Default styles to hide tables initially
@@ -1647,28 +1645,10 @@ def register_visualization_callbacks(app):
         
             # Apply filter logic to all rows
             bin_filter_model, edited_bin_data = apply_filter_logic(bin_information.to_dict('records'), bin_dense_matrix)
-            edited_bin_data = pd.DataFrame(edited_bin_data)
-        
-            bin_colors, annotation_colors = get_node_colors(cyto_elements, edited_bin_data)
-
-            style_conditions = styling_information_table(
-                edited_bin_data, bin_colors, annotation_colors, unique_annotations, selected_tab, taxonomy_level
-            )
-            
-            edited_bin_data = edited_bin_data.to_dict('records')
-            
-            bin_col_def = {
-                "sortable": True,
-                "filter": True,
-                "resizable": True,
-                "cellStyle": {
-                    "styleConditions": style_conditions
-                }
-            }
         
             return (
-                edited_bin_data, bin_style, bin_filter_model, bin_col_def,
-                [], contig_style, {}, {}, 1
+                edited_bin_data, bin_style, bin_filter_model,
+                [], contig_style, {}, 1
             )
             
         elif selected_tab == 'contig':
@@ -1680,27 +1660,71 @@ def register_visualization_callbacks(app):
         
             # Apply filter logic to all rows
             contig_filter_model, edited_contig_data = apply_filter_logic(contig_information.to_dict('records'), contig_dense_matrix)
-            edited_contig_data = pd.DataFrame(edited_contig_data)
-            
-            contig_colors, annotation_colors = get_node_colors(cyto_elements, edited_contig_data)
-            style_conditions = styling_information_table(
-                edited_contig_data, contig_colors, annotation_colors, unique_annotations, selected_tab, taxonomy_level
+       
+            return (
+                [], bin_style, {}, # Bin table remains empty
+                edited_contig_data, contig_style, contig_filter_model, 1
             )
-            
-            edited_contig_data = edited_contig_data.to_dict('records')
+        
+    @app.callback(
+        [Output('bin-info-table', 'defaultColDef'),
+         Output('contig-info-table', 'defaultColDef')],
+        [Input('bin-info-table', 'rowData'),
+         Input('contig-info-table', 'rowData')],
+        [State('cyto-graph', 'elements'),
+         State('taxonomy-level-selector', 'value'),
+         State('user-folder', 'data'),
+         State('data-loaded', 'data')],
+        prevent_initial_call=True
+    )
+    def update_table_styles(bin_row_data, contig_row_data, cyto_elements, taxonomy_level, user_folder, data_loaded):
+        if not data_loaded:
+            raise PreventUpdate
+    
+        unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
+    
+        # Bin Table Styling
+        if bin_row_data:
+            bin_row_data_df = pd.DataFrame(bin_row_data)
+            bin_colors, annotation_colors = get_node_colors(cyto_elements, bin_row_data_df)
+    
+            bin_style_conditions = styling_information_table(
+                bin_row_data_df, bin_colors, annotation_colors, unique_annotations, table_type='bin', taxonomy_level=taxonomy_level
+            )
+    
+            bin_col_def = {
+                "sortable": True,
+                "filter": True,
+                "resizable": True,
+                "cellStyle": {
+                    "styleConditions": bin_style_conditions
+                }
+            }
+        else:
+            bin_col_def = {"sortable": True, "filter": True, "resizable": True}
+    
+        # Contig Table Styling
+        if contig_row_data:
+            contig_row_data_df = pd.DataFrame(contig_row_data)
+            contig_colors, annotation_colors = get_node_colors(cyto_elements, contig_row_data_df)
+    
+            contig_style_conditions = styling_information_table(
+                contig_row_data_df, contig_colors, annotation_colors, unique_annotations, table_type='contig', taxonomy_level=taxonomy_level
+            )
+    
             contig_col_def = {
                 "sortable": True,
                 "filter": True,
                 "resizable": True,
                 "cellStyle": {
-                    "styleConditions": style_conditions
+                    "styleConditions": contig_style_conditions
                 }
-            }        
-            return (
-                [], bin_style, {}, {},  # Bin table remains empty
-                edited_contig_data, contig_style, contig_filter_model, contig_col_def, 1
-            )
+            }
+        else:
+            contig_col_def = {"sortable": True, "filter": True, "resizable": True}
     
+        return bin_col_def, contig_col_def
+
     @app.callback(
         [Output('visualization-selector', 'value'),
          Output('annotation-selector', 'value'),
