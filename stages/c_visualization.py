@@ -287,80 +287,106 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     return styles
 
 def styling_information_table(information_data, id_colors, annotation_colors, unique_annotations, table_type='bin', taxonomy_level='Family'):
-    # Define other columns based on table type
     columns = ['Restriction sites', 'Length', 'Coverage']
-
     styles = []
-    
-    # Style numeric columns (shared by both table types)
-    for col in columns:
-        numeric_df = information_data[[col]].select_dtypes(include=[np.number])
-        numeric_df += 1
-        col_min = np.log1p(numeric_df.values.min())
-        col_max = np.log1p(numeric_df.values.max())
-        col_range = col_max - col_min
-        n_bins = 10
-        bounds = [i * (col_range / n_bins) + col_min for i in range(n_bins + 1)]
-        opacity = 0.6
 
-        for i in range(1, len(bounds)):
-            min_bound = bounds[i - 1]
-            max_bound = bounds[i]
-            if i == len(bounds) - 1:
+    # Precompute numeric data
+    numeric_data = information_data.select_dtypes(include=[np.number]).copy()
+    numeric_data += 1
+    col_min = np.log1p(numeric_data.min(axis=0))
+    col_max = np.log1p(numeric_data.max(axis=0))
+    col_range = col_max - col_min
+    n_bins = 10
+    bounds = {col: [i * (col_range[col] / n_bins) + col_min[col] for i in range(n_bins + 1)] for col in columns}
+
+    # Function to style numeric columns (parallelized)
+    def style_numeric_column(col):
+        col_styles = []
+        for i in range(1, len(bounds[col])):
+            min_bound = bounds[col][i - 1]
+            max_bound = bounds[col][i]
+            if i == len(bounds[col]) - 1:
                 max_bound += 1
 
-            styles.append({
+            opacity = 0.6
+            col_styles.append({
                 "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
                 "style": {
-                    'backgroundColor': f"rgba({255 - int((min_bound - col_min) / col_range * 255)}, {255 - int((min_bound - col_min) / col_range * 255)}, 255, {opacity})",
-                    'color': "white" if i > len(bounds) / 2.0 else "inherit"
+                    'backgroundColor': f"rgba({255 - int((min_bound - col_min[col]) / col_range[col] * 255)}, {255 - int((min_bound - col_min[col]) / col_range[col] * 255)}, 255, {opacity})",
+                    'color': "white" if i > len(bounds[col]) / 2.0 else "inherit"
                 }
             })
+        return col_styles
 
-    # Add style conditions for the "Bin" or "Contig" column based on table type
+    # Parallelize numeric column styling
+    numeric_styles = Parallel(n_jobs=-1)(delayed(style_numeric_column)(col) for col in columns)
+    for col_style in numeric_styles:
+        styles.extend(col_style)
+
+    # Precompute ID colors
     id_column = 'Bin' if table_type == 'bin' else 'Contig'
-    for item in information_data[id_column]:
-        color = id_colors.get(item, annotation_colors.get(information_data.loc[information_data[id_column] == item, 'Annotation'].values[0], '#FFFFFF'))
+    # Precompute required data as a list of tuples
+    id_items = [
+        (item, id_colors.get(item, annotation_colors.get(
+            information_data.loc[information_data[id_column] == item, 'Annotation'].values[0], '#FFFFFF')))
+        for item in information_data[id_column]
+    ]
+    
+    # Modify `style_id` to accept picklable arguments
+    def style_id(item, color):
         color_with_opacity = add_opacity_to_color(color, 0.6)
-        styles.append(
-            {
-                "condition": f"params.colDef.field == '{id_column}' && params.value == '{item}'",
-                "style": {
-                    'backgroundColor': color_with_opacity,
-                    'color': 'black'
-                }
+        return {
+            "condition": f"params.colDef.field == '{id_column}' && params.value == '{item}'",
+            "style": {
+                'backgroundColor': color_with_opacity,
+                'color': 'black'
             }
-        )
+        }
+    
+    # Use Parallel processing with precomputed picklable arguments
+    id_styles = Parallel(n_jobs=-1)(delayed(style_id)(item, color) for item, color in id_items)
+    styles.extend(id_styles)
 
-    # Add style conditions for the "Annotation" column
-    for annotation in unique_annotations:
+    # Function to style annotations (parallelized)
+    def style_annotation(annotation):
         annotation_color = annotation_colors.get(annotation, '#FFFFFF')
         annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
-        styles.append({
+        return {
             "condition": f"params.colDef.field == '{taxonomy_level}' && params.value == '{annotation}'",
             "style": {
                 'backgroundColor': annotation_color_with_opacity,
                 'color': 'black'
             }
-        })
+        }
+
+    # Parallelize annotation styling
+    annotation_styles = Parallel(n_jobs=-1)(delayed(style_annotation)(annotation) for annotation in unique_annotations)
+    styles.extend(annotation_styles)
 
     return styles
 
 # Function to get bin colors from Cytoscape elements or use annotation color if not found
 def get_node_colors(cyto_elements, information_data):
-    id_colors = {}
-    annotation_colors = {}
+    # Extract colors from Cytoscape elements using dictionary comprehension
+    id_colors = {
+        element['data']['id']: element['data']['color']
+        for element in cyto_elements or []
+        if 'data' in element and 'color' in element['data'] and 'id' in element['data']
+    }
 
-    # Extract colors from Cytoscape elements
-    if cyto_elements:
-        for element in cyto_elements:
-            if 'data' in element and 'color' in element['data'] and 'id' in element['data']:
-                id_colors[element['data']['id']] = element['data']['color']
-
-    # Map annotations to colors
-    for annotation in information_data['Annotation'].unique():
+    # Function to map a single annotation to its color
+    def map_annotation_to_color(annotation):
         bin_type = information_data[information_data['Annotation'] == annotation]['Type'].values[0]
-        annotation_colors[annotation] = type_colors.get(bin_type, default_color)
+        return annotation, type_colors.get(bin_type, default_color)
+
+    # Parallelize the mapping of annotations to colors
+    annotations = information_data['Annotation'].unique()
+    annotation_color_pairs = Parallel(n_jobs=-1)(
+        delayed(map_annotation_to_color)(annotation) for annotation in annotations
+    )
+
+    # Convert the parallelized result to a dictionary
+    annotation_colors = dict(annotation_color_pairs)
 
     return id_colors, annotation_colors
 
@@ -1096,7 +1122,7 @@ def create_visualization_layout():
         id="loading-spinner",
         type="default",
         fullscreen=True,
-        delay_show=2000,
+        delay_show=5000,
         children=[
             html.Div(
                 id="main-controls",
@@ -1242,7 +1268,7 @@ def create_visualization_layout():
                                                 style={'display': 'none'},
                                                 dashGridOptions={
                                                     "pagination": True,
-                                                    'paginationPageSize': 50,
+                                                    'paginationPageSize': 20,
                                                     'rowSelection': 'single',
                                                     'headerPinned': 'top',}
                                             ),
@@ -1254,7 +1280,7 @@ def create_visualization_layout():
                                                 style={'display': 'none'},
                                                 dashGridOptions={
                                                     "pagination": True,
-                                                    'paginationPageSize': 50,
+                                                    'paginationPageSize': 20,
                                                     'rowSelection': 'single',
                                                     'headerPinned': 'top',}
                                             )
@@ -1347,6 +1373,7 @@ def create_visualization_layout():
     )
            
 def register_visualization_callbacks(app):
+    
     @app.callback(
         [Output('data-loaded', 'data'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
@@ -1504,7 +1531,7 @@ def register_visualization_callbacks(app):
             memory_file.getvalue(),
             filename=f"{user_folder}.7z"
         ), 1
-
+    
     @app.callback(
         [Output('bin-info-table', 'rowData'),
          Output('bin-info-table', 'style'),
@@ -1539,7 +1566,7 @@ def register_visualization_callbacks(app):
         # Default styles to hide tables initially
         bin_style = {'display': 'none'}
         contig_style = {'display': 'none'}
-    
+        
         # Apply filtering logic for the selected table and annotation
         def apply_filter_logic(row_data, dense_matrix):
             if triggered_id == 'reset-btn':  
@@ -2054,7 +2081,7 @@ def register_visualization_callbacks(app):
         Output('log-box-visualization', 'value', allow_duplicate=True),  # Dummy output to trigger the callback
         Input('logger-button-visualization', 'n_clicks')
     )
-
+    
     @app.callback(
         [Output('download-btn', 'title'),
          Output('reset-btn', 'title'),
