@@ -25,7 +25,7 @@ app = dash.Dash(
     __name__,
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     suppress_callback_exceptions=True,
-    prevent_initial_callbacks='initial_duplicate'  # Set globally
+    prevent_initial_callbacks='initial_duplicate'
 )
 app.enable_dev_tools(debug=False)
 server = app.server
@@ -329,4 +329,4 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == "__main__":
-    app.run_server(debug=True, host="0.0.0.0", port=8050)
+    app.run_server(debug=False, host="0.0.0.0", port=8050)

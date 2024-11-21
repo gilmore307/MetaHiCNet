@@ -154,9 +154,6 @@ def register_normalization_callbacks(app):
         # Convert checkbox values to booleans
         remove_unmapped_contigs = 'remove_unmapped' in remove_unmapped_contigs
         remove_host_host = 'remove_host' in remove_host_host
-    
-        # Preprocess the data needed for normalization
-        global contig_info, normalized_matrix
         
         contig_info, contact_matrix = preprocess_normalization(user_folder)
         

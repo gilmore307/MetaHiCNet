@@ -440,7 +440,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         matrix = matrix.tocoo()
         threshold_value = np.percentile(matrix.data, threshold)
         mask = matrix.data > threshold_value
-        return coo_matrix((matrix.data[mask], (matrix.row[mask], matrix.col[mask])), shape=matrix.shape)
+        return coo_matrix((matrix.data[mask].astype(int), (matrix.row[mask], matrix.col[mask])), shape=matrix.shape)
 
     def _bisto_seq(m, max_iter, tol):
         # Make a copy of the original matrix 'm' for later use
