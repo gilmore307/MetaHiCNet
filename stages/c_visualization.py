@@ -159,14 +159,38 @@ def create_bar_chart(data_dict):
     return bar_fig
 
 # Function to add opacity to a hex color
-def add_opacity_to_color(hex_color, opacity):
-    if hex_color.startswith('#') and len(hex_color) == 7:
-        hex_color = hex_color.lstrip('#')
+def add_opacity_to_color(color, opacity):
+    if color.startswith('#') and len(color) == 7:
+        hex_color = color.lstrip('#')
         rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
         return f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})'
+    
+    elif color.startswith('rgb(') and color.endswith(')'):
+        rgb_color = color[4:-1].split(',')
+        if len(rgb_color) == 3:
+            r, g, b = (int(value.strip()) for value in rgb_color)
+            return f'rgba({r}, {g}, {b}, {opacity})'
+        
     else:
-        # Return a default color if hex_color is invalid
         return f'rgba(255, 255, 255, {opacity})'
+    
+# Function to get bin colors from Cytoscape elements or use annotation color if not found
+def get_id_colors(cyto_elements):
+    filtered_cyto_elements = [
+        element for element in cyto_elements or []
+        if 'data' in element and 'source' not in element['data']
+    ]
+    
+    id_colors = {}
+    for element in filtered_cyto_elements or []:
+        try:
+            element_id = element['data']['id']
+            element_color = element['data']['color']
+            id_colors[element_id] = element_color
+        except KeyError:
+            continue
+
+    return id_colors
 
 # Function to style annotation contact table using Blugrn color scheme
 def styling_annotation_table(row_data, bin_information, unique_annotations):
@@ -233,7 +257,6 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
 def styling_information_table(information_data, id_colors, annotation_colors, unique_annotations, table_type='bin', taxonomy_level='Family'):
     columns = ['Restriction sites', 'Length', 'Coverage']
     styles = []
-
     # Precompute numeric data
     numeric_data = information_data.select_dtypes(include=[np.number]).copy()
     numeric_data += 1
@@ -287,9 +310,10 @@ def styling_information_table(information_data, id_colors, annotation_colors, un
     # Function to compute color, create styles, and append them to the styles list
     def compute_and_append_style(item, annotation, styles):
         # Combine logic to calculate colors
-        annotation_color = annotation_colors.get(annotation, '#FFFFFF')  # Fallback to white if annotation not found
+        annotation_color = annotation_colors.get(annotation, '#FFFFFF')  # Fallback to white if annotation not found        
         item_color = id_colors.get(item, annotation_color)  # Fallback to annotation_color if item not found
         item_color_with_opacity = add_opacity_to_color(item_color, 0.6)
+        annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
         
         # Create and append style for the ID column
         id_style = {
@@ -302,7 +326,7 @@ def styling_information_table(information_data, id_colors, annotation_colors, un
         styles.append(id_style)
         
         # Create and append style for the Annotation column
-        annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
+
         annotation_style = {
             "condition": f"params.colDef.field == '{taxonomy_level}' && params.value == '{annotation}'",
             "style": {
@@ -318,37 +342,6 @@ def styling_information_table(information_data, id_colors, annotation_colors, un
             compute_and_append_style(row[id_column], row['Annotation'], styles)
 
     return styles
-
-# Function to get bin colors from Cytoscape elements or use annotation color if not found
-def get_node_colors(cyto_elements, information_data):
-    filtered_cyto_elements = [
-        element for element in cyto_elements or []
-        if 'data' in element and 'source' not in element['data']
-    ]
-    
-    id_colors = {}
-    for element in filtered_cyto_elements or []:
-        try:
-            element_id = element['data']['id']
-            element_color = element['data']['color']
-            id_colors[element_id] = element_color
-        except KeyError:
-            continue
-
-    # Function to map a single annotation to its color
-    def map_annotation_to_color(annotation):
-        bin_type = information_data[information_data['Annotation'] == annotation]['Type'].values[0]
-        return annotation, type_colors.get(bin_type, default_color)
-
-    # Parallelize the mapping of annotations to colors
-    annotations = information_data['Annotation'].unique()
-    annotation_color_pairs = Parallel(n_jobs=-1)(
-        delayed(map_annotation_to_color)(annotation) for annotation in annotations
-    )
-
-    # Convert the parallelized result to a dictionary
-    annotation_colors = dict(annotation_color_pairs)
-    return id_colors, annotation_colors
 
 # Function to arrange bins
 def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center_position=(0, 0)):
@@ -1349,6 +1342,7 @@ def register_visualization_callbacks(app):
         unique_annotations_key = f'{user_folder}:unique-annotations'
         contact_matrix_key = f'{user_folder}:contact-matrix'
         visualization_mode_key = f'{user_folder}:current-visualization-mode'
+        annotation_colors_key = f'{user_folder}:annotation-colors'
     
         # Load user-specific data from Redis
         try:
@@ -1390,6 +1384,17 @@ def register_visualization_callbacks(app):
                 "styleConditions": style_conditions
             }
         }
+        
+        # Function to map a single annotation to its color
+        def map_annotation_to_color(annotation):
+            bin_type = bin_information[bin_information['Annotation'] == annotation]['Type'].values[0]
+            return annotation, type_colors.get(bin_type, default_color)
+
+        # Parallelize the mapping of annotations to colors
+        annotation_color_pairs = Parallel(n_jobs=-1)(
+            delayed(map_annotation_to_color)(annotation) for annotation in unique_annotations
+        )
+        annotation_colors = dict(annotation_color_pairs)
     
         # Save updated data to Redis
         save_to_redis(bin_info_key, bin_information)
@@ -1397,6 +1402,7 @@ def register_visualization_callbacks(app):
         save_to_redis(unique_annotations_key, unique_annotations)
         save_to_redis(contact_matrix_key, contact_matrix)
         save_to_redis(visualization_mode_key, current_visualization_mode)
+        save_to_redis(annotation_colors_key, annotation_colors)
         
         reset_clicks = (reset_clicks or 0) + 1
         
@@ -1549,11 +1555,12 @@ def register_visualization_callbacks(app):
         if not data_loaded:
             raise PreventUpdate
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
+        annotation_colors = load_from_redis(f'{user_folder}:annotation-colors')
         
         # Bin Table Styling
         if bin_virtual_row_data:
             bin_row_data_df = pd.DataFrame(bin_virtual_row_data)
-            bin_colors, annotation_colors = get_node_colors(cyto_elements, bin_row_data_df)
+            bin_colors = get_id_colors(cyto_elements)
             bin_style_conditions = styling_information_table(
                 bin_row_data_df, bin_colors, annotation_colors, unique_annotations, table_type='bin', taxonomy_level=taxonomy_level
             )
@@ -1572,7 +1579,7 @@ def register_visualization_callbacks(app):
         # Contig Table Styling
         if contig_virtual_row_data:
             contig_row_data_df = pd.DataFrame(contig_virtual_row_data)
-            contig_colors, annotation_colors = get_node_colors(cyto_elements, contig_row_data_df)
+            contig_colors = get_id_colors(cyto_elements)
             contig_style_conditions = styling_information_table(
                 contig_row_data_df, contig_colors, annotation_colors, unique_annotations, table_type='contig', taxonomy_level=taxonomy_level
             )
