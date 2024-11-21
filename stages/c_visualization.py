@@ -907,7 +907,6 @@ def prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy
 logger = logging.getLogger("app_logger")
 
 # Example of logging messages
-
 gc.collect()
  
 type_colors = {
@@ -988,7 +987,6 @@ hover_info = {
          "Click on the row title to select an annotation.")
 }
 
-
 def create_visualization_layout():
     logger.info("Generating layout.")
     
@@ -1063,11 +1061,7 @@ def create_visualization_layout():
     }
     
     # Use the styling functions in the Dash layout
-    return dcc.Loading(
-        id="loading-spinner",
-        type="default",
-        fullscreen=True,
-        delay_show=2000,
+    return html.Div(
         children=[
             html.Div(
                 id="main-controls",
@@ -1188,51 +1182,58 @@ def create_visualization_layout():
                                     'resize': 'none'},
                              readOnly=True
                             ),
-                            html.Div(
-                                id='info-table-container',
+                            dcc.Loading(
+                                id="loading-spinner",
+                                type="default",
+                                delay_show=2000,
                                 children=[
-                                    dcc.Checklist(
-                                        id='visibility-filter',
-                                        options=[{'label': '  Only show elements in the diagram', 'value': 'filter'}],
-                                        value=['filter'],
-                                        style={'display': 'inline-block', 'width': '25vw'}
-                                    ),
-                                    dcc.Tabs(id='table-tabs', value='bin', 
-                                             children=[
-                                                 dcc.Tab(label='Bin Info', value='bin', className="p-0"),
-                                                 dcc.Tab(label='Contig Info', value='contig', className="p-0")
-                                             ]
-                                    ),
                                     html.Div(
+                                        id='info-table-container',
                                         children=[
-                                            dag.AgGrid(
-                                                id='bin-info-table',
-                                                columnDefs=bin_column_defs,
-                                                rowData=[],
-                                                defaultColDef={},
-                                                style={'display': 'none'},
-                                                dashGridOptions={
-                                                    "pagination": True,
-                                                    'paginationPageSize': 20,
-                                                    'rowSelection': 'single',
-                                                    'headerPinned': 'top',}
+                                            dcc.Checklist(
+                                                id='visibility-filter',
+                                                options=[{'label': '  Only show elements in the diagram', 'value': 'filter'}],
+                                                value=['filter'],
+                                                style={'display': 'inline-block', 'width': '25vw'}
                                             ),
-                                            dag.AgGrid(
-                                                id='contig-info-table',
-                                                columnDefs=contig_column_defs,
-                                                rowData=[],
-                                                defaultColDef={},
-                                                style={'display': 'none'},
-                                                dashGridOptions={
-                                                    "pagination": True,
-                                                    'paginationPageSize': 20,
-                                                    'rowSelection': 'single',
-                                                    'headerPinned': 'top',}
-                                            )
-                                        ], 
+                                            dcc.Tabs(id='table-tabs', value='bin', 
+                                                     children=[
+                                                         dcc.Tab(label='Bin Info', value='bin', className="p-0"),
+                                                         dcc.Tab(label='Contig Info', value='contig', className="p-0")
+                                                     ]
+                                            ),
+                                            html.Div(
+                                                children=[
+                                                    dag.AgGrid(
+                                                        id='bin-info-table',
+                                                        columnDefs=bin_column_defs,
+                                                        rowData=[],
+                                                        defaultColDef={},
+                                                        style={'display': 'none'},
+                                                        dashGridOptions={
+                                                            "pagination": True,
+                                                            'paginationPageSize': 20,
+                                                            'rowSelection': 'single',
+                                                            'headerPinned': 'top',}
+                                                    ),
+                                                    dag.AgGrid(
+                                                        id='contig-info-table',
+                                                        columnDefs=contig_column_defs,
+                                                        rowData=[],
+                                                        defaultColDef={},
+                                                        style={'display': 'none'},
+                                                        dashGridOptions={
+                                                            "pagination": True,
+                                                            'paginationPageSize': 20,
+                                                            'rowSelection': 'single',
+                                                            'headerPinned': 'top',}
+                                                    )
+                                                ], 
+                                            ),
+                                        ]
                                     ),
                                 ]
-                            ),
+                            )
                         ], 
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '30vw'}
                     ),
@@ -1299,20 +1300,26 @@ def create_visualization_layout():
                 ], 
                 style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '98vw'}
             ),
-            
-            html.Div(
-                id="contact-table-container",
+            dcc.Loading(
+                id="loading-spinner",
+                type="default",
+                delay_show=2000,
                 children=[
-                    dag.AgGrid(
-                        id='contact-table',
-                        rowData=[],
-                        columnDefs=[], 
-                        dashGridOptions = {
-                            "rowSelection": "single"
-                        }
+                    html.Div(
+                        id="contact-table-container",
+                        children=[
+                            dag.AgGrid(
+                                id='contact-table',
+                                rowData=[],
+                                columnDefs=[], 
+                                dashGridOptions = {
+                                    "rowSelection": "single"
+                                }
+                            )
+                        ], 
+                        style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'}
                     )
-                ], 
-                style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'}
+                ]
             )
         ]
     )
@@ -1584,7 +1591,7 @@ def register_visualization_callbacks(app):
         else:
             contig_col_def = {"sortable": True, "filter": True, "resizable": True}
         return bin_col_def, contig_col_def
-
+    
     @app.callback(
         [Output('visualization-selector', 'value'),
          Output('annotation-selector', 'value'),
@@ -1657,7 +1664,7 @@ def register_visualization_callbacks(app):
 
         return (visualization_type, selected_annotation, selected_bin, bin_selector_style,
                  selected_contig, contig_selector_style, tab_value, [], [], [], 1)
-                
+               
     def synchronize_selections(
             triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_selected_rows, 
             taxonomy_level, table_tab_value, bin_information, contig_information, contact_matrix):
