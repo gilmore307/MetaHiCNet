@@ -7,10 +7,13 @@ import py7zr
 import pandas as pd
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from scipy.sparse import coo_matrix, spdiags, isspmatrix_csr
+from scipy.sparse import coo_matrix, spdiags, isspmatrix_csr, isspmatrix_coo
 import statsmodels.api as sm
 from joblib import Parallel, delayed
 from itertools import combinations, product
+from io import StringIO
+import pickle
+import json
 
 logger = logging.getLogger("app_logger")
 
@@ -771,3 +774,56 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
     contig_contact_matrix = coo_matrix(contig_contact_matrix)
 
     return bin_info, contig_info, bin_contact_matrix, contig_contact_matrix
+
+def save_to_redis(key, data):  # ttl is set to 600 seconds (10 minutes) by default
+    from app import r
+    from app import SESSION_TTL
+
+    if isinstance(data, pd.DataFrame):
+        # Convert DataFrame to JSON
+        json_data = data.to_json(orient='split')
+        r.set(key, json_data.encode('utf-8'), ex=SESSION_TTL)  # Set TTL for DataFrame
+    elif isspmatrix_coo(data):  # Check if the data is a COO sparse matrix
+        # Serialize sparse matrix using pickle
+        binary_data = pickle.dumps(data)
+        r.set(key, binary_data, ex=SESSION_TTL)  # Set TTL for COO matrix
+    elif isinstance(data, np.ndarray):
+        # Serialize NumPy array using pickle
+        binary_data = pickle.dumps(data)
+        r.set(key, binary_data, ex=SESSION_TTL)  # Set TTL for NumPy array
+    elif isinstance(data, list) or isinstance(data, dict):
+        # Convert list or dict to JSON
+        json_data = json.dumps(data)
+        r.set(key, json_data.encode('utf-8'), ex=SESSION_TTL)  # Set TTL for list or dict
+    else:
+        # Raise an error for unsupported types
+        raise ValueError(f"Unsupported data type: {type(data)}")
+
+def load_from_redis(key):
+    from app import r
+    data = r.get(key)
+
+    if data is None:
+        raise KeyError(f"No data found in Redis for key: {key}")
+
+    # First, try loading as binary data with pickle (for NumPy arrays, sparse matrices, etc.)
+    try:
+        obj = pickle.loads(data)
+        # If the object is a COO matrix, convert it to a dense array
+        if isspmatrix_coo(obj):
+            return obj.toarray()  # Convert COO matrix to dense array
+        return obj  # Return as-is for other pickled objects
+    except (pickle.UnpicklingError, TypeError):
+        pass  # If binary loading fails, continue to JSON loading
+
+    # Try interpreting the data as JSON (for DataFrames, lists, or dictionaries)
+    try:
+        decoded_data = data.decode('utf-8')
+        try:
+            # Attempt to load as DataFrame format JSON
+            return pd.read_json(StringIO(decoded_data), orient='split')
+        except ValueError:
+            # If not a DataFrame, try loading as a JSON string for list or dict
+            return json.loads(decoded_data)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError(f"Unable to load data from Redis for key: {key}, unknown format.")

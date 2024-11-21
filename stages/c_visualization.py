@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import networkx as nx
-from scipy.sparse import coo_matrix
 import dash
 from dash.exceptions import PreventUpdate
 from dash import dcc, html
@@ -16,10 +15,7 @@ import math
 from math import sqrt, sin, cos
 import os
 import io
-from io import StringIO
-from scipy.sparse import isspmatrix_coo
 import logging
-import pickle
 import json
 import py7zr
 import gc
@@ -27,61 +23,10 @@ from joblib import Parallel, delayed
 from itertools import combinations
 from stages.helper import (
     get_indexes,
-    calculate_submatrix_sum
+    calculate_submatrix_sum,
+    save_to_redis,
+    load_from_redis
 )
-
-def save_to_redis(key, data):  # ttl is set to 600 seconds (10 minutes) by default
-    from app import r
-    from app import SESSION_TTL
-
-    if isinstance(data, pd.DataFrame):
-        # Convert DataFrame to JSON
-        json_data = data.to_json(orient='split')
-        r.set(key, json_data.encode('utf-8'), ex=SESSION_TTL)  # Set TTL for DataFrame
-    elif isspmatrix_coo(data):  # Check if the data is a COO sparse matrix
-        # Serialize sparse matrix using pickle
-        binary_data = pickle.dumps(data)
-        r.set(key, binary_data, ex=SESSION_TTL)  # Set TTL for COO matrix
-    elif isinstance(data, np.ndarray):
-        # Serialize NumPy array using pickle
-        binary_data = pickle.dumps(data)
-        r.set(key, binary_data, ex=SESSION_TTL)  # Set TTL for NumPy array
-    elif isinstance(data, list) or isinstance(data, dict):
-        # Convert list or dict to JSON
-        json_data = json.dumps(data)
-        r.set(key, json_data.encode('utf-8'), ex=SESSION_TTL)  # Set TTL for list or dict
-    else:
-        # Raise an error for unsupported types
-        raise ValueError(f"Unsupported data type: {type(data)}")
-
-def load_from_redis(key):
-    from app import r
-    data = r.get(key)
-
-    if data is None:
-        raise KeyError(f"No data found in Redis for key: {key}")
-
-    # First, try loading as binary data with pickle (for NumPy arrays, sparse matrices, etc.)
-    try:
-        obj = pickle.loads(data)
-        # If the object is a COO matrix, convert it to a dense array
-        if isspmatrix_coo(obj):
-            return obj.toarray()  # Convert COO matrix to dense array
-        return obj  # Return as-is for other pickled objects
-    except (pickle.UnpicklingError, TypeError):
-        pass  # If binary loading fails, continue to JSON loading
-
-    # Try interpreting the data as JSON (for DataFrames, lists, or dictionaries)
-    try:
-        decoded_data = data.decode('utf-8')
-        try:
-            # Attempt to load as DataFrame format JSON
-            return pd.read_json(StringIO(decoded_data), orient='split')
-        except ValueError:
-            # If not a DataFrame, try loading as a JSON string for list or dict
-            return json.loads(decoded_data)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise ValueError(f"Unable to load data from Redis for key: {key}, unknown format.")
 
 # Function to generate gradient values in a range [A, B]
 def generate_gradient_values(input_array, range_A, range_B):
@@ -1187,7 +1132,7 @@ def create_visualization_layout():
                         options=[],
                         value=None,
                         placeholder="Select an annotation",
-                        style={}
+                        style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                     ),
                     dcc.Dropdown(
                         id='bin-selector',
@@ -1372,75 +1317,20 @@ def create_visualization_layout():
         ]
     )
            
-def register_visualization_callbacks(app):
-    
+def register_visualization_callbacks(app):    
     @app.callback(
         [Output('data-loaded', 'data'),
-         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input('user-folder', 'data')]
-    )
-    def load_data(user_folder):
-        # Path setup for user-specific data
-        logger.info("Loading data for user")
-        
-        user_output_path = f'output/{user_folder}'
-        bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
-        bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
-        contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
-        contig_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
-    
-        # Redis keys specific to each user folder
-        bin_info_key = f'{user_folder}:bin-information'
-        bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-        contig_info_key = f'{user_folder}:contig-information'
-        contig_matrix_key = f'{user_folder}:contig-dense-matrix'
-    
-        # Load data from files
-        try:
-            bin_information = pd.read_csv(bin_info_path)
-            
-            bin_matrix_data = np.load(bin_matrix_path)
-            bin_dense_matrix = coo_matrix(
-                (bin_matrix_data['data'], (bin_matrix_data['row'], bin_matrix_data['col'])),
-                shape=tuple(bin_matrix_data['shape'])
-            )
-    
-            contig_information = pd.read_csv(contig_info_path)
-            
-            contig_matrix_data = np.load(contig_matrix_path)
-            contig_dense_matrix = coo_matrix(
-                (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
-                shape=tuple(contig_matrix_data['shape'])
-            )
-        except Exception as e:
-            logger.error(f"Error loading data from files: {e}")
-            return False, 1
-
-        # Save the loaded data to Redis with keys specific to the user folder
-        save_to_redis(bin_info_key, bin_information)       
-        save_to_redis(bin_matrix_key, bin_dense_matrix)
-        save_to_redis(contig_info_key, contig_information)
-        save_to_redis(contig_matrix_key, contig_dense_matrix)
-
-        logger.info("Data loaded and saved to Redis successfully.")
-        return True, 1
-    
-    @app.callback(
-        [Output('contact-table', 'rowData'),
+         Output('contact-table', 'rowData'),
          Output('contact-table', 'columnDefs'),
          Output('contact-table', 'defaultColDef'),
          Output('contact-table', 'styleConditions'),
          Output('reset-btn', 'n_clicks'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input('data-loaded', 'data'),
-         Input('taxonomy-level-selector', 'value')],
+        [Input('taxonomy-level-selector', 'value')],
         [State('reset-btn', 'n_clicks'),
-        State('user-folder', 'data')],
-        prevent_initial_call=True
+         State('user-folder', 'data')]
     )
-    def update_data(data_loaded, taxonomy_level, reset_clicks, user_folder):
-        if not data_loaded:
-            raise PreventUpdate
+    def update_data(taxonomy_level, reset_clicks, user_folder):
         logger.info("Updating taxonomy level data.")
 
         # Define Redis keys that incorporate the user_folder to avoid concurrency issues
@@ -1501,36 +1391,7 @@ def register_visualization_callbacks(app):
         
         reset_clicks = (reset_clicks or 0) + 1
         
-        return row_data, column_defs, default_col_def, style_conditions, reset_clicks, 1
-    
-    @app.callback(
-        [Output("download", "data"),
-         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input("download-btn", "n_clicks")],
-        [State("user-folder", "data")]
-    )
-    def download_user_folder(n_clicks, user_folder):
-        if not n_clicks:
-            raise PreventUpdate
-    
-        # Path to the user folder
-        folder_path = f"output/{user_folder}"
-    
-        # Create a 7z archive in memory
-        memory_file = io.BytesIO()
-        with py7zr.SevenZipFile(memory_file, 'w') as archive:
-            # Add files to the archive
-            for root, _, files in os.walk(folder_path):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    archive.write(file_path, arcname=os.path.relpath(file_path, folder_path))
-        memory_file.seek(0)
-    
-        # Return the 7z file to download
-        return dcc.send_bytes(
-            memory_file.getvalue(),
-            filename=f"{user_folder}.7z"
-        ), 1
+        return 1, row_data, column_defs, default_col_def, style_conditions, reset_clicks, 1
     
     @app.callback(
         [Output('bin-info-table', 'rowData'),
@@ -1645,7 +1506,7 @@ def register_visualization_callbacks(app):
         
             # Apply filter logic to all rows
             bin_filter_model, edited_bin_data = apply_filter_logic(bin_information.to_dict('records'), bin_dense_matrix)
-        
+
             return (
                 edited_bin_data, bin_style, bin_filter_model,
                 [], contig_style, {}, 1
@@ -1660,7 +1521,7 @@ def register_visualization_callbacks(app):
         
             # Apply filter logic to all rows
             contig_filter_model, edited_contig_data = apply_filter_logic(contig_information.to_dict('records'), contig_dense_matrix)
-       
+
             return (
                 [], bin_style, {}, # Bin table remains empty
                 edited_contig_data, contig_style, contig_filter_model, 1
@@ -1722,13 +1583,11 @@ def register_visualization_callbacks(app):
             }
         else:
             contig_col_def = {"sortable": True, "filter": True, "resizable": True}
-    
         return bin_col_def, contig_col_def
 
     @app.callback(
         [Output('visualization-selector', 'value'),
          Output('annotation-selector', 'value'),
-         Output('annotation-selector', 'style'),
          Output('bin-selector', 'value'),
          Output('bin-selector', 'style'),
          Output('contig-selector', 'value'),
@@ -1753,7 +1612,7 @@ def register_visualization_callbacks(app):
     def sync_selectors(reset_clicks, visualization_type, contact_table_selected_rows, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, user_folder, data_loaded):      
         if not data_loaded:
             raise PreventUpdate
-                    
+            
         bin_information = load_from_redis(f'{user_folder}:bin-information')
         contig_information = load_from_redis(f'{user_folder}:contig-information')
         contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
@@ -1762,10 +1621,9 @@ def register_visualization_callbacks(app):
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
         # Initialize the styles as hidden
-        annotation_selector_style = {'display': 'none'}
         bin_selector_style = {'display': 'none'}
         contig_selector_style = {'display': 'none'}
-        tab_value = current_tab  # Default to the current tab
+        tab_value = current_tab
     
         # Reset selections if reset button is clicked
         if triggered_id == 'reset-btn':
@@ -1773,35 +1631,33 @@ def register_visualization_callbacks(app):
             selected_annotation = None
             selected_bin = None
             selected_contig = None
+            tab_value = 'bin'
         else:
             selected_annotation, selected_bin, selected_contig = synchronize_selections(
                 triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_selected_rows, 
                 taxonomy_level, current_tab, bin_information, contig_information, contact_matrix
             )
             
-        if triggered_id == 'table-tabs':
-            visualization_type = current_tab
+            if triggered_id == 'table-tabs':
+                visualization_type = current_tab
                 
-        # Update styles, tab, and visualization type based on selections
-        if selected_bin or visualization_type == 'bin':
-            visualization_type = 'bin'
-            annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
-            bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
-            tab_value = 'bin'  # Switch to bin tab
-    
-        elif selected_contig or visualization_type == 'contig':
-            visualization_type = 'contig'
-            annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
-            contig_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
-            tab_value = 'contig'  # Switch to contig tab
-    
-        elif selected_annotation and visualization_type == 'basic':
-            annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            if triggered_id == 'contact-table':
+                visualization_type = 'basic'
+                    
+            # Update styles, tab, and visualization type based on selections
+            if selected_bin or visualization_type == 'bin':
+                visualization_type = 'bin'
+                bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                tab_value = 'bin'  # Switch to bin tab
+        
+            elif selected_contig or visualization_type == 'contig':
+                visualization_type = 'contig'
+                contig_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                tab_value = 'contig'  # Switch to contig tab
+
+        return (visualization_type, selected_annotation, selected_bin, bin_selector_style,
+                 selected_contig, contig_selector_style, tab_value, [], [], [], 1)
                 
-        return (visualization_type, selected_annotation, annotation_selector_style,
-                selected_bin, bin_selector_style, selected_contig, contig_selector_style,
-                tab_value, [], [], [], 1)
-    
     def synchronize_selections(
             triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_selected_rows, 
             taxonomy_level, table_tab_value, bin_information, contig_information, contact_matrix):
@@ -1863,7 +1719,6 @@ def register_visualization_callbacks(app):
             selected_annotation = selected_row['index']
     
         logger.info(f'Current selected: Annotation={selected_annotation}, Bin={selected_bin}, Contig={selected_contig}')
-    
         return selected_annotation, selected_bin, selected_contig
     
     # Callback to update the visualizationI want to 
@@ -1888,7 +1743,7 @@ def register_visualization_callbacks(app):
     def update_visualization(reset_clicks, confirm_clicks, visualization_type, selected_annotation, selected_bin, selected_contig, selected_tab, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
-            
+
         ctx = callback_context
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
         logger.info(f"Updating visulization. Triggered by: {triggered_id}")
@@ -1968,7 +1823,7 @@ def register_visualization_callbacks(app):
                 treemap_fig = go.Figure()
                 treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
                 cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
-    
+
         return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, 1
     
     @app.callback(
@@ -1987,7 +1842,7 @@ def register_visualization_callbacks(app):
     def update_selected_styles(selected_annotation, selected_bin, selected_contig, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
-                        
+
         bin_information = load_from_redis(f'{user_folder}:bin-information')
         contig_information = load_from_redis(f'{user_folder}:contig-information')
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
@@ -2036,7 +1891,7 @@ def register_visualization_callbacks(app):
     
         # Add selection styles for the selected nodes and edges
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
-            
+        
         return cyto_elements, stylesheet, hover_info, cyto_style, 1
     
     @app.callback(
@@ -2118,6 +1973,35 @@ def register_visualization_callbacks(app):
         Output('log-box-visualization', 'value', allow_duplicate=True),  # Dummy output to trigger the callback
         Input('logger-button-visualization', 'n_clicks')
     )
+    
+    @app.callback(
+        [Output("download", "data"),
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
+        [Input("download-btn", "n_clicks")],
+        [State("user-folder", "data")]
+    )
+    def download_user_folder(n_clicks, user_folder):
+        if not n_clicks:
+            raise PreventUpdate
+    
+        # Path to the user folder
+        folder_path = f"output/{user_folder}"
+    
+        # Create a 7z archive in memory
+        memory_file = io.BytesIO()
+        with py7zr.SevenZipFile(memory_file, 'w') as archive:
+            # Add files to the archive
+            for root, _, files in os.walk(folder_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    archive.write(file_path, arcname=os.path.relpath(file_path, folder_path))
+        memory_file.seek(0)
+    
+        # Return the 7z file to download
+        return dcc.send_bytes(
+            memory_file.getvalue(),
+            filename=f"{user_folder}.7z"
+        ), 1
     
     @app.callback(
         [Output('download-btn', 'title'),

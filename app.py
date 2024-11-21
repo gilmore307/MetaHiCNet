@@ -3,6 +3,11 @@ import dash
 from dash import dcc, html, no_update
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
+import logging
+import redis
+import os
+import shutil
+import json
 from stages.a_preparation import (
     create_upload_layout_method1, 
     create_upload_layout_method2, 
@@ -14,11 +19,7 @@ from stages.b_normalization import (
 from stages.c_visualization import (
     create_visualization_layout, 
     register_visualization_callbacks)
-import logging
-import redis
-import os
-import shutil
-import json
+
 
 # Part 1: Initialize the Dash app
 app = dash.Dash(
@@ -329,4 +330,4 @@ register_normalization_callbacks(app)
 register_visualization_callbacks(app)
 
 if __name__ == "__main__":
-    app.run_server(debug=False, host="0.0.0.0", port=8050)
+    app.run_server(debug=True, host="0.0.0.0", port=8050)

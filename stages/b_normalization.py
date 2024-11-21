@@ -8,7 +8,8 @@ import numpy as np
 from stages.helper import (
     preprocess_normalization,
     run_normalization,
-    generating_bin_information
+    generating_bin_information,
+    save_to_redis
 )
 
 # Set up logging
@@ -182,13 +183,14 @@ def register_normalization_callbacks(app):
     
         # Perform bin information generation after normalization
         logger.info("Generating bin level information table and contact matrix...")
-        bin_data, contig_info, bin_contact_matrix, contig_contact_matrix = generating_bin_information(
+        bin_info, contig_info, bin_contact_matrix, contig_contact_matrix = generating_bin_information(
             contig_info,
             normalized_matrix,
             remove_unmapped_contigs,
             remove_host_host
         )
-    
+        logger.info("Bin information generation completed successfully.")
+        
         # Define the output path and save the files individually
         user_output_path = f'output/{user_folder}'
         os.makedirs(user_output_path, exist_ok=True)
@@ -199,7 +201,7 @@ def register_normalization_callbacks(app):
         contig_contact_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
     
         # Save each file
-        bin_data.to_csv(bin_info_final_path, index=False)
+        bin_info.to_csv(bin_info_final_path, index=False)
         contig_info.to_csv(contig_info_final_path, index=False)
         np.savez_compressed(
             bin_contact_matrix_path,
@@ -224,6 +226,20 @@ def register_normalization_callbacks(app):
             archive.write(bin_contact_matrix_path, 'bin_contact_matrix.npz')
             archive.write(contig_contact_matrix_path, 'contig_contact_matrix.npz')
     
-        logger.info("Bin information generation, file saving, and compression completed successfully.")
+        logger.info("File saving completed successfully.")
     
+        # Redis keys specific to each user folder
+        bin_info_key = f'{user_folder}:bin-information'
+        bin_matrix_key = f'{user_folder}:bin-dense-matrix'
+        contig_info_key = f'{user_folder}:contig-information'
+        contig_matrix_key = f'{user_folder}:contig-dense-matrix'
+        
+        # Save the loaded data to Redis with keys specific to the user folder
+        save_to_redis(bin_info_key, bin_info)       
+        save_to_redis(bin_matrix_key, bin_contact_matrix)
+        save_to_redis(contig_info_key, contig_info)
+        save_to_redis(contig_matrix_key, contig_contact_matrix)
+
+        logger.info("Data loaded and saved to Redis successfully.")
+        
         return True, ""

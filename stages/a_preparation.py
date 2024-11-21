@@ -8,6 +8,7 @@ import io
 import os
 import py7zr
 import numpy as np
+import pandas as pd
 from scipy.sparse import coo_matrix
 import logging
 from stages.helper import (
@@ -19,7 +20,8 @@ from stages.helper import (
     validate_unnormalized_folder, 
     validate_normalized_folder,
     list_files_in_7z,
-    process_data)
+    process_data,
+    save_to_redis)
 
 # Initialize logger
 logger = logging.getLogger("app_logger")
@@ -483,18 +485,55 @@ def register_preparation_callbacks(app):
             logger.info(f"Files in the uploaded archive: {file_list}")
             
             # Validate the folder contents
-            logger.info("Validating normalized folder contents...")
+            logger.info("Validating and save normalized folder contents...")
             validate_normalized_folder(file_list)
     
             # Define the extraction path
-            user_folder_path = f'output/{user_folder}'
-            os.makedirs(user_folder_path, exist_ok=True)
+            user_output_path = f'output/{user_folder}'
+            os.makedirs(user_output_path, exist_ok=True)
     
             # Extract the 7z file to the user's folder
             with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as archive:
-                archive.extractall(path=user_folder_path)
+                archive.extractall(path=user_output_path)
+        
+            bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
+            bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
+            contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
+            contig_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
+        
+            # Redis keys specific to each user folder
+            bin_info_key = f'{user_folder}:bin-information'
+            bin_matrix_key = f'{user_folder}:bin-dense-matrix'
+            contig_info_key = f'{user_folder}:contig-information'
+            contig_matrix_key = f'{user_folder}:contig-dense-matrix'
+        
+            try:
+                bin_information = pd.read_csv(bin_info_path)
+                
+                bin_matrix_data = np.load(bin_matrix_path)
+                bin_dense_matrix = coo_matrix(
+                    (bin_matrix_data['data'], (bin_matrix_data['row'], bin_matrix_data['col'])),
+                    shape=tuple(bin_matrix_data['shape'])
+                )
+        
+                contig_information = pd.read_csv(contig_info_path)
+                
+                contig_matrix_data = np.load(contig_matrix_path)
+                contig_dense_matrix = coo_matrix(
+                    (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
+                    shape=tuple(contig_matrix_data['shape'])
+                )
+            except Exception as e:
+                logger.error(f"Error loading data from files: {e}")
+                return False
+
+            # Save the loaded data to Redis with keys specific to the user folder
+            save_to_redis(bin_info_key, bin_information)       
+            save_to_redis(bin_matrix_key, bin_dense_matrix)
+            save_to_redis(contig_info_key, contig_information)
+            save_to_redis(contig_matrix_key, contig_dense_matrix)
             
-            logger.info("Validation and extraction successful for Method 3.")
+            logger.info("Data loaded and saved to Redis successfully.")
             return True  # Validation and extraction succeeded
 
         except Exception as e:
