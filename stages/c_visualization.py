@@ -1128,7 +1128,7 @@ def create_visualization_layout():
                         options=[],
                         value=None,
                         placeholder="Select an annotation",
-                        style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                        style={}
                     ),
                     dcc.Dropdown(
                         id='bin-selector',
@@ -1411,6 +1411,7 @@ def register_visualization_callbacks(app):
          Output('contig-info-table', 'filterModel'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
+         Input('confirm-btn', 'n_clicks'),
          Input('table-tabs', 'value'),
          Input('annotation-selector', 'value'),
          Input('visibility-filter', 'value')],
@@ -1420,7 +1421,7 @@ def register_visualization_callbacks(app):
          State('data-loaded', 'data')],
          prevent_initial_call=True
     )
-    def display_info_table(n_clicks, selected_tab, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
+    def display_info_table(reset_clicks, confirm_clicks, selected_tab, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
         ctx = callback_context
@@ -1553,7 +1554,6 @@ def register_visualization_callbacks(app):
         if bin_virtual_row_data:
             bin_row_data_df = pd.DataFrame(bin_virtual_row_data)
             bin_colors, annotation_colors = get_node_colors(cyto_elements, bin_row_data_df)
-        
             bin_style_conditions = styling_information_table(
                 bin_row_data_df, bin_colors, annotation_colors, unique_annotations, table_type='bin', taxonomy_level=taxonomy_level
             )
@@ -1573,7 +1573,6 @@ def register_visualization_callbacks(app):
         if contig_virtual_row_data:
             contig_row_data_df = pd.DataFrame(contig_virtual_row_data)
             contig_colors, annotation_colors = get_node_colors(cyto_elements, contig_row_data_df)
-            print(cyto_elements)
             contig_style_conditions = styling_information_table(
                 contig_row_data_df, contig_colors, annotation_colors, unique_annotations, table_type='contig', taxonomy_level=taxonomy_level
             )
@@ -1594,14 +1593,12 @@ def register_visualization_callbacks(app):
     @app.callback(
         [Output('visualization-selector', 'value'),
          Output('annotation-selector', 'value'),
+         Output('annotation-selector', 'style'),
          Output('bin-selector', 'value'),
          Output('bin-selector', 'style'),
          Output('contig-selector', 'value'),
          Output('contig-selector', 'style'),
          Output('table-tabs', 'value'),
-         Output('contact-table', 'selectedRows'),
-         Output('bin-info-table', 'selectedRows'),
-         Output('contig-info-table', 'selectedRows'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
          Input('visualization-selector', 'value'),
@@ -1627,6 +1624,7 @@ def register_visualization_callbacks(app):
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
         # Initialize the styles as hidden
+        annotation_selector_style = {'display': 'none'}
         bin_selector_style = {'display': 'none'}
         contig_selector_style = {'display': 'none'}
         tab_value = current_tab
@@ -1645,24 +1643,28 @@ def register_visualization_callbacks(app):
             )
             
             if triggered_id == 'table-tabs':
-                visualization_type = current_tab
-                
-            if triggered_id == 'contact-table':
+                visualization_type = current_tab          
+            elif triggered_id == 'contact-table':
                 visualization_type = 'basic'
                     
             # Update styles, tab, and visualization type based on selections
             if selected_bin or visualization_type == 'bin':
                 visualization_type = 'bin'
+                annotation_selector_style = {'display': 'none'}
                 bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 tab_value = 'bin'  # Switch to bin tab
         
             elif selected_contig or visualization_type == 'contig':
                 visualization_type = 'contig'
+                annotation_selector_style = {'display': 'none'}
                 contig_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 tab_value = 'contig'  # Switch to contig tab
+            elif selected_annotation or visualization_type == 'basic':
+                visualization_type = 'basic'
+                annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
 
-        return (visualization_type, selected_annotation, selected_bin, bin_selector_style,
-                 selected_contig, contig_selector_style, tab_value, [], [], [], 1)
+        return (visualization_type, selected_annotation, annotation_selector_style, selected_bin, bin_selector_style,
+                 selected_contig, contig_selector_style, tab_value, 1)
                
     def synchronize_selections(
             triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_selected_rows, 
