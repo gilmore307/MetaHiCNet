@@ -18,7 +18,6 @@ import io
 import logging
 import json
 import py7zr
-import gc
 from joblib import Parallel, delayed
 from itertools import combinations
 from stages.helper import (
@@ -252,72 +251,89 @@ def styling_information_table(information_data, id_colors, annotation_colors, un
             max_bound = bounds[col][i]
             if i == len(bounds[col]) - 1:
                 max_bound += 1
-
+    
+            # Handle NaN and zero range
+            col_min_value = col_min.get(col, 0)  # Default to 0 if missing
+            col_range_value = col_range.get(col, 1)  # Default to 1 if missing or 0
+    
+            if np.isnan(col_min_value) or np.isnan(col_range_value):
+                continue  # Skip this column style if data is invalid
+    
+            if col_range_value == 0:
+                col_range_value = 1  # Prevent division by zero
+    
             opacity = 0.6
+            adjusted_value = 255 - int((min_bound - col_min_value) / col_range_value * 255)
+    
+            # Add style condition
             col_styles.append({
                 "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
                 "style": {
-                    'backgroundColor': f"rgba({255 - int((min_bound - col_min[col]) / col_range[col] * 255)}, {255 - int((min_bound - col_min[col]) / col_range[col] * 255)}, 255, {opacity})",
+                    'backgroundColor': f"rgba({adjusted_value}, {adjusted_value}, 255, {opacity})",
                     'color': "white" if i > len(bounds[col]) / 2.0 else "inherit"
                 }
             })
         return col_styles
+
 
     # Parallelize numeric column styling
     numeric_styles = Parallel(n_jobs=-1)(delayed(style_numeric_column)(col) for col in columns)
     for col_style in numeric_styles:
         styles.extend(col_style)
 
-    # Precompute ID colors
+    # Precompute ID and Annotation styles together
     id_column = 'Bin' if table_type == 'bin' else 'Contig'
-    # Precompute required data as a list of tuples
-    id_items = [
-        (item, id_colors.get(item, annotation_colors.get(
-            information_data.loc[information_data[id_column] == item, 'Annotation'].values[0], '#FFFFFF')))
-        for item in information_data[id_column]
-    ]
     
-    # Modify `style_id` to accept picklable arguments
-    def style_id(item, color):
-        color_with_opacity = add_opacity_to_color(color, 0.6)
-        return {
+    # Function to compute color, create styles, and append them to the styles list
+    def compute_and_append_style(item, annotation, styles):
+        # Combine logic to calculate colors
+        annotation_color = annotation_colors.get(annotation, '#FFFFFF')  # Fallback to white if annotation not found
+        item_color = id_colors.get(item, annotation_color)  # Fallback to annotation_color if item not found
+        item_color_with_opacity = add_opacity_to_color(item_color, 0.6)
+        
+        # Create and append style for the ID column
+        id_style = {
             "condition": f"params.colDef.field == '{id_column}' && params.value == '{item}'",
             "style": {
-                'backgroundColor': color_with_opacity,
+                'backgroundColor': item_color_with_opacity,
                 'color': 'black'
             }
         }
-    
-    # Use Parallel processing with precomputed picklable arguments
-    id_styles = Parallel(n_jobs=-1)(delayed(style_id)(item, color) for item, color in id_items)
-    styles.extend(id_styles)
-
-    # Function to style annotations (parallelized)
-    def style_annotation(annotation):
-        annotation_color = annotation_colors.get(annotation, '#FFFFFF')
+        styles.append(id_style)
+        
+        # Create and append style for the Annotation column
         annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
-        return {
+        annotation_style = {
             "condition": f"params.colDef.field == '{taxonomy_level}' && params.value == '{annotation}'",
             "style": {
                 'backgroundColor': annotation_color_with_opacity,
                 'color': 'black'
             }
         }
-
-    # Parallelize annotation styling
-    annotation_styles = Parallel(n_jobs=-1)(delayed(style_annotation)(annotation) for annotation in unique_annotations)
-    styles.extend(annotation_styles)
+        styles.append(annotation_style)
+    
+    # Iterate over rows and compute styles
+    for _, row in information_data.iterrows():
+        if row['Annotation'] in unique_annotations:
+            compute_and_append_style(row[id_column], row['Annotation'], styles)
 
     return styles
 
 # Function to get bin colors from Cytoscape elements or use annotation color if not found
 def get_node_colors(cyto_elements, information_data):
-    # Extract colors from Cytoscape elements using dictionary comprehension
-    id_colors = {
-        element['data']['id']: element['data']['color']
-        for element in cyto_elements or []
-        if 'data' in element and 'color' in element['data'] and 'id' in element['data']
-    }
+    filtered_cyto_elements = [
+        element for element in cyto_elements or []
+        if 'data' in element and 'source' not in element['data']
+    ]
+    
+    id_colors = {}
+    for element in filtered_cyto_elements or []:
+        try:
+            element_id = element['data']['id']
+            element_color = element['data']['color']
+            id_colors[element_id] = element_color
+        except KeyError:
+            continue
 
     # Function to map a single annotation to its color
     def map_annotation_to_color(annotation):
@@ -332,7 +348,6 @@ def get_node_colors(cyto_elements, information_data):
 
     # Convert the parallelized result to a dictionary
     annotation_colors = dict(annotation_color_pairs)
-
     return id_colors, annotation_colors
 
 # Function to arrange bins
@@ -618,15 +633,10 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
     # Find the index of the selected bin
     selected_bin_index = bin_information[bin_information['Bin'] == selected_bin].index[0]
     selected_annotation = bin_information.loc[selected_bin_index, 'Annotation']
-    
-    logger.info(f"Selected Bin Index: {selected_bin_index}")
-    logger.info(f"Selected Annotation: {selected_annotation}")
 
     # Get all indices that have contact with the selected bin
     contacts_indices = bin_dense_matrix[selected_bin_index].nonzero()[0]
     contacts_indices = contacts_indices[contacts_indices != selected_bin_index]
-    
-    logger.info(f"Contacts Indices: {contacts_indices}")
 
     # If no contacts found, raise a warning
     if len(contacts_indices) == 0:
@@ -748,15 +758,10 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
     # Find the index of the selected contig
     selected_contig_index = contig_information[contig_information['Contig'] == selected_contig].index[0]
     selected_annotation = contig_information.loc[selected_contig_index, 'Annotation']
-    
-    logger.info(f"Selected Contig Index: {selected_contig_index}")
-    logger.info(f"Selected Annotation: {selected_annotation}")
 
     # Get all indices that have contact with the selected contig
     contacts_indices = contig_dense_matrix[selected_contig_index].nonzero()[0]
     contacts_indices = contacts_indices[contacts_indices != selected_contig_index]
-    
-    logger.info(f"Contacts Indices: {contacts_indices}")
 
     # If no contacts found, raise a warning
     if len(contacts_indices) == 0:
@@ -905,9 +910,6 @@ def prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy
 
 # Create a logger and add the custom Dash logger handler
 logger = logging.getLogger("app_logger")
-
-# Example of logging messages
-gc.collect()
  
 type_colors = {
     'chromosome': '#4472C4',
@@ -1000,22 +1002,22 @@ def create_visualization_layout():
         {
             "headerName": "Taxonomy",
             "children": [   
-                {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Genus", "field": "Genus", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Family", "field": "Family", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Order", "field": "Order", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Class", "field": "Class", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Phylum", "field": "Phylum", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Kingdom", "field": "Kingdom", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Domain", "field": "Domain", "width": 140, "wrapHeaderText": True}
+                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True}
             ]
         },
         {
             "headerName": "Contact Information",
             "children": [
-                {"headerName": "Number of Restriction sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Bin Size", "field": "Length", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Number of Restriction sites", "field": "Restriction sites", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Bin Size", "field": "Length", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Coverage", "field": "Coverage", "width": 150, "wrapHeaderText": True},
                 {"headerName": "Visibility", "field": "Visibility", "hide": True}
             ]
         }
@@ -1031,22 +1033,22 @@ def create_visualization_layout():
         {
             "headerName": "Taxonomy",
             "children": [   
-                {"headerName": "Species", "field": "Species", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Genus", "field": "Genus", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Family", "field": "Family", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Order", "field": "Order", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Class", "field": "Class", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Phylum", "field": "Phylum", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Kingdom", "field": "Kingdom", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Domain", "field": "Domain", "width": 140, "wrapHeaderText": True}
+                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True}
             ]
         },
         {
             "headerName": "Contact Information",
             "children": [
-                {"headerName": "Number of Restriction Sites", "field": "Restriction sites", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Length", "field": "Length", "width": 140, "wrapHeaderText": True},
-                {"headerName": "Coverage", "field": "Coverage", "width": 140, "wrapHeaderText": True},
+                {"headerName": "Number of Restriction Sites", "field": "Restriction sites", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Length", "field": "Length", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Coverage", "field": "Coverage", "width": 150, "wrapHeaderText": True},
                 {"headerName": "Visibility", "field": "Visibility", "hide": True}
             ]
         }
@@ -1421,7 +1423,6 @@ def register_visualization_callbacks(app):
     def display_info_table(n_clicks, selected_tab, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
-            
         ctx = callback_context
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
         if triggered_id == 'reset-btn':  
@@ -1513,7 +1514,6 @@ def register_visualization_callbacks(app):
         
             # Apply filter logic to all rows
             bin_filter_model, edited_bin_data = apply_filter_logic(bin_information.to_dict('records'), bin_dense_matrix)
-
             return (
                 edited_bin_data, bin_style, bin_filter_model,
                 [], contig_style, {}, 1
@@ -1528,7 +1528,6 @@ def register_visualization_callbacks(app):
         
             # Apply filter logic to all rows
             contig_filter_model, edited_contig_data = apply_filter_logic(contig_information.to_dict('records'), contig_dense_matrix)
-
             return (
                 [], bin_style, {}, # Bin table remains empty
                 edited_contig_data, contig_style, contig_filter_model, 1
@@ -1537,29 +1536,28 @@ def register_visualization_callbacks(app):
     @app.callback(
         [Output('bin-info-table', 'defaultColDef'),
          Output('contig-info-table', 'defaultColDef')],
-        [Input('bin-info-table', 'rowData'),
-         Input('contig-info-table', 'rowData')],
+        [Input('bin-info-table', 'virtualRowData'),
+         Input('contig-info-table', 'virtualRowData')],
         [State('cyto-graph', 'elements'),
          State('taxonomy-level-selector', 'value'),
          State('user-folder', 'data'),
          State('data-loaded', 'data')],
         prevent_initial_call=True
     )
-    def update_table_styles(bin_row_data, contig_row_data, cyto_elements, taxonomy_level, user_folder, data_loaded):
+    def update_table_styles(bin_virtual_row_data, contig_virtual_row_data, cyto_elements, taxonomy_level, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
-    
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-    
+        
         # Bin Table Styling
-        if bin_row_data:
-            bin_row_data_df = pd.DataFrame(bin_row_data)
+        if bin_virtual_row_data:
+            bin_row_data_df = pd.DataFrame(bin_virtual_row_data)
             bin_colors, annotation_colors = get_node_colors(cyto_elements, bin_row_data_df)
-    
+        
             bin_style_conditions = styling_information_table(
                 bin_row_data_df, bin_colors, annotation_colors, unique_annotations, table_type='bin', taxonomy_level=taxonomy_level
             )
-    
+        
             bin_col_def = {
                 "sortable": True,
                 "filter": True,
@@ -1570,16 +1568,16 @@ def register_visualization_callbacks(app):
             }
         else:
             bin_col_def = {"sortable": True, "filter": True, "resizable": True}
-    
+        
         # Contig Table Styling
-        if contig_row_data:
-            contig_row_data_df = pd.DataFrame(contig_row_data)
+        if contig_virtual_row_data:
+            contig_row_data_df = pd.DataFrame(contig_virtual_row_data)
             contig_colors, annotation_colors = get_node_colors(cyto_elements, contig_row_data_df)
-    
+            print(cyto_elements)
             contig_style_conditions = styling_information_table(
                 contig_row_data_df, contig_colors, annotation_colors, unique_annotations, table_type='contig', taxonomy_level=taxonomy_level
             )
-    
+        
             contig_col_def = {
                 "sortable": True,
                 "filter": True,
@@ -1591,6 +1589,7 @@ def register_visualization_callbacks(app):
         else:
             contig_col_def = {"sortable": True, "filter": True, "resizable": True}
         return bin_col_def, contig_col_def
+
     
     @app.callback(
         [Output('visualization-selector', 'value'),
