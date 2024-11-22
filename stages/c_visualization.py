@@ -1655,13 +1655,13 @@ def register_visualization_callbacks(app):
             # Update styles, tab, and visualization type based on selections
             if selected_bin or visualization_type == 'bin':
                 visualization_type = 'bin'
-                annotation_selector_style = {'display': 'none'}
+                annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 tab_value = 'bin'  # Switch to bin tab
         
             elif selected_contig or visualization_type == 'contig':
                 visualization_type = 'contig'
-                annotation_selector_style = {'display': 'none'}
+                annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 contig_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 tab_value = 'contig'  # Switch to contig tab
             elif selected_annotation or visualization_type == 'basic':
