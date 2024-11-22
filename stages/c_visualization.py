@@ -257,7 +257,6 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
 def styling_information_table(information_data, id_colors, annotation_colors, unique_annotations, table_type='bin', taxonomy_level='Family'):
     columns = ['Restriction sites', 'Length', 'Coverage']
     styles = []
-
     # Precompute numeric data
     numeric_data = information_data.select_dtypes(include=[np.number]).copy()
     numeric_data += 1
@@ -267,74 +266,80 @@ def styling_information_table(information_data, id_colors, annotation_colors, un
     n_bins = 10
     bounds = {col: [i * (col_range[col] / n_bins) + col_min[col] for i in range(n_bins + 1)] for col in columns}
 
-    # Function to style numeric columns
-    for col in columns:
-        if col not in bounds:
-            continue
+    # Function to style numeric columns (parallelized)
+    def style_numeric_column(col):
+        col_styles = []
         for i in range(1, len(bounds[col])):
             min_bound = bounds[col][i - 1]
             max_bound = bounds[col][i]
             if i == len(bounds[col]) - 1:
                 max_bound += 1
-
+    
             # Handle NaN and zero range
             col_min_value = col_min.get(col, 0)  # Default to 0 if missing
             col_range_value = col_range.get(col, 1)  # Default to 1 if missing or 0
-
+    
             if np.isnan(col_min_value) or np.isnan(col_range_value):
                 continue  # Skip this column style if data is invalid
-
+    
             if col_range_value == 0:
                 col_range_value = 1  # Prevent division by zero
-
+    
             opacity = 0.6
             adjusted_value = 255 - int((min_bound - col_min_value) / col_range_value * 255)
-
+    
             # Add style condition
-            styles.append({
+            col_styles.append({
                 "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
                 "style": {
                     'backgroundColor': f"rgba({adjusted_value}, {adjusted_value}, 255, {opacity})",
                     'color': "white" if i > len(bounds[col]) / 2.0 else "inherit"
                 }
             })
+        return col_styles
+
+
+    # Parallelize numeric column styling
+    numeric_styles = Parallel(n_jobs=-1)(delayed(style_numeric_column)(col) for col in columns)
+    for col_style in numeric_styles:
+        styles.extend(col_style)
 
     # Precompute ID and Annotation styles together
     id_column = 'Bin' if table_type == 'bin' else 'Contig'
+    
+    # Function to compute color, create styles, and append them to the styles list
+    def compute_and_append_style(item, annotation, styles):
+        # Combine logic to calculate colors
+        annotation_color = annotation_colors.get(annotation, '#FFFFFF')  # Fallback to white if annotation not found        
+        item_color = id_colors.get(item, annotation_color)  # Fallback to annotation_color if item not found
+        item_color_with_opacity = add_opacity_to_color(item_color, 0.6)
+        annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
+        
+        # Create and append style for the ID column
+        id_style = {
+            "condition": f"params.colDef.field == '{id_column}' && params.value == '{item}'",
+            "style": {
+                'backgroundColor': item_color_with_opacity,
+                'color': 'black'
+            }
+        }
+        styles.append(id_style)
+        
+        # Create and append style for the Annotation column
 
-    def add_opacity_to_color(color, opacity):
-        """Adds opacity to a hex color."""
-        color = color.lstrip('#')
-        r, g, b = int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
-        return f"rgba({r}, {g}, {b}, {opacity})"
-
+        annotation_style = {
+            "condition": f"params.colDef.field == '{taxonomy_level}' && params.value == '{annotation}'",
+            "style": {
+                'backgroundColor': annotation_color_with_opacity,
+                'color': 'black'
+            }
+        }
+        styles.append(annotation_style)
+    
     # Iterate over rows and compute styles
     for _, row in information_data.iterrows():
         if row['Annotation'] in unique_annotations:
-            annotation = row['Annotation']
-            item = row[id_column]
-
-            # Compute item color
-            annotation_color = annotation_colors.get(annotation, '#FFFFFF')  # Fallback to white if annotation not found
-            item_color = id_colors.get(item, annotation_color)  # Fallback to annotation_color if item not found
-
-            # Add styles for ID column
-            styles.append({
-                "condition": f"params.colDef.field == '{id_column}' && params.value == '{item}'",
-                "style": {
-                    'backgroundColor': add_opacity_to_color(item_color, 0.6),
-                    'color': 'black'
-                }
-            })
-
-            # Add styles for Annotation column
-            styles.append({
-                "condition": f"params.colDef.field == '{taxonomy_level}' && params.value == '{annotation}'",
-                "style": {
-                    'backgroundColor': add_opacity_to_color(annotation_color, 0.6),
-                    'color': 'black'
-                }
-            })
+            compute_and_append_style(row[id_column], row['Annotation'], styles)
 
     return styles
 
