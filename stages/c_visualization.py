@@ -300,7 +300,7 @@ def styling_information_table(information_data, id_colors, annotation_colors, un
 
 
     # Parallelize numeric column styling
-    numeric_styles = Parallel(n_jobs=6)(delayed(style_numeric_column)(col) for col in columns)
+    numeric_styles = Parallel(n_jobs=-1)(delayed(style_numeric_column)(col) for col in columns)
     for col_style in numeric_styles:
         styles.extend(col_style)
 
@@ -889,7 +889,7 @@ def prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy
     self_pairs = [(x, x) for x in unique_annotations]
     all_pairs = non_self_pairs + self_pairs
     
-    results = Parallel(n_jobs=6)(
+    results = Parallel(n_jobs=-1)(
         delayed(calculate_submatrix_sum)(pair, bin_indexes_dict, bin_dense_matrix) for pair in all_pairs
     )
     
@@ -1389,7 +1389,7 @@ def register_visualization_callbacks(app):
             return annotation, type_colors.get(bin_type, default_color)
 
         # Parallelize the mapping of annotations to colors
-        annotation_color_pairs = Parallel(n_jobs=6)(
+        annotation_color_pairs = Parallel(n_jobs=-1)(
             delayed(map_annotation_to_color)(annotation) for annotation in unique_annotations
         )
         annotation_colors = dict(annotation_color_pairs)
