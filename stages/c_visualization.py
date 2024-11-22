@@ -743,8 +743,6 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     bar_fig = create_bar_chart(data_dict)
 
-    logger.info("Finished bin_visualization function")
-
     return cyto_elements, bar_fig
 
 def contig_visualization(selected_annotation, selected_contig, contig_information, contig_dense_matrix, unique_annotations):
@@ -1838,7 +1836,8 @@ def register_visualization_callbacks(app):
                 treemap_fig = go.Figure()
                 treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
                 cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
-
+                
+        save_to_redis(f'{user_folder}:current-visualization-mode', current_visualization_mode)
         return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, 1
     
     @app.callback(

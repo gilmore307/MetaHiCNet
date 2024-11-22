@@ -66,7 +66,7 @@ class SessionLogHandler(logging.Handler):
 logger = logging.getLogger('app_logger')
 logger.setLevel(logging.INFO)
                    
-SESSION_TTL = 60
+SESSION_TTL = 300
     
 stages_mapping = {
     'method1': ['Preparation', 'Normalization', 'Visualization'],
