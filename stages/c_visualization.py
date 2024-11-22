@@ -298,23 +298,31 @@ def styling_information_table(information_data, id_colors, annotation_colors, un
             })
         return col_styles
 
-
     # Parallelize numeric column styling
     numeric_styles = Parallel(n_jobs=-1)(delayed(style_numeric_column)(col) for col in columns)
     for col_style in numeric_styles:
         styles.extend(col_style)
-
+        
+    for type_key, color in type_colors.items():
+        annotation_color_with_opacity = add_opacity_to_color(color, 0.6)
+        annotation_style = {
+            "condition": f"params.colDef.field == '{taxonomy_level}' && params.data.Type == '{type_key}'",
+            "style": {
+                'backgroundColor': annotation_color_with_opacity,
+                'color': 'black'
+            }
+        }
+        styles.append(annotation_style)
+    
     # Precompute ID and Annotation styles together
     id_column = 'Bin' if table_type == 'bin' else 'Contig'
     
     # Function to compute color, create styles, and append them to the styles list
-    def compute_and_append_style(item, annotation, styles):
+    def style_id_column(item, item_type, styles):
         # Combine logic to calculate colors
-        annotation_color = annotation_colors.get(annotation, '#FFFFFF')  # Fallback to white if annotation not found        
-        item_color = id_colors.get(item, annotation_color)  # Fallback to annotation_color if item not found
-        item_color_with_opacity = add_opacity_to_color(item_color, 0.6)
-        annotation_color_with_opacity = add_opacity_to_color(annotation_color, 0.6)
-        
+        type_color = type_colors.get(item_type, default_color)  # Fallback to white if annotation not found        
+        item_color = id_colors.get(item, type_color)  # Fallback to annotation_color if item not found
+        item_color_with_opacity = add_opacity_to_color(item_color, 0.6)        
         # Create and append style for the ID column
         id_style = {
             "condition": f"params.colDef.field == '{id_column}' && params.value == '{item}'",
@@ -324,22 +332,11 @@ def styling_information_table(information_data, id_colors, annotation_colors, un
             }
         }
         styles.append(id_style)
-        
-        # Create and append style for the Annotation column
-
-        annotation_style = {
-            "condition": f"params.colDef.field == '{taxonomy_level}' && params.value == '{annotation}'",
-            "style": {
-                'backgroundColor': annotation_color_with_opacity,
-                'color': 'black'
-            }
-        }
-        styles.append(annotation_style)
     
     # Iterate over rows and compute styles
     for _, row in information_data.iterrows():
         if row['Annotation'] in unique_annotations:
-            compute_and_append_style(row[id_column], row['Annotation'], styles)
+            style_id_column(row[id_column],  row['Type'], styles)
 
     return styles
 
@@ -1000,7 +997,8 @@ def create_visualization_layout():
                 {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
                 {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
                 {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True}
+                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Type", "field": "Type"}
             ]
         },
         {
@@ -1031,7 +1029,8 @@ def create_visualization_layout():
                 {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
                 {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
                 {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True}
+                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Type", "field": "Type", "hide": True}
             ]
         },
         {
@@ -1594,7 +1593,6 @@ def register_visualization_callbacks(app):
             contig_col_def = {"sortable": True, "filter": True, "resizable": True}
         return bin_col_def, contig_col_def
 
-    
     @app.callback(
         [Output('visualization-selector', 'value'),
          Output('annotation-selector', 'value'),
