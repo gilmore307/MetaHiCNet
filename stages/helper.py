@@ -672,7 +672,7 @@ def get_indexes(annotations, information_table, column):
             return annotation, []
 
     # Execute in parallel
-    results = Parallel(n_jobs=2)(
+    results = Parallel(n_jobs=-1)(
         delayed(fetch_indexes)(annotation) for annotation in annotations
     )
 
@@ -761,7 +761,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         self_pairs = [(x, x) for x in unique_annotations]
         all_pairs = non_self_pairs + self_pairs
         
-    results = Parallel(n_jobs=2)(
+    results = Parallel(n_jobs=-1)(
         delayed(calculate_submatrix_sum)(pair, contig_indexes_dict, dense_matrix) for pair in all_pairs
     )
     
