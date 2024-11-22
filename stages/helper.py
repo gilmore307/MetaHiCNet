@@ -658,26 +658,16 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         return None
 
 def get_indexes(annotations, information_table, column):
-    # Ensure annotations is a list
     if isinstance(annotations, str):
         annotations = [annotations]
 
-    # Parallel computation using joblib
-    def fetch_indexes(annotation):
+    contig_indexes = {}
+    for annotation in annotations:
         try:
-            indexes = information_table[information_table[column] == annotation].index.tolist()
-            return annotation, indexes
+            contig_indexes[annotation] = information_table[information_table[column] == annotation].index.tolist()
         except Exception as e:
             print(f'Error fetching contig indexes for annotation: {annotation}, error: {e}')
-            return annotation, []
-
-    # Execute in parallel
-    results = Parallel(n_jobs=-1)(
-        delayed(fetch_indexes)(annotation) for annotation in annotations
-    )
-
-    # Aggregate results
-    contig_indexes = {annotation: indexes for annotation, indexes in results}
+            contig_indexes[annotation] = []
 
     return contig_indexes
 
