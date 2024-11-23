@@ -84,7 +84,7 @@ def create_upload_layout_method1():
             dbc.Col(create_upload_component(
                 'raw-bin-taxonomy', 
                 'Upload Bin Taxonomy File (.csv)', 
-                'assets/examples/taxonomy.csv',
+                'assets/examples/bin_taxonomy.csv',
                 "This file must include the following columns: 'Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', and 'Plasmid ID'.  \n"
                 "The taxonomy columns ('Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species') are optional; leave them blank if not applicable.  \n"
                 "If a Plasmid ID is provided in the 'Plasmid ID' column, please leave the taxonomy columns blank."
