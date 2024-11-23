@@ -235,22 +235,30 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
                     'color': "white" if i > len(bounds) / 2 else "inherit"
                 }
             })
-
-    # Styling for the 'index' column
-    for i, row in enumerate(row_data):
-        annotation = row.get("index")  # Assuming 'index' contains annotation-like values
-        if annotation:
-            try:
-                bin_type = bin_information.loc[bin_information["Annotation"] == annotation, "Type"].values[0]
-                annotation_color = type_colors.get(bin_type, default_color)
-                annotation_color_with_opacity = add_opacity_to_color(annotation_color, opacity)
-
-                styles.append({
-                    "condition": f"params.node.rowIndex == {i} && params.colDef.field == 'index'",
-                    "style": {"backgroundColor": annotation_color_with_opacity},
-                })
-            except Exception as e:
-                logger.error(f"Error styling index {annotation}: {e}")
+    
+    styles.append({
+        "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_p')",
+        "style": {
+            "backgroundColor": add_opacity_to_color('#70AD47', opacity),  # Plasmid color
+            "color": "black"
+        }
+    })
+    
+    styles.append({
+        "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_v')",
+        "style": {
+            "backgroundColor": add_opacity_to_color('#E83D20', opacity),  # Phage color
+            "color": "black"
+        }
+    })
+    
+    styles.append({
+        "condition": "params.colDef.field == 'index' && !(params.data.index.endsWith('_p') || params.data.index.endsWith('_v'))",  # Default case for chromosome
+        "style": {
+            "backgroundColor": add_opacity_to_color('#4472C4', opacity),  # Chromosome color
+            "color": "black"
+        }
+    })
 
     return styles
 
@@ -935,47 +943,87 @@ base_stylesheet = [
 
 hover_info = {
     'download-btn': 
-        ("Download Button allows users to download the dataset they are currently viewing or working with.  \n\n"
+        ("The Download Button allows users to download the dataset they are currently viewing or working with.  \n\n"
+         
          "This downloaded data can be re-uploaded to the app when visiting the website again, "
          "enabling returning users to continue from where they left off with their previously analyzed data."),
         
     'reset-btn': 
-        ("Reset Button resets all user selections and filters, bringing the visualization back to its default state."),
+        ("The Reset Button resets all user selections and filters, bringing the visualization back to the 'Taxonomy interaction' visualization."),
         
     'confirm-btn': 
-        ("Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly."),
+        ("The Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly."),
         
-    'bar-chart-container': 
-        ("Each bar represents an element in the main figure (either the Cytoscape Graph or Treemap Graph).  \n\n"
-         "The color coding and labels align with the elements shown in the main visualization, providing a consistent reference across views."),
+    'dropdowns':
+        ("The Taxonomy Level Selector allows users to choose the taxonomic level they wish to focus on in the dataset. \n"
+         "Users can select from various taxonomic levels, such as Domain, Phylum, Class, Order, Family, Genus, and Species. \n"
+         "Once a taxonomic level is selected, the visualization and data tables will update IMMEDIATELY without clicking confirm button. \n\n"
+         
+         "The rest of dropdown selectors allow users to filter and select specific annotations, bins, or contigs within the dataset. \n\n"
+         "It always displays the current selected item. \n"
+         "Click the Confirm button to apply the selection in selectors."),
         
+    'bar-chart-container':
+        ("By interacting with the bar chart, users can explore relationships and variations between different traces and elements in the dataset.  \n\n"
+         
+         "The bar chart displays multiple traces, each corresponding to a different aspect of the dataset.  \n"
+         "Each trace highlights a different characteristic of the data, allowing users to compare multiple aspects simultaneously.  \n"
+         "Users can select which trace to display by choosing from the available options.  \n\n"
+         
+         "A scroll bar is available at the bottom of the chart, allowing users to set the number of bars to display at once.  \n\n"
+         
+         "The color coding and labels align with the elements shown in the main visualization, providing a consistent reference across views.  \n\n"),
+
     'info-table-container': 
-        ("Row Count displays the total number of rows currently visible in the table, updating dynamically based on filters and selections.  \n\n"
-         "Visibility Filter checkbox filters the table to display only elements represented in the main visualization. "
-         "Bin Info Tab displays data specific to bins, and Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n\n"
-         "Users can select individual rows to select specific bins or contigs.  \n\n"
-         "The table allows users to filter and sort columns to organize data according to taxonomic groups, and metrics."),
+        ("The Visibility Filter checkbox filters the table to display only elements represented in the main visualization.   \n\n"
+         
+         "The Bin Info Tab displays data specific to bins, and the Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n\n"
+         
+         "Cells in the 'Bin' or 'Contig' columns are colored based on the corresponding node in the Cytoscape Graph.  \n"
+         "Cells in the column of the selected taxonomy level are colored using the unified color for the type (chromosome, plasmid, or phage).  \n"
+         "Cells in numeric columns are highlighted with a bluish color. Higher values have a deeper color.  \n\n"
+         
+         "Users can click individual rows to select specific bins or contigs.  \n"
+         "The first click selects the corresponding annotation.  \n"
+         "The second click selects the specific bin/contig.   \n"
+         "Remove the selection by clicking the reset button.   \n\n"
+         
+         "The table allows users to filter and sort columns to organize data according to taxonomic groups and metrics."),
     
     'treemap-graph-container': 
-        ("Treemap Graph provides a hierarchical view of taxonomic data, showing relationships between groups at different taxonomic levels.  \n\n"
-         "Each box represents a taxonomic level or group. Darker colors indicate higher taxonomy levels (e.g., Domain), "
-         "while lighter colors represent lower levels within the hierarchy (e.g., Species). "
-         "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, phage).  \n\n"
-         "This visual encoding allows users to quickly identify dominant groups, their levels, and types within the dataset."),
+        ("The Treemap Graph provides a hierarchical view of taxonomic data, showing relationships between groups at different taxonomic levels.  \n\n"
+         
+         "Each box represents a taxonomic level or group. Visual encoding allows users to quickly identify dominant groups, their levels, and types within the dataset.  \n"
+         "Darker colors indicate higher taxonomy levels (e.g., Domain), while lighter colors represent lower levels within the hierarchy (e.g., Species).  \n"
+         "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, phage).  \n\n"),
         
     'cyto-graph-container': 
         ("The Cytoscape Graph is a network-style visualization that represents relationships between annotations, "
          "bins, or contigs, depending on the selected visualization type.  \n\n"
-         "Click on a node to select it. Selecting a node may highlight its connected nodes, showing relationships within the network.  \n\n"
-         "Colors may vary based on element types, such as chromosomes, plasmids, or phages. "
+         
+         "Selecting a node in 'Taxonomy interaction' may highlight its connected nodes, showing relationships within the network.  \n"
+         "Selection made on Cytoscape Graph in 'Taxonomy interaction' can be remove by clicking on blank area.  \n\n"
+         
+         "Selecting a node in 'Bin interaction' or 'Contig interaction' may filter the rows being displayed in the information table.  \n\n"
+         
+         "Colors may vary based on element types:  \n"
+         "Chromosomes are in bluish color, plasmids are in greenish color, and phages are in reddish color.  \n"
          "This color coding helps users quickly identify the biological role of each node.  \n\n"
-         "Nodes are sized based on coverage within the dataset. A node with higher coverage may appear larger, making it stand out in the graph.  \n\n"
-         "Nodes that are densely connected may form clusters, allowing users to identify groups of closely related elements. "
-         "Conversely, nodes with fewer connections may appear on the periphery, creating a natural separation in the graph based on interaction strength."),
+         
+         "Nodes are sized based on coverage within the dataset.  \n"
+         "A node with higher coverage may appear larger, making it stand out in the graph.  \n\n"
+         
+         "Nodes that are densely connected may form clusters. There might be a higher contact between these nodes.  \n"
+         "The geometry distribution of nodes allows users to identify groups of closely related elements. "),
     
     'contact-table-container': 
         ("The Contact Table provides a tabular view of interactions between annotations, allowing users to explore contact data in more detail.  \n\n"
-         "Click on the row title to select an annotation.")
+         
+         "Click on the row header to select an annotation.  \n"
+         "Click on the column header to sort the values.  \n"
+         "Click on the 'Index' header to unsort.  \n\n"
+         
+         "Color coding is based on the logarithmic value of contacts to make the cells with higher contacts more conspicuous.")
 }
 
 def create_visualization_layout():
@@ -1069,8 +1117,8 @@ def create_visualization_layout():
                         children=[
                             dcc.Checklist(
                                 id='tooltip-toggle',
-                                options=[{'label': '  Show Help Tooltip', 'value': 'show-tooltip'}],
-                                value=[],  # Default: No tooltip
+                                options=[{'label': '  Enable Help Tooltip', 'value': 'show-tooltip'}],
+                                value=['show-tooltip'],
                                 inline=True,
                             ),
                         ],
@@ -1087,53 +1135,58 @@ def create_visualization_layout():
                             'textAlign': 'center'
                         }
                     ),
-                    dcc.Dropdown(
-                        id='taxonomy-level-selector',
-                        options=[
-                            {'label': 'Domain', 'value': 'Domain'},
-                            {'label': 'Kingdom', 'value': 'Kingdom'},
-                            {'label': 'Phylum', 'value': 'Phylum'},
-                            {'label': 'Class', 'value': 'Class'},
-                            {'label': 'Order', 'value': 'Order'},
-                            {'label': 'Family', 'value': 'Family'},
-                            {'label': 'Genus', 'value': 'Genus'},
-                            {'label': 'Species', 'value': 'Species'},
-                        ],
-                        value='Family',
-                        placeholder="Select Taxonomy Level",
-                        style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
-                    ),
-                    dcc.Dropdown(
-                        id='visualization-selector',
-                        options=[
-                            {'label': 'Taxonomy Framework', 'value': 'taxonomy_hierarchy'},
-                            {'label': 'Taxonomy Interaction', 'value': 'basic'},
-                            {'label': 'Bin Interaction', 'value': 'bin'},
-                            {'label': 'Contig Interaction', 'value': 'contig'}
-                        ],
-                        value='taxonomy_hierarchy',
-                        style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
-                    ),
-                    dcc.Dropdown(
-                        id='annotation-selector',
-                        options=[],
-                        value=None,
-                        placeholder="Select an annotation",
-                        style={}
-                    ),
-                    dcc.Dropdown(
-                        id='bin-selector',
-                        options=[],
-                        value=None,
-                        placeholder="Select a bin",
-                        style={}
-                    ),
-                    dcc.Dropdown(
-                        id='contig-selector',
-                        options=[],
-                        value=None,
-                        placeholder="Select a contig",
-                        style={}
+                    html.Div(
+                        id="dropdowns",
+                        children=[
+                            dcc.Dropdown(
+                                id='taxonomy-level-selector',
+                                options=[
+                                    {'label': 'Domain', 'value': 'Domain'},
+                                    {'label': 'Kingdom', 'value': 'Kingdom'},
+                                    {'label': 'Phylum', 'value': 'Phylum'},
+                                    {'label': 'Class', 'value': 'Class'},
+                                    {'label': 'Order', 'value': 'Order'},
+                                    {'label': 'Family', 'value': 'Family'},
+                                    {'label': 'Genus', 'value': 'Genus'},
+                                    {'label': 'Species', 'value': 'Species'},
+                                ],
+                                value='Family',
+                                placeholder="Select Taxonomy Level",
+                                style={'width': '100px', 'display': 'inline-block', 'margin-top': '4px'}
+                            ),
+                            dcc.Dropdown(
+                                id='visualization-selector',
+                                options=[
+                                    {'label': 'Taxonomy Framework', 'value': 'taxonomy_hierarchy'},
+                                    {'label': 'Taxonomy Interaction', 'value': 'basic'},
+                                    {'label': 'Bin Interaction', 'value': 'bin'},
+                                    {'label': 'Contig Interaction', 'value': 'contig'}
+                                ],
+                                value='taxonomy_hierarchy',
+                                style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                            ),
+                            dcc.Dropdown(
+                                id='annotation-selector',
+                                options=[],
+                                value=None,
+                                placeholder="Select an annotation",
+                                style={}
+                            ),
+                            dcc.Dropdown(
+                                id='bin-selector',
+                                options=[],
+                                value=None,
+                                placeholder="Select a bin",
+                                style={}
+                            ),
+                            dcc.Dropdown(
+                                id='contig-selector',
+                                options=[],
+                                value=None,
+                                placeholder="Select a contig",
+                                style={}
+                            )
+                        ]
                     ),
                     html.Button("Confirm Selection", id="confirm-btn", style={**common_text_style}),
                 ], 
@@ -1365,9 +1418,10 @@ def register_visualization_callbacks(app):
         
         # Create Annotation Table
         column_defs = [
-            {"headerName": "Index", "field": "index", "pinned": "left", "width": 120}
+            {"headerName": "Index", "field": "index", "pinned": "left", "width": 120, 
+             "sortable": True, "suppressMovable": True,"unSortIcon": True, "sortingOrder": [None]}
         ] + [
-            {"headerName": col, "field": col, "width": 120, "wrapHeaderText": True, "autoHeaderHeight": True} 
+            {"headerName": col, "field": col, "width": 120, "wrapHeaderText": True, "autoHeaderHeight": True, "suppressMovable": True} 
             for col in contact_matrix.columns
         ]
 
@@ -1392,7 +1446,7 @@ def register_visualization_callbacks(app):
         reset_clicks = (reset_clicks or 0) + 1
         
         return 1, row_data, column_defs, default_col_def, style_conditions, reset_clicks, 1
-    
+
     @app.callback(
         [Output('bin-info-table', 'rowData'),
          Output('bin-info-table', 'style'),
@@ -1445,7 +1499,7 @@ def register_visualization_callbacks(app):
                         {
                             "filter": selected_annotation,
                             "filterType": "text",
-                            "type": "contains",
+                            "type": "equals",
                         }
                     ]
                 }
@@ -2011,6 +2065,7 @@ def register_visualization_callbacks(app):
         [Output('download-btn', 'title'),
          Output('reset-btn', 'title'),
          Output('confirm-btn', 'title'),
+         Output('dropdowns', 'title'),
          Output('bar-chart-container', 'title'),
          Output('info-table-container', 'title'),
          Output('treemap-graph-container', 'title'),
@@ -2023,6 +2078,7 @@ def register_visualization_callbacks(app):
             return (hover_info['download-btn'], 
                     hover_info['reset-btn'], 
                     hover_info['confirm-btn'], 
+                    hover_info['dropdowns'],
                     hover_info['bar-chart-container'],
                     hover_info['info-table-container'], 
                     hover_info['treemap-graph-container'],
