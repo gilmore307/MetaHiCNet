@@ -954,6 +954,10 @@ hover_info = {
     'confirm-btn': 
         ("The Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly."),
         
+    "tooltip-toggle-container":
+        ("Check the box next to 'Enable Help Tooltip' to activate tooltips.  \n\n"
+         "Once enabled, hovering over buttons, charts, tables, or other interactive elements will display helpful instructions."),
+        
     'dropdowns':
         ("The Taxonomy Level Selector allows users to choose the taxonomic level they wish to focus on in the dataset. \n"
          "Users can select from various taxonomic levels, such as Domain, Phylum, Class, Order, Family, Genus, and Species. \n"
@@ -2065,6 +2069,7 @@ def register_visualization_callbacks(app):
         [Output('download-btn', 'title'),
          Output('reset-btn', 'title'),
          Output('confirm-btn', 'title'),
+         Output('tooltip-toggle-container', 'title'),
          Output('dropdowns', 'title'),
          Output('bar-chart-container', 'title'),
          Output('info-table-container', 'title'),
@@ -2078,6 +2083,7 @@ def register_visualization_callbacks(app):
             return (hover_info['download-btn'], 
                     hover_info['reset-btn'], 
                     hover_info['confirm-btn'], 
+                    hover_info['tooltip-toggle-container'],
                     hover_info['dropdowns'],
                     hover_info['bar-chart-container'],
                     hover_info['info-table-container'], 
@@ -2085,4 +2091,4 @@ def register_visualization_callbacks(app):
                     hover_info['cyto-graph-container'],
                     hover_info['contact-table-container'])
         else:
-            raise PreventUpdate
+            return ("", "", "", "", "", "", "", "", "", "")
