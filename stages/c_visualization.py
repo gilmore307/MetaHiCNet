@@ -603,9 +603,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
 
     cyto_elements = nx_to_cyto_elements(G, pos, invisible_edges=invisible_edges)
     cyto_style = {
-        'name': 'preset', 
-        'animate': True,
-        'animationDuration': 500,
+        'name': 'preset',
         'fit': False
     }
     
