@@ -223,10 +223,14 @@ def update_main_content(current_stage, selected_method):
     else:
         # Default content for other stages
         return [
-            html.H1("Meta Hi-C Visualization", className="my-4 text-center"),
+            html.H1("MetaHiCNet", className="main-title text-center my-4"),
+            html.H5(
+                "A Platform for Normalizing and Visualizing Microbial Hi-C Interaction Networks",
+                className="subtitle text-center text-muted",
+            ),
             
             dcc.Tabs(id='tabs-method', value=selected_method, children=[
-                dcc.Tab(label="Upload and Prepare Raw Hi-C Data (First-Time Users)", value='method1', id='tab-method1'),
+                dcc.Tab(label="Upload and prepare raw Hi-C interaction data (First-Time Users)", value='method1', id='tab-method1'),
                 dcc.Tab(label="Upload Unnormalized Data to Apply New Normalization Method", value='method2', id='tab-method2'),
                 dcc.Tab(label="Upload Normalized Data to Retrieve Visualization", value='method3', id='tab-method3')
             ]),

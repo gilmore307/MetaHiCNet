@@ -2,11 +2,9 @@ import os
 import io
 import numpy as np
 import base64
-import requests
 import py7zr
 import pandas as pd
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.sparse import coo_matrix, spdiags, isspmatrix_csr, isspmatrix_coo
 import statsmodels.api as sm
 from joblib import Parallel, delayed
@@ -63,83 +61,6 @@ def save_file_to_user_folder(contents, filename, user_folder, folder_name='outpu
         print(f"Failed to save file {filename}: {str(e)}")
 
     return file_path
-
-# a_preparation
-def query_plasmid_id(ids, fasta=False):
-    # variables
-    URL = 'https://ccb-microbe.cs.uni-saarland.de/plsdb/plasmids/api/'
-
-    # logger
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    formatter = logging.Formatter(
-        fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%y:%m:%d %H:%M:%S'
-    )
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-
-    # CPU cores
-    core = os.cpu_count()
-    max_workers = core * 4
-
-    def fetch_plasmid_data(plasmid_id, session):
-        """
-        Function to fetch data for a single plasmid ID using a session object.
-        """
-        PARAMS = {'plasmid_id': plasmid_id}
-        try:
-            response = session.get(url=URL + 'plasmid/', params=PARAMS)
-            response.raise_for_status()
-            d = response.json()
-            if 'found' in d:
-                d['found']['searched'] = plasmid_id
-                d['found']['label'] = 'found'
-                return d['found'], None
-            elif 'searched' in d:
-                d['label'] = 'notfound'
-                return None, d
-            else:
-                return None, None
-        except requests.exceptions.RequestException:
-            return None, None
-
-    if not isinstance(ids, list):
-        ids = ids.split()
-    
-    assert len(ids) > 0, "List of ids is empty."
-
-    found = []
-    notfound = []
-    fastas = []
-
-    # Use a session object for efficiency
-    with requests.Session() as session:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks to the executor
-            future_to_id = {executor.submit(fetch_plasmid_data, plasmid_id, session): plasmid_id for plasmid_id in ids}
-            
-            for future in as_completed(future_to_id):
-                try:
-                    result, not_found_result = future.result()
-                    if result:
-                        found.append(result)
-                        if fasta:
-                            fastas.append(result['searched'])
-                    elif not_found_result:
-                        notfound.append(not_found_result)
-                except Exception:
-                    pass  # Silence exceptions here
-
-    logger.info('Search is finished')
-    logger.info(f'{len(found)} of {len(ids)} ids were found')
-
-    # convert arrays to pd dataframe and merge results
-    df1 = pd.DataFrame(data=found)
-    df2 = pd.DataFrame(data=notfound)
-    df = pd.concat([df1, df2], ignore_index=True, sort=False)
-
-    return df
 
 def parse_contents(contents, filename):
     content_type, content_string = contents.split(',')
@@ -303,40 +224,6 @@ def process_data(contig_data, binning_data, taxonomy_data, contig_matrix):
             logger.error("contig_matrix is not a COO sparse matrix.")
             raise ValueError("contig_matrix must be a COO sparse matrix.")
 
-        # Query plasmid classification for any available plasmid IDs
-        logger.info("Querying plasmid IDs for classification...")
-        plasmid_ids = taxonomy_data['Plasmid ID'].dropna().unique().tolist()
-        plasmid_classification_df = query_plasmid_id(plasmid_ids)
-
-        # Ensure plasmid_classification_df has the expected columns
-        expected_columns = [
-            'NUCCORE_ACC', 
-            'TAXONOMY_superkingdom', 
-            'TAXONOMY_phylum', 
-            'TAXONOMY_class', 
-            'TAXONOMY_order', 
-            'TAXONOMY_family', 
-            'TAXONOMY_genus', 
-            'TAXONOMY_species'
-        ]
-
-        # Check if the returned dataframe contains all expected columns
-        if not all(col in plasmid_classification_df.columns for col in expected_columns):
-            logger.error("The plasmid classification data does not contain the expected columns.")
-            raise ValueError("The plasmid classification data does not contain the expected columns.")
-
-        # Rename columns to match internal structure
-        plasmid_classification_df.rename(columns={
-            'NUCCORE_ACC': 'Plasmid ID',
-            'TAXONOMY_superkingdom': 'Kingdom',
-            'TAXONOMY_phylum': 'Phylum',
-            'TAXONOMY_class': 'Class',
-            'TAXONOMY_order': 'Order',
-            'TAXONOMY_family': 'Family',
-            'TAXONOMY_genus': 'Genus',
-            'TAXONOMY_species': 'Species'
-        }, inplace=True)
-
         # Define prefixes for taxonomy tiers
         prefixes = {
             'Domain': 'd_',
@@ -349,25 +236,7 @@ def process_data(contig_data, binning_data, taxonomy_data, contig_matrix):
             'Species': 's_'
         }
 
-        # Replace certain text in the classification dataframe
-        plasmid_classification_df = plasmid_classification_df.replace(r"\s*\(.*\)", "", regex=True)
-        plasmid_classification_df['Domain'] = plasmid_classification_df['Kingdom']
-
-        # Merge plasmid classification with taxonomy data
         taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
-        taxonomy_data = taxonomy_data.merge(
-            plasmid_classification_df[['Plasmid ID'] + taxonomy_columns],
-            on='Plasmid ID',
-            how='left',
-            suffixes=('', '_new')
-        )
-
-        # Fill taxonomy columns with new classification where available
-        for column in taxonomy_columns:
-            taxonomy_data[column] = taxonomy_data[column + '_new'].combine_first(taxonomy_data[column])
-
-        # Drop unnecessary columns after merge
-        taxonomy_data = taxonomy_data.drop(columns=['Plasmid ID'] + [col + '_new' for col in taxonomy_columns])
 
         # Merge contig, binning, and taxonomy data
         combined_data = pd.merge(contig_data, binning_data, on="Contig", how="left")
