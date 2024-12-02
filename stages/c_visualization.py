@@ -47,37 +47,50 @@ def generate_gradient_values(input_array, range_A, range_B):
 # Function to convert NetworkX graph to Cytoscape elements with sizes and colors
 def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
     elements = []
+    nodes_to_remove = set()
+
+    # Identify nodes to remove
     for node in G.nodes:
-        elements.append({
-            'data': {
-                'id': node,
-                'label': node,  
-                'label_size': 20 if G.nodes[node].get('parent') is None else 10,
-                'size': G.nodes[node].get('size', 1),
-                'color': G.nodes[node].get('color', '#000'),
-                #'border_color': G.nodes[node].get('border_color', None), 
-                #'border_width': G.nodes[node].get('border_width', None),
-                'parent': G.nodes[node].get('parent', None), 
-                'visible': 'none' if node in invisible_nodes else 'element' 
-            },
-            'position': {
-                'x': pos[node][0] * 100,
-                'y': pos[node][1] * 100
-            },
-            'style': {
-                'text-margin-y': -5  # Moves the label higher (negative values move up)
-            }
-        })
+        if "Unclassified" in node or "Unclassified" in str(G.nodes[node].get('parent', '')):
+            nodes_to_remove.add(node)
+
+    # Filter out nodes and add visible ones to elements
+    for node in G.nodes:
+        if node not in nodes_to_remove:
+            elements.append({
+                'data': {
+                    'id': node,
+                    'label': node,
+                    'label_size': 20 if G.nodes[node].get('parent') is None else 15,
+                    'size': G.nodes[node].get('size', 1),
+                    'color': G.nodes[node].get('color', '#000'),
+                    'parent': G.nodes[node].get('parent', None),
+                    'visible': 'none' if node in invisible_nodes else 'element'
+                },
+                'position': {
+                    'x': pos[node][0] * 100,
+                    'y': pos[node][1] * 100
+                },
+                'style': {
+                    'text-margin-y': -5,
+                    'font-style': 'italic' if G.nodes[node].get('parent') is None else 'normal'
+                }
+            })
+
+    # Filter out edges involving nodes to remove
     for edge in G.edges(data=True):
-        elements.append({
-            'data': {
-                'source': edge[0],
-                'target': edge[1],
-                'width': edge[2].get('width', 1),
-                'color': edge[2].get('color', '#ccc'),
-                'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element'
-            }
-        })
+        if edge[0] not in nodes_to_remove and edge[1] not in nodes_to_remove:
+            elements.append({
+                'data': {
+                    'source': edge[0],
+                    'target': edge[1],
+                    'width': edge[2].get('width', 1),
+                    'color': edge[2].get('color', '#ccc'),
+                    'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element',
+                    'selectable': False
+                }
+            })
+
     return elements
 
 def add_selection_styles(selected_nodes=None, selected_edges=None):
@@ -111,55 +124,74 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
 
 def create_bar_chart(data_dict):
     traces = []
+    buttons = []
 
     for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
         if data_frame.empty or 'value' not in data_frame.columns:
             logger.warning(f"No data or 'value' column missing for {trace_name}, skipping trace.")
-            continue  # Skip if no 'value' column or data is empty
-            
+            continue
+
         bar_data = data_frame.sort_values(by='value', ascending=False)
         bar_colors = bar_data['color']
+        hover_text = bar_data.get('hover', None)
 
-        if 'hover' in bar_data.columns:
-            hover_text = bar_data['hover']
-            bar_trace = go.Bar(
-                x=bar_data['name'], 
-                y=bar_data['value'], 
-                name=trace_name, 
-                marker_color=bar_colors,
-                visible=True if idx == 0 else 'legendonly',
-                hovertext=hover_text,
-                hoverinfo='text'
-            )
-        else:
-            bar_trace = go.Bar(
-                x=bar_data['name'], 
-                y=bar_data['value'], 
-                name=trace_name, 
-                marker_color=bar_colors,
-                visible=True if idx == 0 else 'legendonly'
-            )
-
+        bar_trace = go.Bar(
+            x=bar_data['name'],
+            y=bar_data['value'],
+            name=trace_name,
+            marker_color=bar_colors,
+            visible=(idx == 0),  # Default visibility
+            hovertext=hover_text if hover_text is not None else None,
+            hoverinfo='text' if hover_text is not None else None
+        )
         traces.append(bar_trace)
 
+        # Configure dropdown button
+        buttons.append(
+            dict(
+                label=trace_name,
+                method="update",
+                args=[
+                    {"visible": [i == idx for i in range(len(data_dict))]},
+                    {"yaxis.autorange": True}
+                ]
+            )
+        )
+
     if not traces:
-        logger.warning("No valid traces created, returning empty histogram.")
-        return go.Figure()  # Return an empty figure if no valid traces are created
-    
+        logger.warning("No valid traces created, returning empty figure.")
+        return go.Figure()
+
     bar_layout = go.Layout(
         xaxis=dict(
             title="",
             tickangle=-45,
             tickfont=dict(size=12),
-            rangeslider=dict(visible=True, thickness=0.05)
+            rangeslider=dict(visible=True, thickness=0.05),
         ),
-        yaxis=dict(title="Value", tickfont=dict(size=15)),
+        yaxis=dict(
+            title="Value",
+            tickfont=dict(size=15),
+            autorange=True,
+        ),
         margin=dict(t=0, b=0, l=0, r=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="center", x=0.5)
+        legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="center", x=0.5),
+        updatemenus=[
+            dict(
+                type="dropdown",
+                direction="down",
+                buttons=buttons,
+                showactive=True,
+                x=0.4,
+                xanchor="center",
+                y=1,
+                yanchor="bottom",
+                font=dict(size=16),
+            )
+        ]
     )
 
-    bar_fig = go.Figure(data=traces, layout=bar_layout)
-    return bar_fig
+    return go.Figure(data=traces, layout=bar_layout)
 
 # Function to add opacity to a hex color
 def add_opacity_to_color(color, opacity):
@@ -242,7 +274,7 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     styles.append({
         "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_p')",
         "style": {
-            "backgroundColor": add_opacity_to_color('#70AD47', opacity),  # Plasmid color
+            "backgroundColor": add_opacity_to_color('#D5ED9F', opacity),  # Plasmid color
             "color": "black"
         }
     })
@@ -250,7 +282,7 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     styles.append({
         "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_v')",
         "style": {
-            "backgroundColor": add_opacity_to_color('#E83D20', opacity),  # Phage color
+            "backgroundColor": add_opacity_to_color('#AE445A', opacity),  # Phage color
             "color": "black"
         }
     })
@@ -258,7 +290,7 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     styles.append({
         "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_c'))",  # Default case for chromosome
         "style": {
-            "backgroundColor": add_opacity_to_color('#4472C4', opacity),  # Chromosome color
+            "backgroundColor": add_opacity_to_color('#81BFDA', opacity),  # Chromosome color
             "color": "black"
         }
     })
@@ -489,25 +521,37 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
 
     fig.update_layout(
         coloraxis_showscale=False,
-        font_size=20,
+        font=dict(family="Arial", size=20, style = "italic"),
         autosize=True,
         margin=dict(t=30, b=0, l=0, r=0)
     )
-
-    total_bin_coverage = bin_information.groupby('Annotation')['Contig coverage'].sum().reindex(unique_annotations)
-    inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
-    total_bin_coverage_sum = total_bin_coverage.values
-
-    node_colors = {}
-    for annotation in total_bin_coverage.index:
-        bin_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Contig category'].values[0]
-        color = type_colors.get(bin_type, default_color)
-        node_colors[annotation] = color
+    
+    classification_data = []
+    for level in level_mapping.keys():
+        # Skip levels not present in bin_information
+        if level not in bin_information.columns:
+            continue
+    
+        total_count = len(bin_information[level])
+        unclassified_count = bin_information[level].str.contains("Unclassified", na=False).sum()
+        classified_count = total_count - unclassified_count
+    
+        # Calculate ratio of classified annotations
+        classified_ratio = (classified_count / total_count) * 100 if total_count > 0 else 0
+    
+        # Append data
+        classification_data.append({
+            "name": level,
+            "value": classified_ratio,
+            "color": "gray"
+        })
+    
+    # Convert to a DataFrame
+    classification_data_df = pd.DataFrame(classification_data)
 
     data_dict = {
-        'Across Taxonomy Hi-C Contacts': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-        'Taxonomy Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
-        }
+        'Classified ratio across taxonomy levels': classification_data_df
+    }
 
     bar_fig = create_bar_chart(data_dict)
 
@@ -556,16 +600,16 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
 
 
     if edge_weights:
-        normalized_weights = generate_gradient_values(np.array(edge_weights), 1, 3)
+        normalized_weights = generate_gradient_values(np.array(edge_weights), 1, 2)
         for (i, (u, v)) in enumerate(G.edges()):
             G[u][v]['weight'] = normalized_weights[i]
     
 
     # Initial node positions using a force-directed layout with increased dispersion
     if selected_node:
-        pos = nx.spring_layout(G, dim=2, k=1, iterations=200, weight='weight', scale=10.0, fixed=[selected_node], pos={selected_node: (0, 0)})
+        pos = nx.spring_layout(G, dim=2, k=2, iterations=200, weight='weight', scale=10.0, fixed=[selected_node], pos={selected_node: (0, 0)})
     else:
-        pos = nx.spring_layout(G, dim=2, k=1, iterations=200, weight='weight', scale=10.0)
+        pos = nx.spring_layout(G, dim=2, k=2, iterations=200, weight='weight', scale=10.0)
 
 
     cyto_elements = nx_to_cyto_elements(G, pos, invisible_edges=invisible_edges)
@@ -576,11 +620,22 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     
     if not selected_node:
         inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
-        total_bin_coverage_sum = total_bin_coverage.values
+        total_bin_coverage_sum = bin_information.groupby('Annotation').apply(
+            lambda group: group['Contig coverage'].mul(group['Contig length']).sum() /
+                          group['The number of restriction sites'].sum()
+        ).reindex(unique_annotations).fillna(0).values
     
         data_dict = {
-            'Across Taxonomy Hi-C Contacts': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-            'Taxonomy Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
+            'Across Taxonomy Hi-C Contacts': 
+                pd.DataFrame({'name': unique_annotations, 
+                              'value': inter_annotation_contact_sum, 
+                              'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]
+                              }).query('value != 0'),
+            'The coverage of different taxa': 
+                pd.DataFrame({'name': unique_annotations, 
+                              'value': total_bin_coverage_sum, 
+                              'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]
+                              }).query('value != 0')
         }
     
         bar_fig = create_bar_chart(data_dict)
@@ -613,9 +668,9 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     # Use a categorical color scale
     color_scale_mapping = {
-        'virus': colors.sequential.Reds,
-        'plasmid': colors.sequential.Greens,
-        'chromosome': colors.sequential.Blues
+        'virus': colors.sequential.Redor,
+        'plasmid': colors.sequential.YlGn,
+        'chromosome': colors.sequential.BuPu
     }
 
     # Rank annotation based on the number of bins with contact to the selected bin
@@ -648,7 +703,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
         if contact_value > 0:
             contact_values.append(contact_value)
     
-    scaled_weights = generate_gradient_values(contact_values, 1, 3) if contact_values else [1] * len(contacts_annotation.unique())
+    scaled_weights = generate_gradient_values(contact_values, 1, 2) if contact_values else [1] * len(contacts_annotation.unique())
     for i, annotation in enumerate(contacts_annotation.unique()):
         annotation_bins = bin_information[bin_information['Annotation'] == annotation].index
         annotation_bins = annotation_bins[annotation_bins < bin_dense_matrix.shape[1]]  # Filter indices
@@ -659,19 +714,21 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
 
     fixed_positions = {selected_annotation: (0, 0)}
-    pos = nx.spring_layout(G, k=1, iterations=200, scale=10.0, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
+    pos = nx.spring_layout(G, iterations=200, k=1, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
 
     # Remove the edges after positioning
     G.remove_edges_from(list(G.edges()))
 
     # Handle selected_bin node
-    G.add_node(selected_bin, size=10, color='black', border_color='black', border_width=2, parent=selected_annotation)
+    selected_bin_type = bin_information.loc[selected_bin_index, 'Contig category']
+    selected_bin_color = type_colors.get(selected_bin_type, default_color)
+    G.add_node(selected_bin, size=15, color=selected_bin_color, parent=selected_annotation)
     pos[selected_bin] = (0, 0)
 
     # Add bin nodes to the graph
     for annotation in contacts_annotation.unique():
         annotation_bins = contacts_bins[contacts_annotation == annotation]
-        bin_positions = arrange_nodes(annotation_bins, [], distance=10, center_position=pos[annotation], selected_element=None)
+        bin_positions = arrange_nodes(annotation_bins, [], distance=25, center_position=pos[annotation], selected_element=None)
         for bin, (x, y) in bin_positions.items():
             G.add_node(bin, 
                        size=10, 
@@ -707,7 +764,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     data_dict = {
         'Across Bin Hi-C Contacts': bin_data,
-        'Across Taxonomy Hi-C Contact': annotation_data
+        'Across Taxa Hi-C Contact': annotation_data
     }
 
     bar_fig = create_bar_chart(data_dict)
@@ -736,9 +793,9 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     # Use a categorical color scale
     color_scale_mapping = {
-        'virus': colors.sequential.Reds,
-        'plasmid': colors.sequential.Greens,
-        'chromosome': colors.sequential.Blues
+        'virus': colors.sequential.Redor,
+        'plasmid': colors.sequential.YlGn,
+        'chromosome': colors.sequential.BuPu
     }
 
     # Rank annotation based on the number of contigs with contact to the selected contig
@@ -771,7 +828,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
         if contact_value > 0:
             contact_values.append(contact_value)
 
-    scaled_weights = generate_gradient_values(contact_values, 1, 3) if contact_values else [1] * len(contacts_annotation.unique())
+    scaled_weights = generate_gradient_values(contact_values, 1, 2) if contact_values else [1] * len(contacts_annotation.unique())
     for i, annotation in enumerate(contacts_annotation.unique()):
         annotation_contigs = contig_information[contig_information['Annotation'] == annotation].index
         annotation_contigs = annotation_contigs[annotation_contigs < contig_dense_matrix.shape[1]]  # Filter indices
@@ -781,22 +838,24 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
             G.add_edge(selected_annotation, annotation, weight=scaled_weights[i])
 
     fixed_positions = {selected_annotation: (0, 0)}
-    pos = nx.spring_layout(G, k=1, iterations=200, scale=10.0, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
+    pos = nx.spring_layout(G, iterations=200, k=1, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
 
     # Remove the edges after positioning
     G.remove_edges_from(list(G.edges()))
 
     # Handle selected_contig node
-    G.add_node(selected_contig, size=5, color='white', border_color='black', border_width=2, parent=selected_annotation)
+    selected_contig_type = contig_information.loc[selected_contig_index, 'Contig category']
+    selected_contig_color = type_colors.get(selected_contig_type, default_color)
+    G.add_node(selected_contig, size=15, color=selected_contig_color, parent=selected_annotation)
     pos[selected_contig] = (0, 0)
 
     # Add contig nodes to the graph
     for annotation in contacts_annotation.unique():
         annotation_contigs = contacts_contigs[contacts_annotation == annotation]
-        contig_positions = arrange_nodes(annotation_contigs, [], distance=10, center_position=pos[annotation], selected_element=None)
+        contig_positions = arrange_nodes(annotation_contigs, [], distance=25, center_position=pos[annotation], selected_element=None)
         for contig, (x, y) in contig_positions.items():
             G.add_node(contig, 
-                       size=3, 
+                       size=10, 
                        color=G.nodes[annotation]['border_color'],  # Use the color from the annotation
                        parent=annotation)
             G.add_edge(selected_contig, contig)
@@ -830,7 +889,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     data_dict = {
         'Across Contig Hi-C Contacts': contig_data,
-        'Across Taxonomy Hi-C Contact': annotation_data
+        'Across Taxa Hi-C Contact': annotation_data
     }
 
     bar_fig = create_bar_chart(data_dict)
@@ -872,9 +931,9 @@ def prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy
 logger = logging.getLogger("app_logger")
  
 type_colors = {
-    'chromosome': '#4472C4',
-    'virus': '#E83D20',
-    'plasmid': '#70AD47'
+    'chromosome': '#81BFDA',
+    'virus': '#AE445A',
+    'plasmid': '#D5ED9F'
 }
 default_color = '#808080' 
 
@@ -1000,20 +1059,20 @@ def create_visualization_layout():
         {
             "headerName": "Index",
             "children": [
-                {"headerName": "Bin index", "field": "Bin index", "pinned": 'left', "width": 120}
+                {"headerName": "Index", "field": "Bin index", "pinned": 'left', "width": 120}
             ]
         },
         {
             "headerName": "Taxonomy",
             "children": [   
-                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
                 {"headerName": "Type", "field": "Type", "hide": True}
             ]
         },
@@ -1032,20 +1091,20 @@ def create_visualization_layout():
         {
             "headerName": "Index",
             "children": [
-                {"headerName": "Contig index", "field": "Contig index", "pinned": 'left', "width": 120}
+                {"headerName": "Index", "field": "Contig index", "pinned": 'left', "width": 120}
             ]
         },
         {
             "headerName": "Taxonomy",
             "children": [   
-                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
+                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
                 {"headerName": "Type", "field": "Type", "hide": True}
             ]
         },
@@ -1110,8 +1169,8 @@ def create_visualization_layout():
                                 options=[
                                     {'label': 'Taxonomic Framework', 'value': 'taxonomy_hierarchy'},
                                     {'label': 'Cross-Taxa Hi-C Interaction', 'value': 'basic'},
-                                    {'label': 'Bin Interaction', 'value': 'bin'},
-                                    {'label': 'Contig Interaction', 'value': 'contig'}
+                                    {'label': 'Cross-Bin Hi-C Interactions', 'value': 'bin'},
+                                    {'label': 'Cross-Contig Hi-C Interactions', 'value': 'contig'}
                                 ],
                                 value='taxonomy_hierarchy',
                                 style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
@@ -1205,7 +1264,7 @@ def create_visualization_layout():
                                         children=[
                                             dcc.Checklist(
                                                 id='visibility-filter',
-                                                options=[{'label': '  Only show elements in the diagram', 'value': 'filter'}],
+                                                options=[{'label': '  Only show elements present in the diagram', 'value': 'filter'}],
                                                 value=['filter'],
                                                 style={'display': 'inline-block', 'width': '25vw'}
                                             ),
@@ -1449,8 +1508,7 @@ def register_visualization_callbacks(app):
         [State('cyto-graph', 'elements'),
          State('taxonomy-level-selector', 'value'),
          State('user-folder', 'data'),
-         State('data-loaded', 'data')],
-         prevent_initial_call=True
+         State('data-loaded', 'data')]
     )
     def display_info_table(reset_clicks, confirm_clicks, selected_tab, selected_annotation, filter_value, cyto_elements, taxonomy_level, user_folder, data_loaded):
         if not data_loaded:
@@ -1468,60 +1526,14 @@ def register_visualization_callbacks(app):
         
         # Apply filtering logic for the selected table and annotation
         def apply_filter_logic(row_data, dense_matrix):
-            if triggered_id == 'reset-btn':  
-                return {}, row_data
-            
-            filter_model = {}
-            # Set the default visibility to 1 for all rows initially
-            for row in row_data:
-                row['Visibility'] = 1
-    
-            # Apply annotation filter based on the selected annotation
-            if selected_annotation:
-                filter_model[taxonomy_level] = {
-                    "filterType": "text",
-                    "operator": "OR",
-                    "conditions": [
-                        {
-                            "filter": selected_annotation,
-                            "filterType": "text",
-                            "type": "equals",
-                        }
-                    ]
-                }
-                for row in row_data:
-                    if row[taxonomy_level] != selected_annotation:
-                        row['Visibility'] = 2
-            else:
-                filter_model = {}
-    
-            # Set visibility based on the current visualization mode
-            if selected_tab == 'bin':
-                if current_visualization_mode['selected_bin']:
-                    selected_bin_index = bin_information[bin_information['Bin index'] == current_visualization_mode['selected_bin']].index[0]
-            
-                    connected_bins = set()
-                    for j in range(dense_matrix.shape[0]):
-                        if dense_matrix[selected_bin_index, j] != 0:
-                            connected_bins.add(bin_information.at[j, 'Bin index'])
-            
-                    for row in row_data:
-                        if row['Bin index'] not in connected_bins and row['Bin index'] != current_visualization_mode['selected_bin']:
-                            row['Visibility'] = 0
-            elif selected_tab == 'contig':
-                if current_visualization_mode['selected_contig']:
-                    selected_contig_index = contig_information[contig_information['Contig index'] == current_visualization_mode['selected_contig']].index[0]
-            
-                    connected_contigs = set()
-                    for j in range(dense_matrix.shape[0]):
-                        if dense_matrix[selected_contig_index, j] != 0:
-                            connected_contigs.add(contig_information.at[j, 'Contig index'])
-            
-                    for row in row_data:
-                        if row['Contig index'] not in connected_contigs and row['Contig index'] != current_visualization_mode['selected_contig']:
-                            row['Visibility'] = 0
-                        
+            # Filter out rows containing 'Unclassified' in the taxonomy level
+            row_data = [
+                row for row in row_data
+                if 'Unclassified' not in row[taxonomy_level]
+            ]
+
             # Apply visibility filter if checkbox is selected
+            filter_model = {}
             if 'filter' in filter_value:
                 filter_model['Visibility'] = {
                     "filterType": "number",
@@ -1534,6 +1546,60 @@ def register_visualization_callbacks(app):
                         }
                     ]
                 }
+            
+            if triggered_id == 'reset-btn': 
+                return filter_model, row_data
+            
+            else:
+                # Set the default visibility to 1 for all rows initially
+                for row in row_data:
+                    row['Visibility'] = 1
+        
+                # Apply annotation filter based on the selected annotation
+                if selected_annotation:
+                    filter_model[taxonomy_level] = {
+                        "filterType": "text",
+                        "operator": "OR",
+                        "conditions": [
+                            {
+                                "filter": selected_annotation,
+                                "filterType": "text",
+                                "type": "equals",
+                            }
+                        ]
+                    }
+                    for row in row_data:
+                        if row[taxonomy_level] != selected_annotation:
+                            row['Visibility'] = 2
+                else:
+                    filter_model = {}
+        
+                # Set visibility based on the current visualization mode
+                if selected_tab == 'bin':
+                    if current_visualization_mode['selected_bin']:
+                        selected_bin_index = bin_information[bin_information['Bin index'] == current_visualization_mode['selected_bin']].index[0]
+                
+                        connected_bins = set()
+                        for j in range(dense_matrix.shape[0]):
+                            if dense_matrix[selected_bin_index, j] != 0:
+                                connected_bins.add(bin_information.at[j, 'Bin index'])
+                
+                        for row in row_data:
+                            if row['Bin index'] not in connected_bins and row['Bin index'] != current_visualization_mode['selected_bin']:
+                                row['Visibility'] = 0
+                elif selected_tab == 'contig':
+                    if current_visualization_mode['selected_contig']:
+                        selected_contig_index = contig_information[contig_information['Contig index'] == current_visualization_mode['selected_contig']].index[0]
+                
+                        connected_contigs = set()
+                        for j in range(dense_matrix.shape[0]):
+                            if dense_matrix[selected_contig_index, j] != 0:
+                                connected_contigs.add(contig_information.at[j, 'Contig index'])
+                
+                        for row in row_data:
+                            if row['Contig index'] not in connected_contigs and row['Contig index'] != current_visualization_mode['selected_contig']:
+                                row['Visibility'] = 0
+                        
             return filter_model, row_data
     
         # Update based on the selected tab and apply filters
@@ -1646,7 +1712,6 @@ def register_visualization_callbacks(app):
         if not data_loaded:
             raise PreventUpdate
             
-        
         ctx = callback_context
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
@@ -1659,19 +1724,13 @@ def register_visualization_callbacks(app):
     
         # Reset selections if reset button is clicked
         if triggered_id == 'reset-btn':
-            if reset_clicks == 1:
-                visualization_type = 'taxonomy_hierarchy'
-                selected_annotation = None
-                selected_bin = None
-                selected_contig = None
-                tab_value = 'bin'
-            else:
                 visualization_type = 'basic'
                 selected_annotation = None
                 selected_bin = None
                 selected_contig = None
                 tab_value = 'bin'
-                
+                taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
         else:
             bin_information = load_from_redis(f'{user_folder}:bin-information')
             contig_information = load_from_redis(f'{user_folder}:contig-information')
@@ -1681,12 +1740,7 @@ def register_visualization_callbacks(app):
                 triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_selected_rows, 
                 taxonomy_level, current_tab, bin_information, contig_information, contact_matrix
             )
-            
-            if triggered_id == 'table-tabs':
-                visualization_type = current_tab          
-            elif triggered_id == 'contact-table':
-                visualization_type = 'basic'
-                    
+
             # Update styles, tab, and visualization type based on selections
             if selected_bin or visualization_type == 'bin':
                 visualization_type = 'bin'
@@ -1699,10 +1753,15 @@ def register_visualization_callbacks(app):
                 taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 contig_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 tab_value = 'contig'  # Switch to contig tab
+                
             elif selected_annotation or visualization_type == 'basic':
                 visualization_type = 'basic'
                 taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+
+            else:
+                visualization_type = 'taxonomy_hierarchy'
+
 
         return (visualization_type, taxonomy_selector_style, selected_annotation, annotation_selector_style, 
                 selected_bin, bin_selector_style, selected_contig, contig_selector_style, tab_value, 1)
@@ -1956,7 +2015,7 @@ def register_visualization_callbacks(app):
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
         
         return cyto_elements, stylesheet, hover_info, cyto_style, 1
-    
+
     @app.callback(
         Output('log-box-visualization', 'value'),
         Input('logger-button-visualization', 'n_clicks'),
