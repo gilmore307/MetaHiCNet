@@ -156,23 +156,23 @@ def adjust_taxonomy(row):
 
     taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
     if all(pd.isna(row[col]) for col in taxonomy_columns):
-        row['Contig category'] = 'unmapped'
+        row['Category'] = 'unmapped'
         
-    if row['Contig category'] == 'virus':
+    if row['Category'] == 'virus':
         for tier in taxonomy_columns:
             if not pd.isna(row[tier]):
                    row[tier] = row[tier] + '_v'
         row['Contig index'] = row['Contig index'] + "_v"
         row['Bin index'] = row['Bin index'] + "_v"
 
-    elif row['Contig category'] == 'plasmid':
+    elif row['Category'] == 'plasmid':
         for tier in taxonomy_columns:
             if not pd.isna(row[tier]):
                 row[tier] = row[tier] + '_p'
         row['Contig index'] = row['Contig index'] + "_p"
         row['Bin index'] = row['Bin index'] + "_p"
     
-    elif row['Contig category'] == 'chromosome':
+    elif row['Category'] == 'chromosome':
         for tier in taxonomy_columns:
             if not pd.isna(row[tier]):
                 row[tier] = row[tier] + '_c'
@@ -186,7 +186,7 @@ def adjust_taxonomy(row):
         if not pd.isna(row[tier]):
             row[tier] = f"{prefix}{row[tier]}"
         else:
-            row[tier] = f"{prefix} Unclassified {row['Contig category']}"
+            row[tier] = f"{prefix} Unclassified {row['Category']}"
     return row
 
 def process_data(contig_data, binning_data, taxonomy_data, contig_matrix):
@@ -275,9 +275,9 @@ def create_upload_layout_method1():
                 'raw-binning-info', 
                 'Upload Binning and Category Information File (.csv)', 
                 'assets/examples/binning_information.csv',
-                "This file includes the following columns: 'Contig index', 'Bin index', and 'Contig category'.  \n\n"
+                "This file includes the following columns: 'Contig index', 'Bin index', and 'Category'.  \n\n"
                 "'Bin index' is an optional column; if left blank (contigs are not binned), the value from the 'Contig index' column will be used as the bin index.  \n\n"
-                "Please indicate the category of bin in the 'Contig category' column if it is a 'virus' or 'plasmid'.  \n"
+                "Please indicate the category of bin in the 'Category' column if it is a 'virus' or 'plasmid'.  \n"
                 "Feel free to leave the colunn blank if it is 'chromosome' or 'unmapped' (cannot be assigned to any known reference or taxonomy)."
             )),
             dbc.Col(create_upload_component(
@@ -287,6 +287,7 @@ def create_upload_layout_method1():
                 "This file includes the following columns: 'Bin index', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', and 'Customized annotation'.  \n\n"
                 "The taxonomy columns ('Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', and 'Customized annotation') are optional; leave them blank if not applicable.  \n\n"
                 "If the 'Customized annotation' column contains a value, it will be used to fill all blank columns across all taxonomy levels.  \n"
+                "The 'Customized annotation' should only contain letters (a-z, A-Z), numbers (0-9), or the underscore (_) character.  \n"
                 "This feature can be used to annotate bins that cannot be classified within the standard taxonomy system (plamid or virus).  \n\n"
                 "If all the taxonomy columns are blank, the bin will be marked as 'unmapped'."
             ))
@@ -562,10 +563,10 @@ def register_preparation_callbacks(app):
         
         try:
             binning_data = parse_contents(binning_info, binning_info_name)
-            validate_csv(binning_data, ['Contig index'], ['Bin index', 'Contig category'])
+            validate_csv(binning_data, ['Contig index'], ['Bin index', 'Category'])
             binning_data['Bin index'] = binning_data.apply(
                 lambda row: row['Contig index'] if pd.isna(row['Bin index']) else row['Bin index'], axis=1)
-            binning_data['Contig category'] = binning_data['Contig category'].fillna('chromosome')
+            binning_data['Category'] = binning_data['Category'].fillna('chromosome')
         except Exception as e:
             logger.error(f"Validation failed for Bining and Category Information file: {e}")
             return False, ""

@@ -274,6 +274,7 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     styles.append({
         "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_p')",
         "style": {
+            "fontStyle": "italic",
             "backgroundColor": add_opacity_to_color('#D5ED9F', opacity),  # Plasmid color
             "color": "black"
         }
@@ -282,14 +283,16 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     styles.append({
         "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_v')",
         "style": {
+            "fontStyle": "italic",
             "backgroundColor": add_opacity_to_color('#AE445A', opacity),  # Phage color
             "color": "black"
         }
     })
     
     styles.append({
-        "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_c'))",  # Default case for chromosome
+        "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_c')",  # Default case for chromosome
         "style": {
+            "fontStyle": "italic",
             "backgroundColor": add_opacity_to_color('#81BFDA', opacity),  # Chromosome color
             "color": "black"
         }
@@ -350,9 +353,10 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
     for type_key, color in type_colors.items():
         annotation_color_with_opacity = add_opacity_to_color(color, 0.6)
         annotation_style = {
-            "condition": f"params.colDef.field == '{taxonomy_level}' && params.data.Type == '{type_key}'",
+            "condition": f"params.colDef.field == '{taxonomy_level}' && params.data.Category == '{type_key}'",
             "style": {
                 'backgroundColor': annotation_color_with_opacity,
+                "fontStyle": "italic",
                 'color': 'black'
             }
         }
@@ -364,7 +368,7 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
     # Function to compute color, create styles, and append them to the styles list
     def style_id_column(item, item_type, styles):
         # Combine logic to calculate colors
-        type_color = type_colors.get(item_type, default_color)  # Fallback to white if annotation not found        
+        type_color = type_colors.get(item_type, default_color)  # Fallback to white if annotation not found 
         item_color = id_colors.get(item, type_color)  # Fallback to annotation_color if item not found
         item_color_with_opacity = add_opacity_to_color(item_color, 0.6)        
         # Create and append style for the ID column
@@ -380,7 +384,18 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
     # Iterate over rows and compute styles
     for _, row in information_data.iterrows():
         if row['Annotation'] in unique_annotations:
-            style_id_column(row[id_column],  row['Contig category'], styles)
+            style_id_column(row[id_column],  row['Category'], styles)
+            
+    # Add styles for italic taxonomy columns
+    taxonomy_columns = ['Community', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+    for col in taxonomy_columns:
+        italic_style = {
+            "condition": f"params.colDef.field == '{col}'",
+            "style": {
+                "fontStyle": "italic"
+            }
+        }
+        styles.append(italic_style)
 
     return styles
 
@@ -478,9 +493,9 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
                     "parent": parent,
                     "level": level_num,
                     "level_name": level.capitalize(),
-                    "type": row['Contig category'],
+                    "type": row['Category'],
                     "total coverage": row['Contig coverage'],
-                    "border_color": type_colors.get(row['Contig category'], "gray"),
+                    "border_color": type_colors.get(row['Category'], "gray"),
                     "bin": [row['Bin index']]
                 })
                 existing_annotations.add(annotation)
@@ -580,7 +595,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     node_colors = {}
     for annotation in total_bin_coverage.index:
         bin_type = bin_information.loc[
-            bin_information['Annotation'] == annotation, 'Contig category'
+            bin_information['Annotation'] == annotation, 'Category'
         ].values[0]
         color = type_colors.get(bin_type, default_color)
         node_colors[annotation] = color
@@ -680,7 +695,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
-        annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Contig category'].values[0]
+        annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])  
         annotation_rank = annotation_contact_ranks.get(annotation, int(max_rank/2))
         gradient_color = color_scale[int((annotation_rank / max_rank) * (len(color_scale) - 1))]
@@ -688,7 +703,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     # Ensure selected_annotation is added
     if selected_annotation not in G.nodes:
-        annotation_type = bin_information.loc[bin_information['Annotation'] == selected_annotation, 'Contig category'].values[0]
+        annotation_type = bin_information.loc[bin_information['Annotation'] == selected_annotation, 'Category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])
         gradient_color = color_scale[len(color_scale) - 1]
         G.add_node(selected_annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
@@ -720,7 +735,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
     G.remove_edges_from(list(G.edges()))
 
     # Handle selected_bin node
-    selected_bin_type = bin_information.loc[selected_bin_index, 'Contig category']
+    selected_bin_type = bin_information.loc[selected_bin_index, 'Category']
     selected_bin_color = type_colors.get(selected_bin_type, default_color)
     G.add_node(selected_bin, size=15, color=selected_bin_color, parent=selected_annotation)
     pos[selected_bin] = (0, 0)
@@ -805,7 +820,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
-        annotation_type = contig_information.loc[contig_information['Annotation'] == annotation, 'Contig category'].values[0]
+        annotation_type = contig_information.loc[contig_information['Annotation'] == annotation, 'Category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])
         annotation_rank = annotation_contact_ranks.get(annotation, int(max_rank/2))
         gradient_color = color_scale[int((annotation_rank / max_rank) * (len(color_scale) - 1))]
@@ -813,7 +828,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     # Ensure selected_annotation is added
     if selected_annotation not in G.nodes:
-        annotation_type = contig_information.loc[contig_information['Annotation'] == selected_annotation, 'Contig category'].values[0]
+        annotation_type = contig_information.loc[contig_information['Annotation'] == selected_annotation, 'Category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])
         gradient_color = color_scale[len(color_scale) - 1]
         G.add_node(selected_annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
@@ -844,7 +859,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
     G.remove_edges_from(list(G.edges()))
 
     # Handle selected_contig node
-    selected_contig_type = contig_information.loc[selected_contig_index, 'Contig category']
+    selected_contig_type = contig_information.loc[selected_contig_index, 'Category']
     selected_contig_color = type_colors.get(selected_contig_type, default_color)
     G.add_node(selected_contig, size=15, color=selected_contig_color, parent=selected_annotation)
     pos[selected_contig] = (0, 0)
@@ -1065,15 +1080,15 @@ def create_visualization_layout():
         {
             "headerName": "Taxonomy",
             "children": [   
-                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Type", "field": "Type", "hide": True}
+                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Category", "field": "Category", "hide": True}
             ]
         },
         {
@@ -1097,15 +1112,15 @@ def create_visualization_layout():
         {
             "headerName": "Taxonomy",
             "children": [   
-                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True, "cellStyle": {"fontStyle": "italic"}},
-                {"headerName": "Type", "field": "Type", "hide": True}
+                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Category", "field": "Category", "hide": True}
             ]
         },
         {
@@ -2015,7 +2030,7 @@ def register_visualization_callbacks(app):
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
         
         return cyto_elements, stylesheet, hover_info, cyto_style, 1
-
+    
     @app.callback(
         Output('log-box-visualization', 'value'),
         Input('logger-button-visualization', 'n_clicks'),

@@ -291,7 +291,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
 
     # Handle unmapped contigs
     if remove_unmapped_contigs:
-        unmapped_contigs = contig_info[contig_info['Contig category'] == "unmapped"].index.tolist()
+        unmapped_contigs = contig_info[contig_info['Category'] == "unmapped"].index.tolist()
         contig_info = contig_info.drop(unmapped_contigs).reset_index(drop=True)
         
         # Mask for rows/columns to keep
@@ -308,7 +308,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         'Contig length': 'sum',
         'Contig coverage': lambda x: (x * contig_info.loc[x.index, 'Contig length']).sum() / contig_info.loc[x.index, 'The number of restriction sites'].sum(),
         'Within-contig Hi-C contacts': 'sum',
-        'Contig category': 'first',
+        'Category': 'first',
         'Domain': 'first',
         'Kingdom': 'first',
         'Phylum': 'first',
@@ -321,8 +321,8 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
     
     bin_info['Contig coverage'] = bin_info['Contig coverage'].astype(float).map("{:.2f}".format)
 
-    chromosome_rows = contig_info[contig_info['Contig category'] == 'chromosome']
-    non_chromosome_rows = contig_info[contig_info['Contig category'] != 'chromosome']
+    chromosome_rows = contig_info[contig_info['Category'] == 'chromosome']
+    non_chromosome_rows = contig_info[contig_info['Category'] != 'chromosome']
     
     grouped_chromosome_rows = chromosome_rows.groupby('Bin index').agg({
         'Contig index': lambda x: ', '.join(x),
@@ -330,7 +330,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         'Contig length': 'sum',
         'Contig coverage': lambda x: (x * chromosome_rows.loc[x.index, 'Contig length']).sum() / chromosome_rows.loc[x.index, 'The number of restriction sites'].sum(),
         'Within-contig Hi-C contacts': 'sum',
-        'Contig category': 'first',
+        'Category': 'first',
         'Domain': 'first',
         'Kingdom': 'first',
         'Phylum': 'first',
@@ -354,20 +354,20 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
     }
     reverse_map = {v: k for k, v in rename_map.items()}
     
-    bin_info['Contig category'] = bin_info['Contig category'].replace(rename_map)
-    contig_info['Contig category'] = contig_info['Contig category'].replace(rename_map)
+    bin_info['Category'] = bin_info['Category'].replace(rename_map)
+    contig_info['Category'] = contig_info['Category'].replace(rename_map)
 
-    bin_info = bin_info.sort_values(by='Contig category', ascending=True)
-    contig_info = contig_info.sort_values(by='Contig category', ascending=True)
+    bin_info = bin_info.sort_values(by='Category', ascending=True)
+    contig_info = contig_info.sort_values(by='Category', ascending=True)
 
-    bin_info['Contig category'] = bin_info['Contig category'].replace(reverse_map)
-    contig_info['Contig category'] = contig_info['Contig category'].replace(reverse_map)
+    bin_info['Category'] = bin_info['Category'].replace(reverse_map)
+    contig_info['Category'] = contig_info['Category'].replace(reverse_map)
 
     unique_bins = bin_info['Bin index']
     contig_indexes_dict = get_indexes(unique_bins, contig_info, 'Bin index')
 
-    host_bin = bin_info[bin_info['Contig category'] == 'chromosome']['Bin index'].tolist()
-    non_host_bin = bin_info[~bin_info['Contig category'].isin(['chromosome'])]['Bin index'].tolist()
+    host_bin = bin_info[bin_info['Category'] == 'chromosome']['Bin index'].tolist()
+    non_host_bin = bin_info[~bin_info['Category'].isin(['chromosome'])]['Bin index'].tolist()
 
     # Create the bin contact matrix
     bin_contact_matrix = pd.DataFrame(0.0, index=unique_bins, columns=unique_bins)
@@ -379,7 +379,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         bin_host_non_host_pairs = list(product(host_bin, non_host_bin))
         bin_all_pairs = bin_non_host_pairs + bin_non_host_self_pairs + bin_host_non_host_pairs
         
-        chromosome_indices = contig_info[contig_info['Contig category'] == 'chromosome'].index.tolist()
+        chromosome_indices = contig_info[contig_info['Category'] == 'chromosome'].index.tolist()
         for i in chromosome_indices:
             for j in chromosome_indices:
                 dense_matrix[i, j] = 0
