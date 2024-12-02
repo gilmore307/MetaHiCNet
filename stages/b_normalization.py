@@ -1,19 +1,406 @@
 from dash import dcc, html
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output, State
+from scipy.sparse import coo_matrix, spdiags, isspmatrix_csr
+import statsmodels.api as sm
+from itertools import combinations, product
+from joblib import Parallel, delayed
 import logging
 import os
+import pandas as pd
 import py7zr
 import numpy as np
 from stages.helper import (
-    preprocess_normalization,
-    run_normalization,
-    generating_bin_information,
-    save_to_redis
+    save_to_redis,
+    get_indexes,
+    calculate_submatrix_sum
 )
 
 # Set up logging
 logger = logging.getLogger("app_logger")
+
+def preprocess_normalization(user_folder, assets_folder='output'):
+    try:
+        logger.info("Starting data preprocessing...")
+        
+        # Locate the folder path for the data preparation output
+        folder_path = os.path.join(assets_folder, user_folder)
+        logger.info(f"Folder path for data preparation output: {folder_path}")
+
+        # Define paths for the files within the folder
+        contig_info_path = os.path.join(folder_path, 'contig_info_final.csv')
+        contact_matrix_path = os.path.join(folder_path, 'raw_contact_matrix.npz')
+
+        # Read the contig information file as a pandas DataFrame
+        logger.info(f"Reading contig information file from: {contig_info_path}")
+        contig_info = pd.read_csv(contig_info_path)
+
+        # Load the contact matrix from .npz and reconstruct it as a sparse COO matrix
+        logger.info(f"Loading contact matrix from: {contact_matrix_path}")
+        contact_matrix_data = np.load(contact_matrix_path)
+        data = contact_matrix_data['data']
+        row = contact_matrix_data['row']
+        col = contact_matrix_data['col']
+        shape = tuple(contact_matrix_data['shape'])
+        contact_matrix = coo_matrix((data, (row, col)), shape=shape)
+
+        logger.info("Data preprocessing completed successfully.")
+        return contig_info, contact_matrix
+
+    except Exception as e:
+        logger.error(f"Error during data preprocessing: {e}")
+        return None, None
+
+def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5, max_iter=1000, tolerance=0.000001):
+    # Ensure contact_matrix is in coo format for consistency across methods
+    contact_matrix = contact_matrix.tocoo()
+    
+    def safe_square(array):
+        array = np.clip(array, -1e10, 1e10)  # Clip large values for safety
+        return array ** 2
+    
+    def safe_divide(array, divisor):
+        divisor = np.where(divisor == 0, epsilon, divisor)  # Add epsilon to avoid zero division
+        return array / divisor
+
+    def standardize(array):
+        std = np.std(array)
+        return np.zeros_like(array) if std == 0 else (array - np.mean(array)) / std
+
+    def denoise(matrix, threshold):
+        matrix = matrix.tocoo()
+        threshold_value = np.percentile(matrix.data, threshold)
+        mask = matrix.data > threshold_value
+        return coo_matrix((matrix.data[mask].astype(int), (matrix.row[mask], matrix.col[mask])), shape=matrix.shape)
+
+    def _bisto_seq(m, max_iter, tol):
+        # Make a copy of the original matrix 'm' for later use
+        _orig = m.copy()
+    
+        # Replace zero diagonals with ones to prevent potential scale explosion
+        m = m.tolil()  # Convert matrix to LIL format for efficient indexing
+        is_zero_diag = m.diagonal() == 0  # Check if there are zeros on the diagonal
+        if np.any(is_zero_diag):
+            # Set the diagonal elements that are zero to one
+            ix = np.where(is_zero_diag)
+            m[ix, ix] = 1
+    
+        # Ensure the matrix is in CSR format for efficient matrix operations
+        if not isspmatrix_csr(m):
+            m = m.tocsr()
+    
+        # Initialize variables
+        n = m.shape[0]  # Number of rows (and columns, assuming square matrix)
+        e = np.ones(n)  # A vector of ones
+        x = e.copy()    # Initialize x as a copy of e
+        delta = 0.1     # Lower bound for y
+        Delta = 3       # Upper bound for y
+        g = 0.9         # Step size factor
+        etamax = 0.1    # Maximum eta value
+        eta = etamax    # Initial eta
+        stop_tol = tol * 0.5  # Stopping tolerance
+        rt = tol ** 2        # Residual tolerance (squared)
+        v = x * m.dot(x)     # Initial value for v (Ax)
+        rk = 1 - v           # Residual (1 - Ax)
+        rho_km1 = rk.T.dot(rk)  # Initial rho (dot product of rk and rk)
+        rho_km2 = rho_km1       # Initialize rho_km2 with the same value as rho_km1
+        rout = rho_km1        # Set rout as the initial rho
+        rold = rout           # Previous value of rout
+        n_iter = 0            # Initialize iteration counter
+        i = 0                 # Inner loop iteration counter
+        y = np.empty_like(e)  # Vector y for updating
+    
+        # Main loop for the iterative process
+        while rout > rt and n_iter < max_iter:
+            i += 1
+            k = 0  # Inner loop counter
+            y[:] = e  # Reset y to vector of ones
+            inner_tol = max(rout * eta ** 2, rt)  # Set tolerance for inner loop
+            
+            # Inner loop for balancing the matrix
+            while rho_km1 > inner_tol:
+                k += 1
+                if k == 1:
+                    Z = rk / v  # Precompute Z
+                    p = Z  # Set p to Z in the first iteration
+                    rho_km1 = rk.T.dot(Z)  # Update rho
+                else:
+                    # Compute beta and update p in subsequent iterations
+                    beta = rho_km1 / rho_km2
+                    p = Z + beta * p
+                
+                # Compute w and alpha for the line search
+                w = x * m.dot(x * p) + v * p
+                alpha = rho_km1 / p.T.dot(w)  # Compute step size alpha
+                ap = alpha * p  # Compute the step size applied to p
+                ynew = y + ap  # Update y with the new value
+                
+                # Check for bound violations (either below delta or above Delta)
+                if np.amin(ynew) <= delta:
+                    if delta == 0:
+                        break
+                    ind = np.where(ap < 0)[0]
+                    gamma = np.amin((delta - y[ind]) / ap[ind])
+                    y += gamma * ap  # Adjust y to stay within bounds
+                    break
+                if np.amax(ynew) >= Delta:
+                    ind = np.where(ynew > Delta)[0]
+                    gamma = np.amin((Delta - y[ind]) / ap[ind])
+                    y += gamma * ap  # Adjust y to stay within bounds
+                    break
+    
+                y = ynew  # Update y if no bounds are violated
+                rk = rk - alpha * w  # Update the residual
+                rho_km2 = rho_km1  # Store the old value of rho
+                Z = rk / v  # Update Z
+                rho_km1 = np.dot(rk.T, Z)  # Update rho
+    
+                # Check for NaN values in x
+                if np.any(np.isnan(x)):
+                    raise RuntimeError('Scale vector has developed invalid values (NaNs)!')
+            
+            # Update x with the new y values
+            x *= y
+            v = x * m.dot(x)  # Update v
+            rk = 1 - v  # Recalculate the residual
+            rho_km1 = np.dot(rk.T, rk)  # Update rho
+            rout = rho_km1  # Update the residual norm
+            n_iter += k + 1  # Update the iteration count
+            rat = rout / rold  # Compute the relative change in residual
+            rold = rout  # Update old residual value
+            res_norm = np.sqrt(rout)  # Compute the residual norm
+            eta = g * rat  # Update eta
+            eta = max(min(eta, etamax), stop_tol / res_norm)  # Enforce eta bounds
+    
+        # Check if the algorithm converged
+        if n_iter >= max_iter:
+            logger.error(f'Maximum number of iterations ({max_iter}) reached without convergence')
+        
+        # Return the balanced matrix and the scale vector 'x'
+        X = spdiags(x, 0, n, n, 'csr')  # Create a diagonal matrix with x
+        balanced_matrix = X.T.dot(_orig.dot(X)) * 1000000
+        return balanced_matrix 
+
+    try:
+        if method == 'Raw':
+            logger.info("Running Raw normalization.")
+            return denoise(contact_matrix, threshold)
+
+        elif method == 'normCC':
+            logger.info("Running normCC normalization.")
+            signal = contact_matrix.max(axis=1).toarray().ravel()
+            coverage = contig_df['Contig coverage'].values
+            contact_matrix.setdiag(0)
+
+            df = contig_df.copy()
+            df['Contig coverage'] = coverage
+            df['signal'] = signal
+
+            logger.info("Performing log transformations for normCC.")
+            df['log_site'] = np.log(df['The number of restriction sites'] + epsilon)
+            df['log_len'] = np.log(df['Contig length'])
+            df['log_coverage'] = np.log(df['Contig coverage'] + epsilon)
+
+            exog = df[['log_site', 'log_len', 'log_coverage']]
+            exog = sm.add_constant(exog)
+            endog = df['signal']
+            glm_nb = sm.GLM(endog, exog, family=sm.families.NegativeBinomial(alpha=1))
+            res = glm_nb.fit()
+
+            expected_signal = np.exp(np.dot(exog, res.params))
+            scal = np.max(expected_signal)
+
+            normalized_data = [scal * v / np.sqrt(expected_signal[i] * expected_signal[j])
+                               for i, j, v in zip(contact_matrix.row, contact_matrix.col, contact_matrix.data)]
+
+            normalized_matrix = coo_matrix((normalized_data, (contact_matrix.row, contact_matrix.col)),
+                                           shape=contact_matrix.shape)
+            return denoise(normalized_matrix, threshold)
+
+        elif method == 'HiCzin':
+            logger.info("Running HiCzin normalization.")
+            contact_matrix.setdiag(0)
+            coverage = contig_df['Contig coverage'].replace(0, epsilon).values
+
+            map_x = contact_matrix.row
+            map_y = contact_matrix.col
+            map_data = contact_matrix.data
+            index = map_x < map_y
+            map_x, map_y, map_data = map_x[index], map_y[index], map_data[index]
+
+            sample_site = standardize(np.log(contig_df['The number of restriction sites'].iloc[map_x].values * contig_df['The number of restriction sites'].iloc[map_y].values))
+            sample_len = standardize(np.log(contig_df['Contig length'].iloc[map_x].values * contig_df['Contig length'].iloc[map_y].values))
+            sample_cov = standardize(np.log(coverage[map_x] * coverage[map_y]))
+
+            data_hiczin = pd.DataFrame({
+                'sample_site': sample_site,
+                'sample_len': sample_len,
+                'sample_cov': sample_cov,
+                'sampleCon': map_data
+            })
+
+            exog = data_hiczin[['sample_site', 'sample_len', 'sample_cov']]
+            exog = sm.add_constant(exog)
+            endog = data_hiczin['sampleCon']
+
+            glm_nb = sm.GLM(endog, exog, family=sm.families.NegativeBinomial(alpha=1))
+            res = glm_nb.fit()
+
+            expected_signal = np.exp(np.dot(exog, res.params))
+            normalized_data = map_data / expected_signal
+
+            normalized_contact_matrix = coo_matrix(
+                (normalized_data, (map_x, map_y)), shape=contact_matrix.shape
+            )
+            normalized_contact_matrix += normalized_contact_matrix.transpose()
+
+            return denoise(normalized_contact_matrix, threshold)
+
+        elif method == 'bin3C':
+            logger.info("Running bin3C normalization.")
+            num_sites = contig_df['The number of restriction sites'].values + epsilon
+            normalized_data = [v / (num_sites[i] * num_sites[j])
+                               for i, j, v in zip(contact_matrix.row, contact_matrix.col, contact_matrix.data)]
+
+            normalized_contact_matrix = coo_matrix(
+                (normalized_data, (contact_matrix.row, contact_matrix.col)), shape=contact_matrix.shape
+            )
+
+            bistochastic_matrix = _bisto_seq(normalized_contact_matrix, max_iter, tolerance)
+            return denoise(bistochastic_matrix, threshold)
+
+        elif method == 'MetaTOR':
+            logger.info("Running MetaTOR normalization.")
+            signal = contact_matrix.diagonal() + epsilon
+            normalized_data = [v / np.sqrt(signal[i] * signal[j])
+                               for i, j, v in zip(contact_matrix.row, contact_matrix.col, contact_matrix.data)]
+
+            normalized_contact_matrix = coo_matrix(
+                (normalized_data, (contact_matrix.row, contact_matrix.col)), shape=contact_matrix.shape
+            )
+
+            return denoise(normalized_contact_matrix, threshold)
+
+    except Exception as e:
+        logger.error(f"Error during {method} normalization: {e}")
+        return None
+
+def generating_bin_information(contig_info, contact_matrix, remove_unmapped_contigs=False, remove_host_host=False):
+    # Ensure dense matrix for processing
+    dense_matrix = contact_matrix.toarray()
+
+    # Handle unmapped contigs
+    if remove_unmapped_contigs:
+        unmapped_contigs = contig_info[contig_info['Contig category'] == "unmapped"].index.tolist()
+        contig_info = contig_info.drop(unmapped_contigs).reset_index(drop=True)
+        
+        # Mask for rows/columns to keep
+        keep_mask = np.ones(dense_matrix.shape[0], dtype=bool)
+        keep_mask[unmapped_contigs] = False
+        contig_contact_matrix = dense_matrix[keep_mask, :][:, keep_mask]
+    else:
+        contig_contact_matrix = dense_matrix.copy()
+
+    # Aggregate bin data
+    bin_info = contig_info.groupby('Bin index').agg({
+        'Contig index': lambda x: ', '.join(x),
+        'The number of restriction sites': 'sum',
+        'Contig length': 'sum',
+        'Contig coverage': lambda x: (x * contig_info.loc[x.index, 'Contig length']).sum() / contig_info.loc[x.index, 'The number of restriction sites'].sum(),
+        'Within-contig Hi-C contacts': 'sum',
+        'Contig category': 'first',
+        'Domain': 'first',
+        'Kingdom': 'first',
+        'Phylum': 'first',
+        'Class': 'first',
+        'Order': 'first',
+        'Family': 'first',
+        'Genus': 'first',
+        'Species': 'first'
+    }).reset_index()
+    
+    bin_info['Contig coverage'] = bin_info['Contig coverage'].astype(float).map("{:.2f}".format)
+
+    chromosome_rows = contig_info[contig_info['Contig category'] == 'chromosome']
+    non_chromosome_rows = contig_info[contig_info['Contig category'] != 'chromosome']
+    
+    grouped_chromosome_rows = chromosome_rows.groupby('Bin index').agg({
+        'Contig index': lambda x: ', '.join(x),
+        'The number of restriction sites': 'sum',
+        'Contig length': 'sum',
+        'Contig coverage': lambda x: (x * chromosome_rows.loc[x.index, 'Contig length']).sum() / chromosome_rows.loc[x.index, 'The number of restriction sites'].sum(),
+        'Within-contig Hi-C contacts': 'sum',
+        'Contig category': 'first',
+        'Domain': 'first',
+        'Kingdom': 'first',
+        'Phylum': 'first',
+        'Class': 'first',
+        'Order': 'first',
+        'Family': 'first',
+        'Genus': 'first',
+        'Species': 'first'
+    }).reset_index()
+    
+    grouped_chromosome_rows['Contig coverage'] = grouped_chromosome_rows['Contig coverage'].astype(float).map("{:.2f}".format)
+    
+    # Combine grouped chromosome rows and non-chromosome rows
+    contig_info = pd.concat([grouped_chromosome_rows, non_chromosome_rows], ignore_index=True)
+    
+    # Create a mapping for temporary renaming
+    rename_map = {
+        'virus': 'a_virus',
+        'plasmid': 'b_plasmid',
+        'chromosome': 'c_chromosome'
+    }
+    reverse_map = {v: k for k, v in rename_map.items()}
+    
+    bin_info['Contig category'] = bin_info['Contig category'].replace(rename_map)
+    contig_info['Contig category'] = contig_info['Contig category'].replace(rename_map)
+
+    bin_info = bin_info.sort_values(by='Contig category', ascending=True)
+    contig_info = contig_info.sort_values(by='Contig category', ascending=True)
+
+    bin_info['Contig category'] = bin_info['Contig category'].replace(reverse_map)
+    contig_info['Contig category'] = contig_info['Contig category'].replace(reverse_map)
+
+    unique_bins = bin_info['Bin index']
+    contig_indexes_dict = get_indexes(unique_bins, contig_info, 'Bin index')
+
+    host_bin = bin_info[bin_info['Contig category'] == 'chromosome']['Bin index'].tolist()
+    non_host_bin = bin_info[~bin_info['Contig category'].isin(['chromosome'])]['Bin index'].tolist()
+
+    # Create the bin contact matrix
+    bin_contact_matrix = pd.DataFrame(0.0, index=unique_bins, columns=unique_bins)
+
+    # Combine pairs of all necessary interactions
+    if remove_host_host:
+        bin_non_host_pairs = list(combinations(non_host_bin, 2))
+        bin_non_host_self_pairs = [(x, x) for x in non_host_bin]
+        bin_host_non_host_pairs = list(product(host_bin, non_host_bin))
+        bin_all_pairs = bin_non_host_pairs + bin_non_host_self_pairs + bin_host_non_host_pairs
+        
+        chromosome_indices = contig_info[contig_info['Contig category'] == 'chromosome'].index.tolist()
+        for i in chromosome_indices:
+            for j in chromosome_indices:
+                dense_matrix[i, j] = 0
+    else:
+        bin_non_self_pairs = list(combinations(unique_bins, 2))
+        bin_self_pairs = [(x, x) for x in unique_bins]
+        bin_all_pairs = bin_non_self_pairs + bin_self_pairs
+        
+    results = Parallel(n_jobs=-1)(
+        delayed(calculate_submatrix_sum)(pair, contig_indexes_dict, dense_matrix) for pair in bin_all_pairs
+    )
+    
+    for annotation_i, annotation_j, value in results:
+        bin_contact_matrix.at[annotation_i, annotation_j] = value
+        bin_contact_matrix.at[annotation_j, annotation_i] = value
+
+    # Convert to COO sparse matrices for storage
+    bin_contact_matrix = coo_matrix(bin_contact_matrix)
+    contig_contact_matrix = coo_matrix(contig_contact_matrix)
+
+    return bin_info, contig_info, bin_contact_matrix, contig_contact_matrix
 
 def create_normalization_layout():
     normalization_methods = [

@@ -1,4 +1,4 @@
-Bin,Domain,Kingdom,Phylum,Class,Order,Family,Genus,Species,Plasmid ID
+Bin index,Domain,Kingdom,Phylum,Class,Order,Family,Genus,Species,Customized annotation
 MAG_1,,,,,,,,,
 MAG_10,Bacteria,Bacteria,FirmicuteA,Clostridia,Oscillospirales,Oscillospiraceae,Alloscillospira,,
 MAG_100,Bacteria,Bacteria,FirmicuteA,Clostridia,Oscillospirales,Oscillospiraceae,CAG-170,CAG-170 sp900553545,

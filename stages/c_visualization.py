@@ -52,17 +52,20 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
             'data': {
                 'id': node,
                 'label': node,  
-                'label_size': 6 if G.nodes[node].get('parent') is None else 3,
+                'label_size': 20 if G.nodes[node].get('parent') is None else 10,
                 'size': G.nodes[node].get('size', 1),
                 'color': G.nodes[node].get('color', '#000'),
-                'border_color': G.nodes[node].get('border_color', None), 
-                'border_width': G.nodes[node].get('border_width', None),
+                #'border_color': G.nodes[node].get('border_color', None), 
+                #'border_width': G.nodes[node].get('border_width', None),
                 'parent': G.nodes[node].get('parent', None), 
                 'visible': 'none' if node in invisible_nodes else 'element' 
             },
             'position': {
                 'x': pos[node][0] * 100,
                 'y': pos[node][1] * 100
+            },
+            'style': {
+                'text-margin-y': -5  # Moves the label higher (negative values move up)
             }
         })
     for edge in G.edges(data=True):
@@ -98,7 +101,7 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
                 'selector': f'edge[source="{source}"][target="{target}"], edge[source="{target}"][target="{source}"]',
                 'style': {
                     'width': 2,
-                    'line-color': 'black',
+                    'line-color': '#ccc',
                     'display': 'element'
                 }
             }
@@ -253,7 +256,7 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     })
     
     styles.append({
-        "condition": "params.colDef.field == 'index' && !(params.data.index.endsWith('_p') || params.data.index.endsWith('_v'))",  # Default case for chromosome
+        "condition": "params.colDef.field == 'index' && params.data.index.endsWith('_c'))",  # Default case for chromosome
         "style": {
             "backgroundColor": add_opacity_to_color('#4472C4', opacity),  # Chromosome color
             "color": "black"
@@ -263,7 +266,7 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     return styles
 
 def styling_information_table(information_data, id_colors, unique_annotations, table_type='bin', taxonomy_level='Family'):
-    columns = ['Restriction sites', 'Length', 'Coverage']
+    columns = ['The number of restriction sites', 'Contig length', 'Contig coverage']
     styles = []
     # Precompute numeric data
     numeric_data = information_data.select_dtypes(include=[np.number]).copy()
@@ -324,7 +327,7 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
         styles.append(annotation_style)
     
     # Style ID column
-    id_column = 'Bin' if table_type == 'bin' else 'Contig'
+    id_column = 'Bin index' if table_type == 'bin' else 'Contig index'
     
     # Function to compute color, create styles, and append them to the styles list
     def style_id_column(item, item_type, styles):
@@ -345,7 +348,7 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
     # Iterate over rows and compute styles
     for _, row in information_data.iterrows():
         if row['Annotation'] in unique_annotations:
-            style_id_column(row[id_column],  row['Type'], styles)
+            style_id_column(row[id_column],  row['Contig category'], styles)
 
     return styles
 
@@ -401,8 +404,6 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center
     return {**inner_positions, **outer_positions}
 
 def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
-    host_data = bin_information[bin_information['Type'].isin(['chromosome', 'plasmid'])]
-    virus_data = bin_information[bin_information['Type'] == 'phage']
 
     level_mapping = {
         'Community': 9,
@@ -427,11 +428,11 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
         "type": "Community",
         "total coverage": 0,
         "border_color": "black",
-        "Bin": bin_information['Bin'].unique()
+        "bin": bin_information['Bin index'].unique()
     })
     existing_annotations.add("Community")
 
-    for _, row in host_data.iterrows():
+    for _, row in bin_information.iterrows():
         for level, level_num in level_mapping.items():
             if level == 'Community':
                 continue
@@ -445,60 +446,29 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
                     "parent": parent,
                     "level": level_num,
                     "level_name": level.capitalize(),
-                    "type": row['Type'],
-                    "total coverage": row['Coverage'],
-                    "border_color": type_colors.get(row['Type'], "gray"),
-                    "Bin": [row["Bin"]]
+                    "type": row['Contig category'],
+                    "total coverage": row['Contig coverage'],
+                    "border_color": type_colors.get(row['Contig category'], "gray"),
+                    "bin": [row['Bin index']]
                 })
                 existing_annotations.add(annotation)
             else:
                 for rec in records:
                     if rec['annotation'] == annotation:
-                        rec['total coverage'] += row['Coverage']
-                        rec['Bin'].append(row['Bin'])
-                        break
-
-    for _, row in virus_data.iterrows():
-        for level, level_num in level_mapping.items():
-            if level not in ['Class', 'Order', 'Family']:
-                continue
-
-            annotation = 'Virus' if level_num == 5 else row[level]
-            parent = (
-                "Community" if level_num == 5
-                else 'Virus' if level_num == 4
-                else row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num + 1)]]
-            )
-
-            if annotation not in existing_annotations:
-                records.append({
-                    "annotation": annotation,
-                    "parent": parent,
-                    "level": level_num,
-                    "level_name": level.capitalize(),
-                    "type": row['Type'],
-                    "total coverage": row['Coverage'],
-                    "border_color": type_colors.get(row['Type'], "gray"),
-                    "Bin": [row["Bin"]]
-                })
-                existing_annotations.add(annotation)
-            else:
-                for rec in records:
-                    if rec['annotation'] == annotation:
-                        rec['total coverage'] += row['Coverage']
-                        rec['Bin'].append(row['Bin'])
+                        rec['total coverage'] += row['Contig coverage']
+                        rec["bin"].append(row['Bin index'])
                         break
 
     hierarchy_df = pd.DataFrame(records)
     hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
-    hierarchy_df.loc[hierarchy_df['type'] == 'phage', 'scaled_coverage'] *= 20
+    hierarchy_df.loc[hierarchy_df['type'] == 'virus', 'scaled_coverage'] *= 20
 
     def format_bins(bin_list, max_bins=5):
         if len(bin_list) > max_bins:
             return ', '.join(bin_list[:max_bins]) + f"... (+{len(bin_list) - max_bins} more)"
         return ', '.join(bin_list)
 
-    hierarchy_df['limited_bins'] = hierarchy_df['Bin'].apply(lambda bins: format_bins(bins))
+    hierarchy_df['limited_bins'] = hierarchy_df["bin"].apply(lambda bins: format_bins(bins))
 
     fig = px.treemap(
         hierarchy_df,
@@ -524,22 +494,20 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
         margin=dict(t=30, b=0, l=0, r=0)
     )
 
-    total_bin_coverage = bin_information.groupby('Annotation')['Coverage'].sum().reindex(unique_annotations)
+    total_bin_coverage = bin_information.groupby('Annotation')['Contig coverage'].sum().reindex(unique_annotations)
     inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
     total_bin_coverage_sum = total_bin_coverage.values
-    bin_counts = bin_information['Annotation'].value_counts()
 
     node_colors = {}
     for annotation in total_bin_coverage.index:
-        bin_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Type'].values[0]
+        bin_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Contig category'].values[0]
         color = type_colors.get(bin_type, default_color)
         node_colors[annotation] = color
 
     data_dict = {
         'Across Taxonomy Hi-C Contacts': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-        'Taxonomy Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-        'Number of Bins': pd.DataFrame({'name': unique_annotations, 'value': bin_counts, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
-    }
+        'Taxonomy Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
+        }
 
     bar_fig = create_bar_chart(data_dict)
 
@@ -563,17 +531,16 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         connected_nodes = unique_annotations
         
     # Add nodes with size based on total bin coverage
-    total_bin_coverage = bin_information.groupby('Annotation')['Coverage'].sum().reindex(connected_nodes)
-    node_sizes = generate_gradient_values(total_bin_coverage.values, 10, 30)  # Example range from 10 to 30
+    total_bin_coverage = bin_information.groupby('Annotation')['Contig coverage'].sum().reindex(connected_nodes)
 
     node_colors = {}
-    for annotation, size in zip(total_bin_coverage.index, node_sizes):
+    for annotation in total_bin_coverage.index:
         bin_type = bin_information.loc[
-            bin_information['Annotation'] == annotation, 'Type'
+            bin_information['Annotation'] == annotation, 'Contig category'
         ].values[0]
         color = type_colors.get(bin_type, default_color)
         node_colors[annotation] = color
-        G.add_node(annotation, size=size, color=color, parent=None)
+        G.add_node(annotation, size=20, color=color, parent=None)
 
     # Collect all edge weights
     edge_weights = []
@@ -596,9 +563,9 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
 
     # Initial node positions using a force-directed layout with increased dispersion
     if selected_node:
-        pos = nx.spring_layout(G, dim=2, k=1, iterations=200, weight='weight', scale=5.0, fixed=[selected_node], pos={selected_node: (0, 0)})
+        pos = nx.spring_layout(G, dim=2, k=1, iterations=200, weight='weight', scale=10.0, fixed=[selected_node], pos={selected_node: (0, 0)})
     else:
-        pos = nx.spring_layout(G, dim=2, k=1, iterations=200, weight='weight', scale=5.0)
+        pos = nx.spring_layout(G, dim=2, k=1, iterations=200, weight='weight', scale=10.0)
 
 
     cyto_elements = nx_to_cyto_elements(G, pos, invisible_edges=invisible_edges)
@@ -610,12 +577,10 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     if not selected_node:
         inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
         total_bin_coverage_sum = total_bin_coverage.values
-        bin_counts = bin_information['Annotation'].value_counts()
     
         data_dict = {
             'Across Taxonomy Hi-C Contacts': pd.DataFrame({'name': unique_annotations, 'value': inter_annotation_contact_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
             'Taxonomy Coverage': pd.DataFrame({'name': unique_annotations, 'value': total_bin_coverage_sum, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]}),
-            'Number of Bins': pd.DataFrame({'name': unique_annotations, 'value': bin_counts, 'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]})
         }
     
         bar_fig = create_bar_chart(data_dict)
@@ -628,7 +593,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
 def bin_visualization(selected_annotation, selected_bin, bin_information, bin_dense_matrix, unique_annotations):
     
     # Find the index of the selected bin
-    selected_bin_index = bin_information[bin_information['Bin'] == selected_bin].index[0]
+    selected_bin_index = bin_information[bin_information['Bin index'] == selected_bin].index[0]
     selected_annotation = bin_information.loc[selected_bin_index, 'Annotation']
 
     # Get all indices that have contact with the selected bin
@@ -642,13 +607,13 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
         contacts_bins = pd.Series([])
     else:
         contacts_annotation = bin_information.loc[contacts_indices, 'Annotation']
-        contacts_bins = bin_information.loc[contacts_indices, 'Bin']
+        contacts_bins = bin_information.loc[contacts_indices, 'Bin index']
 
     G = nx.Graph()
 
     # Use a categorical color scale
     color_scale_mapping = {
-        'phage': colors.sequential.Reds,
+        'virus': colors.sequential.Reds,
         'plasmid': colors.sequential.Greens,
         'chromosome': colors.sequential.Blues
     }
@@ -660,7 +625,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
-        annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Type'].values[0]
+        annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Contig category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])  
         annotation_rank = annotation_contact_ranks.get(annotation, int(max_rank/2))
         gradient_color = color_scale[int((annotation_rank / max_rank) * (len(color_scale) - 1))]
@@ -668,7 +633,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
     # Ensure selected_annotation is added
     if selected_annotation not in G.nodes:
-        annotation_type = bin_information.loc[bin_information['Annotation'] == selected_annotation, 'Type'].values[0]
+        annotation_type = bin_information.loc[bin_information['Annotation'] == selected_annotation, 'Contig category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])
         gradient_color = color_scale[len(color_scale) - 1]
         G.add_node(selected_annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
@@ -694,13 +659,13 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
 
     fixed_positions = {selected_annotation: (0, 0)}
-    pos = nx.spring_layout(G, k=1, iterations=200, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
+    pos = nx.spring_layout(G, k=1, iterations=200, scale=10.0, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
 
     # Remove the edges after positioning
     G.remove_edges_from(list(G.edges()))
 
     # Handle selected_bin node
-    G.add_node(selected_bin, size=5, color='white', border_color='black', border_width=2, parent=selected_annotation)
+    G.add_node(selected_bin, size=10, color='black', border_color='black', border_width=2, parent=selected_annotation)
     pos[selected_bin] = (0, 0)
 
     # Add bin nodes to the graph
@@ -709,7 +674,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
         bin_positions = arrange_nodes(annotation_bins, [], distance=10, center_position=pos[annotation], selected_element=None)
         for bin, (x, y) in bin_positions.items():
             G.add_node(bin, 
-                       size=3, 
+                       size=10, 
                        color=G.nodes[annotation]['border_color'],  # Use the color from the annotation
                        parent=annotation)
             G.add_edge(selected_bin, bin)
@@ -725,7 +690,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
             'name': contacts_bins, 
             'value': bin_contact_values, 
             'color': [G.nodes[bin]['color'] for bin in contacts_bins],
-            'hover': [f"({bin_information.loc[bin_information['Bin'] == bin, 'Annotation'].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
+            'hover': [f"({bin_information.loc[bin_information['Bin index'] == bin, 'Annotation'].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
         })
     except:
         bin_data = pd.DataFrame()
@@ -751,7 +716,7 @@ def bin_visualization(selected_annotation, selected_bin, bin_information, bin_de
 
 def contig_visualization(selected_annotation, selected_contig, contig_information, contig_dense_matrix, unique_annotations):
     # Find the index of the selected contig
-    selected_contig_index = contig_information[contig_information['Contig'] == selected_contig].index[0]
+    selected_contig_index = contig_information[contig_information['Contig index'] == selected_contig].index[0]
     selected_annotation = contig_information.loc[selected_contig_index, 'Annotation']
 
     # Get all indices that have contact with the selected contig
@@ -765,13 +730,13 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
         contacts_contigs = pd.Series([])
     else:
         contacts_annotation = contig_information.loc[contacts_indices, 'Annotation']
-        contacts_contigs = contig_information.loc[contacts_indices, 'Contig']
+        contacts_contigs = contig_information.loc[contacts_indices, 'Contig index']
 
     G = nx.Graph()
 
     # Use a categorical color scale
     color_scale_mapping = {
-        'phage': colors.sequential.Reds,
+        'virus': colors.sequential.Reds,
         'plasmid': colors.sequential.Greens,
         'chromosome': colors.sequential.Blues
     }
@@ -783,7 +748,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
-        annotation_type = contig_information.loc[contig_information['Annotation'] == annotation, 'Type'].values[0]
+        annotation_type = contig_information.loc[contig_information['Annotation'] == annotation, 'Contig category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])
         annotation_rank = annotation_contact_ranks.get(annotation, int(max_rank/2))
         gradient_color = color_scale[int((annotation_rank / max_rank) * (len(color_scale) - 1))]
@@ -791,7 +756,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     # Ensure selected_annotation is added
     if selected_annotation not in G.nodes:
-        annotation_type = contig_information.loc[contig_information['Annotation'] == selected_annotation, 'Type'].values[0]
+        annotation_type = contig_information.loc[contig_information['Annotation'] == selected_annotation, 'Contig category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])
         gradient_color = color_scale[len(color_scale) - 1]
         G.add_node(selected_annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
@@ -816,7 +781,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
             G.add_edge(selected_annotation, annotation, weight=scaled_weights[i])
 
     fixed_positions = {selected_annotation: (0, 0)}
-    pos = nx.spring_layout(G, k=1, iterations=200, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
+    pos = nx.spring_layout(G, k=1, iterations=200, scale=10.0, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
 
     # Remove the edges after positioning
     G.remove_edges_from(list(G.edges()))
@@ -847,7 +812,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
             'name': contacts_contigs, 
             'value': contig_contact_values, 
             'color': [G.nodes[contig]['color'] for contig in contacts_contigs],
-            'hover': [f"({contig_information.loc[contig_information['Contig'] == contig, 'Annotation'].values[0]}, {value})" for contig, value in zip(contacts_contigs, contig_contact_values)]
+            'hover': [f"({contig_information.loc[contig_information['Contig index'] == contig, 'Annotation'].values[0]}, {value})" for contig, value in zip(contacts_contigs, contig_contact_values)]
         })
     except:
         contig_data = pd.DataFrame()
@@ -908,7 +873,7 @@ logger = logging.getLogger("app_logger")
  
 type_colors = {
     'chromosome': '#4472C4',
-    'phage': '#E83D20',
+    'virus': '#E83D20',
     'plasmid': '#70AD47'
 }
 default_color = '#808080' 
@@ -981,8 +946,8 @@ hover_info = {
          
          "The Bin Info Tab displays data specific to bins, and the Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n\n"
          
-         "Cells in the 'Bin' or 'Contig' columns are colored based on the corresponding node in the Cytoscape Graph.  \n"
-         "Cells in the column of the selected taxonomy level are colored using the unified color for the type (chromosome, plasmid, or phage).  \n"
+         "Cells in the 'Bin index' or 'Contig index' columns are colored based on the corresponding node in the Cytoscape Graph.  \n"
+         "Cells in the column of the selected taxonomy level are colored using the unified color for the type (chromosome, plasmid, or virus).  \n"
          "Cells in numeric columns are highlighted with a bluish color. Higher values have a deeper color.  \n\n"
          
          "Users can click individual rows to select specific bins or contigs.  \n"
@@ -997,7 +962,7 @@ hover_info = {
          
          "Each box represents a taxonomic level or group. Visual encoding allows users to quickly identify dominant groups, their levels, and types within the dataset.  \n"
          "Darker colors indicate higher taxonomy levels (e.g., Domain), while lighter colors represent lower levels within the hierarchy (e.g., Species).  \n"
-         "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, phage).  \n\n"),
+         "The size of each box reflects the coverage of that group, and the border color indicates the type (e.g., chromosome, plasmid, virus).  \n\n"),
         
     'cyto-graph-container': 
         ("The Cytoscape Graph is a network-style visualization that represents relationships between annotations, "
@@ -1009,7 +974,7 @@ hover_info = {
          "Selecting a node in 'Bin interaction' or 'Contig interaction' may filter the rows being displayed in the information table.  \n\n"
          
          "Colors may vary based on element types:  \n"
-         "Chromosomes are in bluish color, plasmids are in greenish color, and phages are in reddish color.  \n"
+         "Chromosomes are in bluish color, plasmids are in greenish color, and virus are in reddish color.  \n"
          "This color coding helps users quickly identify the biological role of each node.  \n\n"
          
          "Nodes are sized based on coverage within the dataset.  \n"
@@ -1033,9 +998,9 @@ def create_visualization_layout():
     
     bin_column_defs = [
         {
-            "headerName": "Bin",
+            "headerName": "Index",
             "children": [
-                {"headerName": "Bin", "field": "Bin", "pinned": 'left', "width": 120}
+                {"headerName": "Bin index", "field": "Bin index", "pinned": 'left', "width": 120}
             ]
         },
         {
@@ -1055,9 +1020,9 @@ def create_visualization_layout():
         {
             "headerName": "Contact Information",
             "children": [
-                {"headerName": "Number of Restriction sites", "field": "Restriction sites", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Bin Size", "field": "Length", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Coverage", "field": "Coverage", "width": 150, "wrapHeaderText": True},
+                {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Bin Size", "field": "Contig length", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Bin coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
                 {"headerName": "Visibility", "field": "Visibility", "hide": True}
             ]
         }
@@ -1065,9 +1030,9 @@ def create_visualization_layout():
     
     contig_column_defs = [
         {
-            "headerName": "Contig",
+            "headerName": "Index",
             "children": [
-                {"headerName": "Contig", "field": "Contig", "pinned": 'left', "width": 120}
+                {"headerName": "Contig index", "field": "Contig index", "pinned": 'left', "width": 120}
             ]
         },
         {
@@ -1087,9 +1052,9 @@ def create_visualization_layout():
         {
             "headerName": "Contact Information",
             "children": [
-                {"headerName": "Number of Restriction Sites", "field": "Restriction sites", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Length", "field": "Length", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Coverage", "field": "Coverage", "width": 150, "wrapHeaderText": True},
+                {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Contig length", "field": "Contig length", "width": 150, "wrapHeaderText": True},
+                {"headerName": "Contig coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
                 {"headerName": "Visibility", "field": "Visibility", "hide": True}
             ]
         }
@@ -1141,6 +1106,17 @@ def create_visualization_layout():
                         id="dropdowns",
                         children=[
                             dcc.Dropdown(
+                                id='visualization-selector',
+                                options=[
+                                    {'label': 'Taxonomic Framework', 'value': 'taxonomy_hierarchy'},
+                                    {'label': 'Cross-Taxa Hi-C Interaction', 'value': 'basic'},
+                                    {'label': 'Bin Interaction', 'value': 'bin'},
+                                    {'label': 'Contig Interaction', 'value': 'contig'}
+                                ],
+                                value='taxonomy_hierarchy',
+                                style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                            ),
+                            dcc.Dropdown(
                                 id='taxonomy-level-selector',
                                 options=[
                                     {'label': 'Domain', 'value': 'Domain'},
@@ -1154,18 +1130,7 @@ def create_visualization_layout():
                                 ],
                                 value='Family',
                                 placeholder="Select Taxonomy Level",
-                                style={'width': '100px', 'display': 'inline-block', 'margin-top': '4px'}
-                            ),
-                            dcc.Dropdown(
-                                id='visualization-selector',
-                                options=[
-                                    {'label': 'Taxonomy Framework', 'value': 'taxonomy_hierarchy'},
-                                    {'label': 'Taxonomy Interaction', 'value': 'basic'},
-                                    {'label': 'Bin Interaction', 'value': 'bin'},
-                                    {'label': 'Contig Interaction', 'value': 'contig'}
-                                ],
-                                value='taxonomy_hierarchy',
-                                style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                                style={}
                             ),
                             dcc.Dropdown(
                                 id='annotation-selector',
@@ -1245,10 +1210,11 @@ def create_visualization_layout():
                                                 style={'display': 'inline-block', 'width': '25vw'}
                                             ),
                                             dcc.Tabs(id='table-tabs', value='bin', 
-                                                     children=[
-                                                         dcc.Tab(label='Bin Info', value='bin', className="p-0"),
-                                                         dcc.Tab(label='Contig Info', value='contig', className="p-0")
-                                                     ]
+                                                children=[
+                                                    dcc.Tab(label='Bin Info', value='bin', className="p-0"),
+                                                    dcc.Tab(label='Contig Info', value='contig', className="p-0")
+                                                ],
+                                                style={"display": "none"}
                                             ),
                                             html.Div(
                                                 children=[
@@ -1379,6 +1345,9 @@ def register_visualization_callbacks(app):
          Output('contact-table', 'columnDefs'),
          Output('contact-table', 'defaultColDef'),
          Output('contact-table', 'styleConditions'),
+         Output('annotation-selector', 'options'),
+         Output('bin-selector', 'options'),
+         Output('contig-selector', 'options'),
          Output('reset-btn', 'n_clicks'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('taxonomy-level-selector', 'value')],
@@ -1445,9 +1414,24 @@ def register_visualization_callbacks(app):
         save_to_redis(contact_matrix_key, contact_matrix)
         save_to_redis(visualization_mode_key, current_visualization_mode)
         
-        reset_clicks = (reset_clicks or 0) + 1
+        annotation_options = [{'label': annotation, 'value': annotation} for annotation in unique_annotations]
         
-        return 1, row_data, column_defs, default_col_def, style_conditions, reset_clicks, 1
+        # Initialize empty lists for dropdown options
+        bin_options = []
+        contig_options = []
+        
+        # Determine which dataset to use based on selected_tab
+        bin_information = load_from_redis(f'{user_folder}:bin-information')
+        bins = bin_information['Bin index']
+        bin_options = [{'label': bin, 'value': bin} for bin in bins]
+    
+        contig_information = load_from_redis(f'{user_folder}:contig-information')
+        contigs = contig_information['Contig index']
+        contig_options = [{'label': contig, 'value': contig} for contig in contigs]
+                
+        reset_clicks = (reset_clicks or 0) + 1
+                    
+        return 1, row_data, column_defs, default_col_def, style_conditions, annotation_options, bin_options, contig_options,reset_clicks, 1
 
     @app.callback(
         [Output('bin-info-table', 'rowData'),
@@ -1514,27 +1498,27 @@ def register_visualization_callbacks(app):
             # Set visibility based on the current visualization mode
             if selected_tab == 'bin':
                 if current_visualization_mode['selected_bin']:
-                    selected_bin_index = bin_information[bin_information['Bin'] == current_visualization_mode['selected_bin']].index[0]
+                    selected_bin_index = bin_information[bin_information['Bin index'] == current_visualization_mode['selected_bin']].index[0]
             
                     connected_bins = set()
                     for j in range(dense_matrix.shape[0]):
                         if dense_matrix[selected_bin_index, j] != 0:
-                            connected_bins.add(bin_information.at[j, 'Bin'])
+                            connected_bins.add(bin_information.at[j, 'Bin index'])
             
                     for row in row_data:
-                        if row['Bin'] not in connected_bins and row['Bin'] != current_visualization_mode['selected_bin']:
+                        if row['Bin index'] not in connected_bins and row['Bin index'] != current_visualization_mode['selected_bin']:
                             row['Visibility'] = 0
             elif selected_tab == 'contig':
                 if current_visualization_mode['selected_contig']:
-                    selected_contig_index = contig_information[contig_information['Contig'] == current_visualization_mode['selected_contig']].index[0]
+                    selected_contig_index = contig_information[contig_information['Contig index'] == current_visualization_mode['selected_contig']].index[0]
             
                     connected_contigs = set()
                     for j in range(dense_matrix.shape[0]):
                         if dense_matrix[selected_contig_index, j] != 0:
-                            connected_contigs.add(contig_information.at[j, 'Contig'])
+                            connected_contigs.add(contig_information.at[j, 'Contig index'])
             
                     for row in row_data:
-                        if row['Contig'] not in connected_contigs and row['Contig'] != current_visualization_mode['selected_contig']:
+                        if row['Contig index'] not in connected_contigs and row['Contig index'] != current_visualization_mode['selected_contig']:
                             row['Visibility'] = 0
                         
             # Apply visibility filter if checkbox is selected
@@ -1638,6 +1622,7 @@ def register_visualization_callbacks(app):
 
     @app.callback(
         [Output('visualization-selector', 'value'),
+         Output('taxonomy-level-selector', 'style'),
          Output('annotation-selector', 'value'),
          Output('annotation-selector', 'style'),
          Output('bin-selector', 'value'),
@@ -1655,8 +1640,7 @@ def register_visualization_callbacks(app):
          Input('table-tabs', 'value')],
         [State('taxonomy-level-selector', 'value'),
          State('user-folder', 'data'),
-         State('data-loaded', 'data')],
-         prevent_initial_call=True
+         State('data-loaded', 'data')]
     )
     def sync_selectors(reset_clicks, visualization_type, contact_table_selected_rows, bin_info_selected_rows, contig_info_selected_rows, selected_node_data, current_tab, taxonomy_level, user_folder, data_loaded):      
         if not data_loaded:
@@ -1670,15 +1654,24 @@ def register_visualization_callbacks(app):
         annotation_selector_style = {'display': 'none'}
         bin_selector_style = {'display': 'none'}
         contig_selector_style = {'display': 'none'}
+        taxonomy_selector_style = {'display': 'none'}
         tab_value = current_tab
     
         # Reset selections if reset button is clicked
         if triggered_id == 'reset-btn':
-            visualization_type = 'basic'
-            selected_annotation = None
-            selected_bin = None
-            selected_contig = None
-            tab_value = 'bin'
+            if reset_clicks == 1:
+                visualization_type = 'taxonomy_hierarchy'
+                selected_annotation = None
+                selected_bin = None
+                selected_contig = None
+                tab_value = 'bin'
+            else:
+                visualization_type = 'basic'
+                selected_annotation = None
+                selected_bin = None
+                selected_contig = None
+                tab_value = 'bin'
+                
         else:
             bin_information = load_from_redis(f'{user_folder}:bin-information')
             contig_information = load_from_redis(f'{user_folder}:contig-information')
@@ -1697,21 +1690,22 @@ def register_visualization_callbacks(app):
             # Update styles, tab, and visualization type based on selections
             if selected_bin or visualization_type == 'bin':
                 visualization_type = 'bin'
-                annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 tab_value = 'bin'  # Switch to bin tab
         
             elif selected_contig or visualization_type == 'contig':
                 visualization_type = 'contig'
-                annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 contig_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 tab_value = 'contig'  # Switch to contig tab
             elif selected_annotation or visualization_type == 'basic':
                 visualization_type = 'basic'
+                taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                 annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
 
-        return (visualization_type, selected_annotation, annotation_selector_style, selected_bin, bin_selector_style,
-                 selected_contig, contig_selector_style, tab_value, 1)
+        return (visualization_type, taxonomy_selector_style, selected_annotation, annotation_selector_style, 
+                selected_bin, bin_selector_style, selected_contig, contig_selector_style, tab_value, 1)
                
     def synchronize_selections(
             triggered_id, selected_node_data, bin_info_selected_rows, contig_info_selected_rows, contact_table_selected_rows, 
@@ -1725,31 +1719,31 @@ def register_visualization_callbacks(app):
             selected_node_id = selected_node_data[0]['id']
             
             # Check if the node exists in both bin and contig information
-            is_in_bin = selected_node_id in bin_information['Bin'].values
-            is_in_contig = selected_node_id in contig_information['Contig'].values
+            is_in_bin = selected_node_id in bin_information['Bin index'].values
+            is_in_contig = selected_node_id in contig_information['Contig index'].values
     
             # Decide based on the active tab
             if is_in_bin and is_in_contig:
                 if table_tab_value == 'bin':
                     # Use bin info if the bin tab is active
-                    bin_info = bin_information[bin_information['Bin'] == selected_node_id].iloc[0]
+                    bin_info = bin_information[bin_information['Bin index'] == selected_node_id].iloc[0]
                     selected_annotation = bin_info['Annotation']
-                    selected_bin = bin_info['Bin']
+                    selected_bin = bin_info['Bin index']
                 elif table_tab_value == 'contig':
                     # Use contig info if the contig tab is active
-                    contig_info = contig_information[contig_information['Contig'] == selected_node_id].iloc[0]
+                    contig_info = contig_information[contig_information['Contig index'] == selected_node_id].iloc[0]
                     selected_annotation = contig_info['Annotation']
-                    selected_contig = contig_info['Contig']
+                    selected_contig = contig_info['Contig index']
             elif is_in_bin:
                 # If only in bin, select bin info
-                bin_info = bin_information[bin_information['Bin'] == selected_node_id].iloc[0]
+                bin_info = bin_information[bin_information['Bin index'] == selected_node_id].iloc[0]
                 selected_annotation = bin_info['Annotation']
-                selected_bin = bin_info['Bin']
+                selected_bin = bin_info['Bin index']
             elif is_in_contig:
                 # If only in contig, select contig info
-                contig_info = contig_information[contig_information['Contig'] == selected_node_id].iloc[0]
+                contig_info = contig_information[contig_information['Contig index'] == selected_node_id].iloc[0]
                 selected_annotation = contig_info['Annotation']
-                selected_contig = contig_info['Contig']
+                selected_contig = contig_info['Contig index']
             else:
                 # Default to treating it as an annotation
                 selected_annotation = selected_node_id
@@ -1757,16 +1751,16 @@ def register_visualization_callbacks(app):
         # Row selected in bin-info-table
         elif triggered_id == 'bin-info-table' and bin_info_selected_rows:
             selected_row = bin_info_selected_rows[0]
-            if taxonomy_level in selected_row and 'Bin' in selected_row:
+            if taxonomy_level in selected_row and 'Bin index' in selected_row:
                 selected_annotation = selected_row[taxonomy_level]
-                selected_bin = selected_row['Bin']
+                selected_bin = selected_row['Bin index']
     
         # Row selected in contig-info-table
         elif triggered_id == 'contig-info-table' and contig_info_selected_rows:
             selected_row = contig_info_selected_rows[0]
-            if taxonomy_level in selected_row and 'Contig' in selected_row:
+            if taxonomy_level in selected_row and 'Contig index' in selected_row:
                 selected_annotation = selected_row[taxonomy_level]
-                selected_contig = selected_row['Contig']
+                selected_contig = selected_row['Contig index']
     
         # Cell selected in contact-table
         elif triggered_id == 'contact-table' and contact_table_selected_rows:
@@ -1921,15 +1915,15 @@ def register_visualization_callbacks(app):
         if  selected_bin:
             bin_information = load_from_redis(f'{user_folder}:bin-information')
             selected_nodes.append(selected_bin)
-            bin_info = bin_information[bin_information['Bin'] == selected_bin].iloc[0]
-            hover_info = f"Annotation: {bin_info['Annotation']}  \nBin: {selected_bin}"
+            bin_info = bin_information[bin_information['Bin index'] == selected_bin].iloc[0]
+            hover_info = f"Bin: {selected_bin}  \nTaxonomic annotation: {bin_info['Annotation']}"
             # No need to update cyto_elements or layout if a bin is selected
     
         elif selected_contig:
             contig_information = load_from_redis(f'{user_folder}:contig-information')
             selected_nodes.append(selected_contig)
-            contig_info = contig_information[contig_information['Contig'] == selected_contig].iloc[0]
-            hover_info = f"Annotation: {contig_info['Annotation']}  \nContig: {selected_contig}"
+            contig_info = contig_information[contig_information['Contig index'] == selected_contig].iloc[0]
+            hover_info = f"Taxonomic annotation: {contig_info['Annotation']}  \nContig: {selected_contig}"
             # No need to update cyto_elements or layout if a contig is selected
     
         if current_visualization_mode['visualization_type'] == 'basic':
@@ -1937,7 +1931,7 @@ def register_visualization_callbacks(app):
             unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
             selected_nodes.append(selected_annotation)
-            hover_info = f"Annotation: {selected_annotation}"   
+            hover_info = f"Taxonomic annotation: {selected_annotation}"   
             # Only call annotation_visualization in 'basic' mode
             if selected_annotation:
                 # Show edges connected to the selected node using the contact matrix
@@ -1955,53 +1949,13 @@ def register_visualization_callbacks(app):
                 cyto_elements, _, cyto_style = annotation_visualization(
                     bin_information, unique_annotations, contact_matrix
                 )
+        elif current_visualization_mode['visualization_type'] == 'taxonomy_hierarchy':
+            hover_info = ""
     
         # Add selection styles for the selected nodes and edges
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
         
         return cyto_elements, stylesheet, hover_info, cyto_style, 1
-    
-    @app.callback(
-        [Output('annotation-selector', 'options'),
-         Output('bin-selector', 'options'),
-         Output('contig-selector', 'options'),
-         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input('annotation-selector', 'value')],
-        [State('visualization-selector', 'value'),
-         State('table-tabs', 'value'),
-         State('user-folder', 'data'),
-         State('data-loaded', 'data')],
-         prevent_initial_call=True
-    )
-    def update_dropdowns(selected_annotation, visualization_type, selected_tab, user_folder, data_loaded):
-        if not data_loaded:
-            raise PreventUpdate
-                    
-        unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-        annotation_options = [{'label': annotation, 'value': annotation} for annotation in unique_annotations]
-        
-        # Initialize empty lists for dropdown options
-        bin_options = []
-        contig_options = []
-        
-        # Determine which dataset to use based on selected_tab
-        if selected_tab == 'bin':
-            bin_information = load_from_redis(f'{user_folder}:bin-information')
-            if visualization_type == 'bin' and selected_annotation:
-                bin_index_dict = get_indexes(selected_annotation, bin_information, 'Annotation')
-                bin_indexes = bin_index_dict[selected_annotation]
-                bins = bin_information.loc[bin_indexes, 'Bin']
-                bin_options = [{'label': bin, 'value': bin} for bin in bins]
-    
-        elif selected_tab == 'contig':
-            if visualization_type == 'contig' and selected_annotation:
-                contig_information = load_from_redis(f'{user_folder}:contig-information')
-                contig_index_dict = get_indexes(selected_annotation, contig_information, 'Annotation')
-                contig_indexes = contig_index_dict[selected_annotation]
-                contigs = contig_information.loc[contig_indexes, 'Contig']
-                contig_options = [{'label': contig, 'value': contig} for contig in contigs]
-                    
-        return annotation_options, bin_options, contig_options, 1
     
     @app.callback(
         Output('log-box-visualization', 'value'),

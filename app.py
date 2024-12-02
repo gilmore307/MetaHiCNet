@@ -115,6 +115,7 @@ app.layout = dbc.Container([
 def setup_user_id(pathname):
     # Generate a unique session ID for the user
     unique_folder = str(uuid.uuid4())
+    print(f"New user starts session: {unique_folder}")
     
     # Store the session marker key with TTL in Redis
     r.set(f"{unique_folder}", "", ex=SESSION_TTL)
@@ -155,6 +156,7 @@ def refresh_and_cleanup(n, user_folder):
                 # If the base key doesn't exist in Redis, the session has expired
                 if os.path.exists(session_folder_path):
                     shutil.rmtree(session_folder_path)
+                    print(f"User terminated session: {user_folder}")
 
 @app.callback(
     [Output('tab-method1', 'disabled'),

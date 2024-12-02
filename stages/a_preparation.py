@@ -9,22 +9,216 @@ import os
 import py7zr
 import numpy as np
 import pandas as pd
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, csr_matrix, csc_matrix
 import logging
 from stages.helper import (
-    save_file_to_user_folder, 
-    parse_contents, 
-    get_file_size, 
-    validate_csv, 
-    validate_contig_matrix, 
-    validate_unnormalized_folder, 
-    validate_normalized_folder,
-    list_files_in_7z,
-    process_data,
+    save_file_to_user_folder,
     save_to_redis)
 
 # Initialize logger
 logger = logging.getLogger("app_logger")
+
+def parse_contents(contents, filename):
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
+    
+    if 'csv' in filename:
+        # Load CSV file
+        return pd.read_csv(io.StringIO(decoded.decode('utf-8')))
+    
+    elif 'txt' in filename:
+        # Convert txt to DataFrame assuming each line represents a row and values are space/comma separated
+        text = decoded.decode('utf-8')
+        data = [line.split() for line in text.splitlines()]
+        return pd.DataFrame(data)
+    
+    elif 'npz' in filename:
+        # Load the npz file
+        npzfile = np.load(io.BytesIO(decoded))
+        
+        # Check for COO matrix keys
+        if all(key in npzfile for key in ['data', 'row', 'col', 'shape']):
+            data = npzfile['data']
+            row = npzfile['row']
+            col = npzfile['col']
+            shape = tuple(npzfile['shape'])
+            
+            # Reconstruct the sparse matrix in COO format
+            contact_matrix = coo_matrix((data, (row, col)), shape=shape)
+            return contact_matrix
+        
+        # Check for CSR or CSC matrix keys
+        elif all(key in npzfile for key in ['data', 'indices', 'indptr', 'shape']):
+            data = npzfile['data']
+            indices = npzfile['indices']
+            indptr = npzfile['indptr']
+            shape = tuple(npzfile['shape'])
+            
+            # Reconstruct and convert to COO
+            contact_matrix = csr_matrix((data, indices, indptr), shape=shape).tocoo()
+            return contact_matrix
+    
+    elif '7z' in filename:
+        # Load and extract .7z archive
+        with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as z:
+            return z.getnames()
+    
+    else:
+        raise ValueError("Unsupported file format.")
+
+def get_file_size(contents):
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
+    size_in_bytes = len(decoded)
+    size_in_kb = size_in_bytes / 1024
+    return f"{size_in_kb:.2f} KB"
+
+def validate_csv(df, required_columns, optional_columns=[]):
+    all_columns = required_columns + optional_columns
+    if not all(column in df.columns for column in all_columns):
+        missing_cols = set(required_columns) - set(df.columns)
+        logger.error(f"Missing columns in the CSV file: {missing_cols}")
+        raise ValueError(f"Missing columns in the file: {missing_cols}")
+    for col in required_columns:
+        if df[col].isnull().any():
+            logger.error(f"Required column '{col}' has missing values.")
+            raise ValueError(f"Required column '{col}' has missing values.")
+    return True
+
+def validate_contig_matrix(contig_data, contact_matrix):
+    num_contigs = len(contig_data)
+
+    # Check if contact_matrix is an NPZ file containing COO matrix components
+    if isinstance(contact_matrix, np.lib.npyio.NpzFile):
+        if all(key in contact_matrix for key in ['data', 'row', 'col', 'shape']):
+            data = contact_matrix['data']
+            row = contact_matrix['row']
+            col = contact_matrix['col']
+            shape = tuple(contact_matrix['shape'])
+            contact_matrix = coo_matrix((data, (row, col)), shape=shape)
+        else:
+            logger.error("The contact matrix file does not contain the expected COO matrix keys.")
+            raise ValueError("The contact matrix file does not contain the expected COO matrix keys.")
+    
+    # Validate matrix shape
+    matrix_shape = contact_matrix.shape
+    if matrix_shape[0] != matrix_shape[1]:
+        logger.error("The contact matrix is not square.")
+        raise ValueError("The contact matrix is not square.")
+    if matrix_shape[0] != num_contigs:
+        logger.error(f"The contact matrix dimensions {matrix_shape} do not match the number of contigs.")
+        raise ValueError(f"The contact matrix dimensions {matrix_shape} do not match the number of contigs.")
+    
+    # Validate 'Within-contig Hi-C contacts' column if present
+    if 'Within-contig Hi-C contacts' in contig_data.columns:
+        # Convert COO to dense format for diagonal validation
+        diagonal_values = contact_matrix.diagonal()
+        self_contact = contig_data['Within-contig Hi-C contacts'].dropna()
+        if not np.allclose(self_contact, diagonal_values[:len(self_contact)]):
+            logger.error("The 'Within-contig Hi-C contacts' column values do not match the diagonal of the contact matrix.")
+            raise ValueError("The 'Within-contig Hi-C contacts' column values do not match the diagonal of the contact matrix.")
+    
+    return True
+
+def validate_unnormalized_folder(folder):
+    expected_files = ['contig_info_final.csv', 'raw_contact_matrix.npz']
+    missing_files = [file for file in expected_files if file not in folder]
+    if missing_files:
+        logger.error(f"Missing files in unnormalized folder: {', '.join(missing_files)}")
+        raise ValueError(f"Missing files in unnormalized folder: {', '.join(missing_files)}")
+    return True
+
+def validate_normalized_folder(folder):
+    expected_files = ['bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz']
+    missing_files = [file for file in expected_files if file not in folder]
+    if missing_files:
+        logger.error(f"Missing files in normalized folder: {', '.join(missing_files)}")
+        raise ValueError(f"Missing files in normalized folder: {', '.join(missing_files)}")
+    return True
+
+def list_files_in_7z(decoded):
+    with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as z:
+        file_list = z.getnames()
+    return file_list
+
+def adjust_taxonomy(row):
+        # Define prefixes for taxonomy tiers
+    prefixes = {
+        'Domain': 'd_',
+        'Kingdom': 'k_',
+        'Phylum': 'p_',
+        'Class': 'c_',
+        'Order': 'o_',
+        'Family': 'f_',
+        'Genus': 'g_',
+        'Species': 's_'
+    }
+
+    taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+    if all(pd.isna(row[col]) for col in taxonomy_columns):
+        row['Contig category'] = 'unmapped'
+        
+    if row['Contig category'] == 'virus':
+        for tier in taxonomy_columns:
+            if not pd.isna(row[tier]):
+                   row[tier] = row[tier] + '_v'
+        row['Contig index'] = row['Contig index'] + "_v"
+        row['Bin index'] = row['Bin index'] + "_v"
+
+    elif row['Contig category'] == 'plasmid':
+        for tier in taxonomy_columns:
+            if not pd.isna(row[tier]):
+                row[tier] = row[tier] + '_p'
+        row['Contig index'] = row['Contig index'] + "_p"
+        row['Bin index'] = row['Bin index'] + "_p"
+    
+    elif row['Contig category'] == 'chromosome':
+        for tier in taxonomy_columns:
+            if not pd.isna(row[tier]):
+                row[tier] = row[tier] + '_c'
+        row['Contig index'] = row['Contig index'] + "_c"
+        row['Bin index'] = row['Bin index'] + "_c"
+    else:
+        for tier in taxonomy_columns:
+            row[tier] = "unmapped"
+
+    for tier, prefix in prefixes.items():
+        if not pd.isna(row[tier]):
+            row[tier] = f"{prefix}{row[tier]}"
+        else:
+            row[tier] = f"{prefix} Unclassified {row['Contig category']}"
+    return row
+
+def process_data(contig_data, binning_data, taxonomy_data, contig_matrix):
+    try:
+        logger.info("Starting data preparation...")
+        
+        if isinstance(contig_matrix, str):
+            logger.error("contig_matrix is a string, which is unexpected. Please check the source.")
+            raise ValueError("contact_matrix should be a sparse matrix, not a string.")
+        
+        # Ensure the contact_matrix is in the correct sparse format if it's not already
+        if not isinstance(contig_matrix, coo_matrix):
+            logger.error("contig_matrix is not a COO sparse matrix.")
+            raise ValueError("contig_matrix must be a COO sparse matrix.")
+
+        # Merge contig, binning, and taxonomy data
+        combined_data = pd.merge(contig_data, binning_data, on='Contig index', how="left")
+        combined_data = pd.merge(combined_data, taxonomy_data, on='Bin index', how="left")
+
+        # Apply taxonomy adjustments
+        combined_data = combined_data.apply(lambda row: adjust_taxonomy(row), axis=1)
+
+        # Fill missing bins with Contig index
+        combined_data['Bin index'] = combined_data['Bin index'].fillna(combined_data['Contig index'])
+
+        # Return the processed combined data directly
+        logger.info("Data processed successfully.")
+        return combined_data
+
+    except Exception as e:
+        logger.error(f"Error during data preparation: {e}")
+        return None
 
 def create_upload_component(component_id, text, example_url, instructions):
     return dbc.Card(
@@ -61,33 +255,40 @@ def create_upload_layout_method1():
                 'raw-contig-info', 
                 'Upload Contig Information File (.csv)', 
                 'assets/examples/contig_information.csv',
-                "This file must include the following columns: 'Contig', 'Restriction sites', 'Length', 'Coverage', and 'Self Contact'.  \n"
-                "'Self Contact' is optional; leave it blank if not applicable."
+                "This file includes the following columns: 'Contig index', 'The number of restriction sites', 'Contig length', 'Contig coverage', and 'Within-contig Hi-C contacts'.  \n\n"
+                "'Within-contig Hi-C contacts' is an optional column used to ensure that the contig sequence in the Contig Information aligns with the contig sequence in the Contact Matrix; leave it blank if not applicable.  \n\n"
+                "'Contig coverage' is an optional column that can be calculated by dividing 'Within-contig Hi-C contacts' by the 'Contig length' if not provided."
             )),
             dbc.Col(create_upload_component(
                 'raw-contig-matrix', 
-                'Upload Raw Contact Matrix File (.npz)', 
+                'Upload Raw Contact Matrix File (.txt, .csv or .npz)', 
                 'assets/examples/raw_contact_matrix.npz',
-                "The matrix file must be a COO matrix and include the following keys: 'data', 'row', 'col', and 'shape'.  \n"
+                "The contact matrix can be provided in one of the following formats:  .txt, .csv or .npz  \n\n"
+                "The .txt and .csv format file should contain 3 columns: 'Contig_name1', 'Contig_name2', 'Contacts'.  \n\n"
+                "The .npz Format file should be a sparse or dense matrix which can be obtained from recent metaHi-C pipelines such as MetaCC or HiCBin.  \n"
+                "The matrix could be in COO, CSC or CSR format.  \n"
                 "The row and column indices of the Contact Matrix must match the row indices of the Contig Information File."
             ))
         ]),
         dbc.Row([
             dbc.Col(create_upload_component(
                 'raw-binning-info', 
-                'Upload Binning Information File (.csv)', 
+                'Upload Binning and Category Information File (.csv)', 
                 'assets/examples/binning_information.csv',
-                "This file must include the following columns: 'Contig', 'Bin', and 'Type'.  \n"
-                "If the contigs are not binned, please use the contig name in the 'Bin' column.  \n"
-                "Please indicate the type of contig as one of 'chromosome', 'phage', 'plasmid', or 'unmapped'."
+                "This file includes the following columns: 'Contig index', 'Bin index', and 'Contig category'.  \n\n"
+                "'Bin index' is an optional column; if left blank (contigs are not binned), the value from the 'Contig index' column will be used as the bin index.  \n\n"
+                "Please indicate the category of bin in the 'Contig category' column if it is a 'virus' or 'plasmid'.  \n"
+                "Feel free to leave the colunn blank if it is 'chromosome' or 'unmapped' (cannot be assigned to any known reference or taxonomy)."
             )),
             dbc.Col(create_upload_component(
                 'raw-bin-taxonomy', 
-                'Upload Bin Taxonomy File (.csv)', 
+                'Upload Taxonomy File (.csv)', 
                 'assets/examples/bin_taxonomy.csv',
-                "This file must include the following columns: 'Bin', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', and 'Plasmid ID'.  \n"
-                "The taxonomy columns ('Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species') are optional; leave them blank if not applicable.  \n"
-                "If a Plasmid ID is provided in the 'Plasmid ID' column, please leave the taxonomy columns blank."
+                "This file includes the following columns: 'Bin index', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', and 'Customized annotation'.  \n\n"
+                "The taxonomy columns ('Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', and 'Customized annotation') are optional; leave them blank if not applicable.  \n\n"
+                "If the 'Customized annotation' column contains a value, it will be used to fill all blank columns across all taxonomy levels.  \n"
+                "This feature can be used to annotate bins that cannot be classified within the standard taxonomy system (plamid or virus).  \n\n"
+                "If all the taxonomy columns are blank, the bin will be marked as 'unmapped'."
             ))
         ])
     ])
@@ -162,12 +363,11 @@ def register_preparation_callbacks(app):
     
         if remove_click and ctx.triggered_id == 'remove-raw-contig-matrix':
             logger.info("Raw Contact Matrix file removed.")
-            return '', {'display': 'none'}, None
+            return '', {'display': 'none'}
     
         file_size = get_file_size(contents)
         if 'npz' in filename:
             try:
-                # Parse the contents to ensure it is a sparse COO matrix
                 contig_matrix = parse_contents(contents, filename)
                 
                 if not isinstance(contig_matrix, coo_matrix):
@@ -203,10 +403,27 @@ def register_preparation_callbacks(app):
             except Exception as e:
                 logger.error(f"Error processing matrix file: {e}")
                 return "Error processing matrix file", {'display': 'block'}
+            
+        elif 'csv' in filename or 'txt' in filename:
+            try:
+                # Parse the file into a DataFrame
+                df = parse_contents(contents, filename)
+                
+                # Display the first few rows as an overview
+                overview =[
+                    dbc.Table.from_dataframe(df.head(), striped=True, bordered=True, hover=True),
+                    html.P(f"File Size: {file_size}")
+                ]
+                logger.info(f"Uploaded Raw Matrix: {filename} with size {file_size}.")
+                return overview, {'display': 'block'}
+            
+            except Exception as e:
+                logger.error(f"Error processing CSV/TXT file: {e}")
+                return "Error processing CSV/TXT file", {'display': 'block'}
     
         logger.error("Unsupported file format for Raw Matrix.")
         return "Unsupported file format", {'display': 'block'}
-
+    
     # Callback for handling binning info upload with logging
     @app.callback(
         [Output('overview-raw-binning-info', 'children'),
@@ -306,50 +523,89 @@ def register_preparation_callbacks(app):
         try:
             # Parse and validate the contents directly
             contig_data = parse_contents(contig_info, contig_info_name)
-            required_columns = ['Contig', 'Restriction sites', 'Length', 'Coverage']
-            validate_csv(contig_data, required_columns, optional_columns=['Self Contact'])
-    
+            validate_csv(contig_data, ['Contig index', 'The number of restriction sites', 'Contig length'], ['Within-contig Hi-C contacts', 'Contig coverage'])
+        except Exception as e:
+            logger.error(f"Validation failed for Contig Information file: {e}")
+            return False, ""
+        
+        try:
             contig_matrix_data = parse_contents(contig_matrix, contig_matrix_name)
-            
             # Verify that contig_matrix_data is of the expected type
-            if not isinstance(contig_matrix_data, coo_matrix):
-                logger.error("contig_matrix_data is not a COO sparse matrix.")
-                raise ValueError("contig_matrix must be a COO sparse matrix.")
+            if isinstance(contig_matrix_data, (coo_matrix, csc_matrix, csr_matrix)):
+                validate_contig_matrix(contig_data, contig_matrix_data)
+            else:
+                row = contig_matrix_data['row'].values
+                col = contig_matrix_data['column'].values
+                data = contig_matrix_data['data'].values
+                
+                # Calculate the shape based on max row and column index + 1 (since indices are 0-based)
+                num_rows = contig_matrix_data['row'].max() + 1
+                num_cols = contig_matrix_data['column'].max() + 1
+                shape = (num_rows, num_cols)
+                
+                # Create the COO matrix with the calculated shape
+                contig_matrix_data = coo_matrix((data, (row, col)), shape=shape) 
+                validate_contig_matrix(contig_data, contig_matrix_data)
             
-            validate_contig_matrix(contig_data, contig_matrix_data)
-    
+            diagonal_values = contig_matrix_data.diagonal()
+            
+            contig_data['Within-contig Hi-C contacts'] = contig_data.apply(
+                lambda row: diagonal_values[contig_data.index.get_loc(row.name)] 
+                if pd.isna(row['Within-contig Hi-C contacts']) else row['Within-contig Hi-C contacts'], axis=1)
+            
+            contig_data['Contig coverage'] = contig_data.apply(
+                lambda row: row['Within-contig Hi-C contacts'] / row['Contig length'] 
+                if pd.isna(row['Contig coverage']) else row['Contig coverage'], axis=1)
+        except Exception as e:
+            logger.error(f"Validation failed for Contact Matrix file: {e}")
+            return False, ""
+        
+        try:
             binning_data = parse_contents(binning_info, binning_info_name)
-            validate_csv(binning_data, ['Contig', 'Bin', 'Type'])
-    
+            validate_csv(binning_data, ['Contig index'], ['Bin index', 'Contig category'])
+            binning_data['Bin index'] = binning_data.apply(
+                lambda row: row['Contig index'] if pd.isna(row['Bin index']) else row['Bin index'], axis=1)
+            binning_data['Contig category'] = binning_data['Contig category'].fillna('chromosome')
+        except Exception as e:
+            logger.error(f"Validation failed for Bining and Category Information file: {e}")
+            return False, ""
+        
+        try:
             taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
-            validate_csv(taxonomy_data, ['Bin'], ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Plasmid ID'])
+            validate_csv(taxonomy_data, ['Bin index'], ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Customized annotation'])
+            taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+            for col in taxonomy_columns:
+                taxonomy_data[col] = taxonomy_data.apply(
+                    lambda row: row['Customized annotation'] if pd.notna(row['Customized annotation']) and pd.isna(row[col]) else row[col],
+                    axis=1
+                )
+            taxonomy_data.drop(columns=['Customized annotation'], inplace=True)
+        except Exception as e:
+            logger.error(f"Validation failed for Taxonomy Information file: {e}")
+            return False, ""
     
-            logger.info("Validation successful. Proceeding with data preparation...")
+        logger.info("Validation successful. Proceeding with data preparation...")
             
+        try:    
             # Process data using parsed dataframes directly
             combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data)
     
-            if combined_data is not None:
-                # Save `raw_contact_matrix.npz` using `save_file_to_user_folder`
-                save_file_to_user_folder(contig_matrix, 'raw_contact_matrix.npz', user_folder)
-    
-                # Save `contig_info_final.csv`
-                encoded_csv_content = base64.b64encode(combined_data.to_csv(index=False).encode()).decode()
-                save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info_final.csv', user_folder)
-                
-                # Compress into `unnormalized_information.7z` including the two files
-                user_output_folder = os.path.join('output', user_folder)
-                unnormalized_archive_path = os.path.join(user_output_folder, 'unnormalized_information.7z')
-                with py7zr.SevenZipFile(unnormalized_archive_path, 'w') as archive:
-                    archive.write(os.path.join(user_output_folder, 'raw_contact_matrix.npz'), 'raw_contact_matrix.npz')
-                    archive.write(os.path.join(user_output_folder, 'contig_info_final.csv'), 'contig_info_final.csv')
-                return True, ""
-            else:
-                logger.error("Data preparation failed.")
-                return False, ""
-    
+            # Save `raw_contact_matrix.npz` using `save_file_to_user_folder`
+            save_file_to_user_folder(contig_matrix, 'raw_contact_matrix.npz', user_folder)
+
+            # Save `contig_info_final.csv`
+            encoded_csv_content = base64.b64encode(combined_data.to_csv(index=False).encode()).decode()
+            save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info_final.csv', user_folder)
+            
+            # Compress into `unnormalized_information.7z` including the two files
+            user_output_folder = os.path.join('output', user_folder)
+            unnormalized_archive_path = os.path.join(user_output_folder, 'unnormalized_information.7z')
+            with py7zr.SevenZipFile(unnormalized_archive_path, 'w') as archive:
+                archive.write(os.path.join(user_output_folder, 'raw_contact_matrix.npz'), 'raw_contact_matrix.npz')
+                archive.write(os.path.join(user_output_folder, 'contig_info_final.csv'), 'contig_info_final.csv')
+            return True, ""
         except Exception as e:
-            logger.error(f"Validation and preparation failed for Method 1: {e}")
+            logger.error(f"Preparation failed for Method 1: {e}")
             return False, ""
 
     @app.callback(
