@@ -297,9 +297,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         # Mask for rows/columns to keep
         keep_mask = np.ones(dense_matrix.shape[0], dtype=bool)
         keep_mask[unmapped_contigs] = False
-        contig_contact_matrix = dense_matrix[keep_mask, :][:, keep_mask]
-    else:
-        contig_contact_matrix = dense_matrix.copy()
+        dense_matrix = dense_matrix[keep_mask, :][:, keep_mask]
 
     # Aggregate bin data
     bin_info = contig_info.groupby('Bin index').agg({
@@ -364,13 +362,18 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
     contig_info['Category'] = contig_info['Category'].replace(reverse_map)
 
     unique_bins = bin_info['Bin index']
-    contig_indexes_dict = get_indexes(unique_bins, contig_info, 'Bin index')
-
+    bin_indexes_dict = get_indexes(unique_bins, contig_info, 'Bin index')
     host_bin = bin_info[bin_info['Category'] == 'chromosome']['Bin index'].tolist()
     non_host_bin = bin_info[~bin_info['Category'].isin(['chromosome'])]['Bin index'].tolist()
-
-    # Create the bin contact matrix
     bin_contact_matrix = pd.DataFrame(0.0, index=unique_bins, columns=unique_bins)
+    
+    # Step 1: Get unique contig indices
+    unique_contigs = contig_info['Contig index'].unique()
+    contig_indexes_dict = get_indexes(unique_contigs, contig_info, 'Contig index')
+    host_contig = contig_info[contig_info['Category'] == 'chromosome']['Contig index'].tolist()
+    non_host_contig = contig_info[~contig_info['Category'].isin(['chromosome'])]['Contig index'].tolist()
+    contig_contact_matrix = pd.DataFrame(0.0, index=unique_contigs, columns=unique_contigs)
+
 
     # Combine pairs of all necessary interactions
     if remove_host_host:
@@ -383,18 +386,42 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         for i in chromosome_indices:
             for j in chromosome_indices:
                 dense_matrix[i, j] = 0
+        
+        contig_non_host_pairs = list(combinations(non_host_contig, 2))
+        contig_non_host_self_pairs = [(x, x) for x in non_host_contig]
+        contig_host_non_host_pairs = list(product(host_contig, non_host_contig))
+        contig_all_pairs = contig_non_host_pairs + contig_non_host_self_pairs + contig_host_non_host_pairs
+        
+        # Mask out chromosome-chromosome contacts in the dense matrix (zero out these values)
+        chromosome_indices = contig_info[contig_info['Category'] == 'chromosome'].index.tolist()
+        for i in chromosome_indices:
+            for j in chromosome_indices:
+                dense_matrix[i, j] = 0
     else:
         bin_non_self_pairs = list(combinations(unique_bins, 2))
         bin_self_pairs = [(x, x) for x in unique_bins]
         bin_all_pairs = bin_non_self_pairs + bin_self_pairs
         
+        contig_non_self_pairs = list(combinations(unique_contigs, 2))
+        contig_self_pairs = [(x, x) for x in unique_contigs]
+        contig_all_pairs = contig_non_self_pairs + contig_self_pairs
+        
     results = Parallel(n_jobs=-1)(
-        delayed(calculate_submatrix_sum)(pair, contig_indexes_dict, dense_matrix) for pair in bin_all_pairs
+        delayed(calculate_submatrix_sum)(pair, bin_indexes_dict, dense_matrix) for pair in bin_all_pairs
     )
     
     for annotation_i, annotation_j, value in results:
         bin_contact_matrix.at[annotation_i, annotation_j] = value
         bin_contact_matrix.at[annotation_j, annotation_i] = value
+        
+    results = Parallel(n_jobs=-1)(
+        delayed(calculate_submatrix_sum)(pair, contig_indexes_dict, dense_matrix) for pair in contig_all_pairs
+    )
+    
+    # Step 2: Fill the contig contact matrix with the calculated values
+    for annotation_i, annotation_j, value in results:
+        contig_contact_matrix.at[annotation_i, annotation_j] = value
+        contig_contact_matrix.at[annotation_j, annotation_i] = value
 
     # Convert to COO sparse matrices for storage
     bin_contact_matrix = coo_matrix(bin_contact_matrix)

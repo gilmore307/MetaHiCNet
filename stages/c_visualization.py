@@ -1717,9 +1717,9 @@ def register_visualization_callbacks(app):
          Input('contact-table', 'selectedRows'),
          Input('bin-info-table', 'selectedRows'),
          Input('contig-info-table', 'selectedRows'),
-         Input('cyto-graph', 'selectedNodeData'),
-         Input('table-tabs', 'value')],
-        [State('taxonomy-level-selector', 'value'),
+         Input('cyto-graph', 'selectedNodeData')],
+        [State('table-tabs', 'value'),
+         State('taxonomy-level-selector', 'value'),
          State('user-folder', 'data'),
          State('data-loaded', 'data')]
     )
