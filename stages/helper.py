@@ -113,7 +113,7 @@ def save_to_redis(key, data):  # ttl is set to 600 seconds (10 minutes) by defau
     else:
         # Raise an error for unsupported types
         raise ValueError(f"Unsupported data type: {type(data)}")
-
+        
 def load_from_redis(key):
     from app import r
     data = r.get(key)
@@ -138,10 +138,7 @@ def load_from_redis(key):
             # Attempt to load as DataFrame format JSON
             return pd.read_json(StringIO(decoded_data), orient='split')
         except ValueError:
-            # If not a DataFrame, check if it's a simple list or dictionary
-            parsed_data = json.loads(decoded_data)
-            # Return as a DataFrame if the parsed data is a list of lists or dict
-            if isinstance(parsed_data, list) or isinstance(parsed_data, dict):
-                return parsed_data
+            # If not a DataFrame, try loading as a JSON string for list or dict
+            return json.loads(decoded_data)
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise ValueError(f"Unable to load data from Redis for key: {key}, unknown format.")

@@ -572,7 +572,7 @@ def register_preparation_callbacks(app):
         
         try:
             taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
-            taxonomy_columns = [col for col in taxonomy_data.columns if col not in ['Bin index', 'Customized annotation']]
+            taxonomy_columns = np.array([col for col in taxonomy_data.columns if col not in ['Bin index', 'Customized annotation']])
 
             save_to_redis(f'{user_folder}:taxonomy-levels', taxonomy_columns)
             
@@ -764,9 +764,20 @@ def register_preparation_callbacks(app):
             bin_matrix_key = f'{user_folder}:bin-dense-matrix'
             contig_info_key = f'{user_folder}:contig-information'
             contig_matrix_key = f'{user_folder}:contig-dense-matrix'
+            taxonomy_levels_key = f'{user_folder}:taxonomy-levels'
         
             try:
                 bin_information = pd.read_csv(bin_info_path)
+                excluded_columns = [
+                    'Contig index', 
+                    'The number of restriction sites', 
+                    'Contig length', 
+                    'Contig coverage', 
+                    'Within-contig Hi-C contacts', 
+                    'Bin index', 
+                    'Category'
+                ]
+                taxonomy_levels = np.array([col for col in bin_information.columns if col not in excluded_columns])
                 
                 bin_matrix_data = np.load(bin_matrix_path)
                 bin_dense_matrix = coo_matrix(
@@ -790,6 +801,7 @@ def register_preparation_callbacks(app):
             save_to_redis(bin_matrix_key, bin_dense_matrix)
             save_to_redis(contig_info_key, contig_information)
             save_to_redis(contig_matrix_key, contig_dense_matrix)
+            save_to_redis(taxonomy_levels_key, taxonomy_levels)
             
             logger.info("Data loaded and saved to Redis successfully.")
             return True  # Validation and extraction succeeded

@@ -452,12 +452,24 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center
     return {**inner_positions, **outer_positions}
 
 def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_columns):
-    if not taxonomy_columns:
+    taxonomy_columns = taxonomy_columns.tolist() if isinstance(taxonomy_columns, np.ndarray) else taxonomy_columns
+    logger.debug("Starting taxonomy_visualization function.")
+
+    # Check input validity
+    if taxonomy_columns is None or len(taxonomy_columns) == 0:
+        logger.error("taxonomy_columns is empty or not provided.")
         raise ValueError("taxonomy_columns must be provided.")
 
+    logger.debug(f"taxonomy_columns: {taxonomy_columns}")
+    logger.debug(f"bin_information columns: {bin_information.columns}")
+    logger.debug(f"Number of unique_annotations: {len(unique_annotations)}")
+
     # Dynamically map taxonomy levels
-    level_mapping = {level: idx + 1 for idx, level in enumerate(reversed(taxonomy_columns))}
-    level_mapping["Community"] = len(taxonomy_columns) + 1  # Assign "Community" the highest level
+    level_mapping = {"Community": 1, "Category": 2}  # Assign Community and Category fixed levels
+    level_mapping.update({level: idx + 3 for idx, level in enumerate(taxonomy_columns)})  # Taxonomy levels start at 3
+    logger.debug(f"Level mapping: {level_mapping}")
+
+    logger.debug(f"Level mapping: {level_mapping}")
 
     records = []
     existing_annotations = set()
@@ -475,11 +487,29 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
     })
     existing_annotations.add("Community")
 
+    categories = bin_information['Category'].unique()
+    for category in categories:
+        records.append({
+            "annotation": category,
+            "parent": "Community",
+            "level": level_mapping["Category"],
+            "level_name": "Category",
+            "type": category,
+            "total coverage": 0,
+            "border_color": type_colors.get(category, "gray"),
+            "bin": []
+        })
+        existing_annotations.add(category)
+
     # Populate hierarchy dynamically
     for _, row in bin_information.iterrows():
+        parent = row['Category']
         for level in taxonomy_columns:
             annotation = row[level]
-            parent = "Community" if level == taxonomy_columns[0] else row[taxonomy_columns[taxonomy_columns.index(level) - 1]]
+
+            # Skip unclassified annotations
+            if "Unclassified" in annotation:
+                continue
 
             if annotation not in existing_annotations:
                 records.append({
@@ -494,13 +524,21 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
                 })
                 existing_annotations.add(annotation)
             else:
+                # Update existing record
                 for rec in records:
                     if rec['annotation'] == annotation:
                         rec['total coverage'] += row['Contig coverage']
                         rec['bin'].append(row['Bin index'])
                         break
 
+            # Set current annotation as parent for the next level
+            parent = annotation
+
+    logger.debug(f"Number of records created: {len(records)}")
+    
     hierarchy_df = pd.DataFrame(records)
+    logger.debug(f"Hierarchy DataFrame head:\n{hierarchy_df.head()}")
+
     hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
     hierarchy_df.loc[hierarchy_df['type'] == 'virus', 'scaled_coverage'] *= 20
 
@@ -510,6 +548,7 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
         return ', '.join(bin_list)
 
     hierarchy_df['limited_bins'] = hierarchy_df['bin'].apply(lambda bins: format_bins(bins))
+    logger.debug("Processed bin formatting.")
 
     # Create Treemap
     fig = px.treemap(
@@ -535,6 +574,7 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
         autosize=True,
         margin=dict(t=30, b=0, l=0, r=0)
     )
+    logger.debug("Treemap created.")
 
     # Generate classification bar chart
     classification_data = []
@@ -551,15 +591,16 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
         })
 
     classification_data_df = pd.DataFrame(classification_data)
+    logger.debug(f"Classification data:\n{classification_data_df}")
 
     data_dict = {
         'Ratio of classified bins across taxonomy levels': classification_data_df
     }
 
     bar_fig = create_bar_chart(data_dict)
+    logger.debug("Bar chart created.")
 
     return fig, bar_fig
-
 
 #Function to visualize annotation relationship
 def annotation_visualization(bin_information, unique_annotations, contact_matrix, selected_node=None):
@@ -1334,8 +1375,7 @@ def register_visualization_callbacks(app):
         [Input('user-folder', 'data')]
     )
     def update_taxonomy_selector(user_folder):
-        taxonomy_level_key = f'{user_folder}:taxonomy-levels'
-        taxonomy_levels = load_from_redis(taxonomy_level_key)
+        taxonomy_levels = load_from_redis(f'{user_folder}:taxonomy-levels')
 
         # Generate taxonomy options from taxonomy levels
         taxonomy_options = [{'label': level, 'value': level} for level in taxonomy_levels]
@@ -1646,7 +1686,7 @@ def register_visualization_callbacks(app):
         if not data_loaded:
             raise PreventUpdate
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
-        taxonomy_level_list = load_from_redis(f'{user_folder}:taxonomy-level')
+        taxonomy_level_list = load_from_redis(f'{user_folder}:taxonomy-levels')
         
         # Bin Table Styling
         if bin_virtual_row_data:
