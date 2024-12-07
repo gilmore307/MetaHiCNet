@@ -85,7 +85,7 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
                     'source': edge[0],
                     'target': edge[1],
                     'width': edge[2].get('width', 1),
-                    'color': edge[2].get('color', '#ccc'),
+                    'color': edge[2].get('color', '#bbb'),
                     'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element',
                     'selectable': False
                 }
@@ -114,7 +114,7 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
                 'selector': f'edge[source="{source}"][target="{target}"], edge[source="{target}"][target="{source}"]',
                 'style': {
                     'width': 2,
-                    'line-color': '#ccc',
+                    'line-color': '#bbb',
                     'display': 'element'
                 }
             }
@@ -300,7 +300,9 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
 
     return styles
 
-def styling_information_table(information_data, id_colors, unique_annotations, table_type='bin', taxonomy_level='Family'):
+def styling_information_table(information_data, id_colors, unique_annotations, table_type='bin', taxonomy_columns=None, taxonomy_level=None):
+    if taxonomy_level is None:
+        taxonomy_level = taxonomy_columns[-1]
     columns = ['The number of restriction sites', 'Contig length', 'Contig coverage']
     styles = []
     # Precompute numeric data
@@ -387,7 +389,6 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
             style_id_column(row[id_column],  row['Category'], styles)
             
     # Add styles for italic taxonomy columns
-    taxonomy_columns = ['Community', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
     for col in taxonomy_columns:
         italic_style = {
             "condition": f"params.colDef.field == '{col}'",
@@ -450,27 +451,22 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center
 
     return {**inner_positions, **outer_positions}
 
-def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
+def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_columns):
+    if not taxonomy_columns:
+        raise ValueError("taxonomy_columns must be provided.")
 
-    level_mapping = {
-        'Community': 9,
-        'Domain': 8,
-        'Kingdom': 7,
-        'Phylum': 6,
-        'Class': 5,
-        'Order': 4,
-        'Family': 3,
-        'Genus': 2,
-        'Species': 1
-    }
+    # Dynamically map taxonomy levels
+    level_mapping = {level: idx + 1 for idx, level in enumerate(reversed(taxonomy_columns))}
+    level_mapping["Community"] = len(taxonomy_columns) + 1  # Assign "Community" the highest level
 
     records = []
     existing_annotations = set()
 
+    # Add "Community" as the root node
     records.append({
         "annotation": "Community",
         "parent": "",
-        "level": 9,
+        "level": level_mapping["Community"],
         "level_name": "Community",
         "type": "Community",
         "total coverage": 0,
@@ -479,19 +475,17 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
     })
     existing_annotations.add("Community")
 
+    # Populate hierarchy dynamically
     for _, row in bin_information.iterrows():
-        for level, level_num in level_mapping.items():
-            if level == 'Community':
-                continue
-
+        for level in taxonomy_columns:
             annotation = row[level]
-            parent = "Community" if level_num == 8 else row[list(level_mapping.keys())[list(level_mapping.values()).index(level_num + 1)]]
+            parent = "Community" if level == taxonomy_columns[0] else row[taxonomy_columns[taxonomy_columns.index(level) - 1]]
 
             if annotation not in existing_annotations:
                 records.append({
                     "annotation": annotation,
                     "parent": parent,
-                    "level": level_num,
+                    "level": level_mapping[level],
                     "level_name": level.capitalize(),
                     "type": row['Category'],
                     "total coverage": row['Contig coverage'],
@@ -503,7 +497,7 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
                 for rec in records:
                     if rec['annotation'] == annotation:
                         rec['total coverage'] += row['Contig coverage']
-                        rec["bin"].append(row['Bin index'])
+                        rec['bin'].append(row['Bin index'])
                         break
 
     hierarchy_df = pd.DataFrame(records)
@@ -515,8 +509,9 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
             return ', '.join(bin_list[:max_bins]) + f"... (+{len(bin_list) - max_bins} more)"
         return ', '.join(bin_list)
 
-    hierarchy_df['limited_bins'] = hierarchy_df["bin"].apply(lambda bins: format_bins(bins))
+    hierarchy_df['limited_bins'] = hierarchy_df['bin'].apply(lambda bins: format_bins(bins))
 
+    # Create Treemap
     fig = px.treemap(
         hierarchy_df,
         names='annotation',
@@ -536,41 +531,35 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix):
 
     fig.update_layout(
         coloraxis_showscale=False,
-        font=dict(family="Arial", size=20, style = "italic"),
+        font=dict(family="Arial", size=20, style="italic"),
         autosize=True,
         margin=dict(t=30, b=0, l=0, r=0)
     )
-    
+
+    # Generate classification bar chart
     classification_data = []
-    for level in level_mapping.keys():
-        # Skip levels not present in bin_information
-        if level not in bin_information.columns:
-            continue
-    
+    for level in taxonomy_columns:
         total_count = len(bin_information[level])
         unclassified_count = bin_information[level].str.contains("Unclassified", na=False).sum()
         classified_count = total_count - unclassified_count
-    
-        # Calculate ratio of classified annotations
         classified_ratio = (classified_count / total_count) * 100 if total_count > 0 else 0
-    
-        # Append data
+
         classification_data.append({
             "name": level,
             "value": classified_ratio,
             "color": "gray"
         })
-    
-    # Convert to a DataFrame
+
     classification_data_df = pd.DataFrame(classification_data)
 
     data_dict = {
-        'Classified ratio across taxonomy levels': classification_data_df
+        'Ratio of classified bins across taxonomy levels': classification_data_df
     }
 
     bar_fig = create_bar_chart(data_dict)
 
     return fig, bar_fig
+
 
 #Function to visualize annotation relationship
 def annotation_visualization(bin_information, unique_annotations, contact_matrix, selected_node=None):
@@ -913,10 +902,7 @@ def contig_visualization(selected_annotation, selected_contig, contig_informatio
 
     return cyto_elements, bar_fig
 
-def prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy_level = 'Family'):
-    
-    if taxonomy_level is None:
-        taxonomy_level = 'Family'
+def prepare_data(bin_information, contig_information, bin_dense_matrix, taxonomy_level):
     
     bin_information['Annotation'] = bin_information[taxonomy_level]
     contig_information['Annotation'] = contig_information[taxonomy_level]
@@ -1070,70 +1056,6 @@ hover_info = {
 def create_visualization_layout():
     logger.info("Generating layout.")
     
-    bin_column_defs = [
-        {
-            "headerName": "Index",
-            "children": [
-                {"headerName": "Index", "field": "Bin index", "pinned": 'left', "width": 120}
-            ]
-        },
-        {
-            "headerName": "Taxonomy",
-            "children": [   
-                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Category", "field": "Category", "hide": True}
-            ]
-        },
-        {
-            "headerName": "Contact Information",
-            "children": [
-                {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Bin Size", "field": "Contig length", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Bin coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Visibility", "field": "Visibility", "hide": True}
-            ]
-        }
-    ]
-    
-    contig_column_defs = [
-        {
-            "headerName": "Index",
-            "children": [
-                {"headerName": "Index", "field": "Contig index", "pinned": 'left', "width": 120}
-            ]
-        },
-        {
-            "headerName": "Taxonomy",
-            "children": [   
-                {"headerName": "Species", "field": "Species", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Genus", "field": "Genus", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Family", "field": "Family", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Order", "field": "Order", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Class", "field": "Class", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Phylum", "field": "Phylum", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Kingdom", "field": "Kingdom", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Domain", "field": "Domain", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Category", "field": "Category", "hide": True}
-            ]
-        },
-        {
-            "headerName": "Contact Information",
-            "children": [
-                {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Contig length", "field": "Contig length", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Contig coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
-                {"headerName": "Visibility", "field": "Visibility", "hide": True}
-            ]
-        }
-    ]
-    
     common_text_style = {
         'height': '38px',
         'width': '200px',
@@ -1192,17 +1114,8 @@ def create_visualization_layout():
                             ),
                             dcc.Dropdown(
                                 id='taxonomy-level-selector',
-                                options=[
-                                    {'label': 'Domain', 'value': 'Domain'},
-                                    {'label': 'Kingdom', 'value': 'Kingdom'},
-                                    {'label': 'Phylum', 'value': 'Phylum'},
-                                    {'label': 'Class', 'value': 'Class'},
-                                    {'label': 'Order', 'value': 'Order'},
-                                    {'label': 'Family', 'value': 'Family'},
-                                    {'label': 'Genus', 'value': 'Genus'},
-                                    {'label': 'Species', 'value': 'Species'},
-                                ],
-                                value='Family',
+                                options=[],
+                                value=None,
                                 placeholder="Select Taxonomy Level",
                                 style={}
                             ),
@@ -1294,7 +1207,7 @@ def create_visualization_layout():
                                                 children=[
                                                     dag.AgGrid(
                                                         id='bin-info-table',
-                                                        columnDefs=bin_column_defs,
+                                                        columnDefs=[],
                                                         rowData=[],
                                                         defaultColDef={},
                                                         style={'display': 'none'},
@@ -1306,7 +1219,7 @@ def create_visualization_layout():
                                                     ),
                                                     dag.AgGrid(
                                                         id='contig-info-table',
-                                                        columnDefs=contig_column_defs,
+                                                        columnDefs=[],
                                                         rowData=[],
                                                         defaultColDef={},
                                                         style={'display': 'none'},
@@ -1412,7 +1325,78 @@ def create_visualization_layout():
         ]
     )
            
-def register_visualization_callbacks(app):    
+def register_visualization_callbacks(app):
+    @app.callback(
+        [Output('taxonomy-level-selector', 'options'),
+         Output('taxonomy-level-selector', 'value'),
+         Output('bin-info-table', 'columnDefs'),
+         Output('contig-info-table', 'columnDefs')],
+        [Input('user-folder', 'data')]
+    )
+    def update_taxonomy_selector(user_folder):
+        taxonomy_level_key = f'{user_folder}:taxonomy-levels'
+        taxonomy_levels = load_from_redis(taxonomy_level_key)
+
+        # Generate taxonomy options from taxonomy levels
+        taxonomy_options = [{'label': level, 'value': level} for level in taxonomy_levels]
+        default_taxonomy_level = taxonomy_levels[-1]  # Set the last level as the default value
+    
+        # Dynamically create taxonomy columns for the bin info table
+        taxonomy_columns = [
+            {"headerName": level, "field": level, "width": 150, "wrapHeaderText": True} for level in taxonomy_levels
+        ]
+    
+        # Add hidden "Category" column
+        taxonomy_columns.append({"headerName": "Category", "field": "Category", "hide": True})
+    
+        # Construct the full column definitions for the bin info table
+        bin_column_defs = [
+            {
+                "headerName": "Index",
+                "children": [
+                    {"headerName": "Index", "field": "Bin index", "pinned": 'left', "width": 120}
+                ]
+            },
+            {
+                "headerName": "Taxonomy",
+                "children": taxonomy_columns
+            },
+            {
+                "headerName": "Contact Information",
+                "children": [
+                    {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Bin Size", "field": "Contig length", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Bin coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Visibility", "field": "Visibility", "hide": True}
+                ]
+            }
+        ]
+    
+        # Construct the full column definitions for the contig info table
+        contig_column_defs = [
+            {
+                "headerName": "Index",
+                "children": [
+                    {"headerName": "Index", "field": "Contig index", "pinned": 'left', "width": 120}
+                ]
+            },
+            {
+                "headerName": "Taxonomy",
+                "children": taxonomy_columns
+            },
+            {
+                "headerName": "Contact Information",
+                "children": [
+                    {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Contig length", "field": "Contig length", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Contig coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Visibility", "field": "Visibility", "hide": True}
+                ]
+            }
+        ]
+    
+        return taxonomy_options, default_taxonomy_level, bin_column_defs, contig_column_defs
+    
     @app.callback(
         [Output('data-loaded', 'data'),
          Output('contact-table', 'rowData'),
@@ -1426,7 +1410,8 @@ def register_visualization_callbacks(app):
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('taxonomy-level-selector', 'value')],
         [State('reset-btn', 'n_clicks'),
-         State('user-folder', 'data')]
+         State('user-folder', 'data')],
+        prevent_initial_call=True
     )
     def update_data(taxonomy_level, reset_clicks, user_folder):
         logger.info("Updating taxonomy level data.")
@@ -1661,13 +1646,14 @@ def register_visualization_callbacks(app):
         if not data_loaded:
             raise PreventUpdate
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
+        taxonomy_level_list = load_from_redis(f'{user_folder}:taxonomy-level')
         
         # Bin Table Styling
         if bin_virtual_row_data:
             bin_row_data_df = pd.DataFrame(bin_virtual_row_data)
             bin_colors = get_id_colors(cyto_elements)
             bin_style_conditions = styling_information_table(
-                bin_row_data_df, bin_colors, unique_annotations, table_type='bin', taxonomy_level=taxonomy_level
+                bin_row_data_df, bin_colors, unique_annotations, 'bin', taxonomy_level_list, taxonomy_level
             )
         
             bin_col_def = {
@@ -1686,7 +1672,7 @@ def register_visualization_callbacks(app):
             contig_row_data_df = pd.DataFrame(contig_virtual_row_data)
             contig_colors = get_id_colors(cyto_elements)
             contig_style_conditions = styling_information_table(
-                contig_row_data_df, contig_colors, unique_annotations, table_type='contig', taxonomy_level=taxonomy_level
+                contig_row_data_df, contig_colors, unique_annotations, 'contig', taxonomy_level_list, taxonomy_level
             )
         
             contig_col_def = {
@@ -1878,6 +1864,7 @@ def register_visualization_callbacks(app):
         # Load user-specific data from Redis
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
         current_visualization_mode = load_from_redis(f'{user_folder}:current-visualization-mode')
+        taxonomy_level_list = load_from_redis(f'{user_folder}:taxonomy-levels')
     
         if triggered_id == 'reset-btn':
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
@@ -1891,7 +1878,7 @@ def register_visualization_callbacks(app):
                     'selected_bin': None,
                     'selected_contig': None
                 }
-                treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix)
+                treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_level_list)
                 treemap_style = {'height': '83vh', 'width': '48vw', 'display': 'inline-block'}
                 cyto_elements = []
                 cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
@@ -1922,7 +1909,7 @@ def register_visualization_callbacks(app):
                 bin_information = load_from_redis(f'{user_folder}:bin-information')
 
                 logger.info("Displaying Taxonomy Framework visualization.")
-                treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix)
+                treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_level_list)
                 treemap_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
                 cyto_elements = []
                 cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}

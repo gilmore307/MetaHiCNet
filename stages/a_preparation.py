@@ -141,20 +141,10 @@ def list_files_in_7z(decoded):
         file_list = z.getnames()
     return file_list
 
-def adjust_taxonomy(row):
-        # Define prefixes for taxonomy tiers
-    prefixes = {
-        'Domain': 'd_',
-        'Kingdom': 'k_',
-        'Phylum': 'p_',
-        'Class': 'c_',
-        'Order': 'o_',
-        'Family': 'f_',
-        'Genus': 'g_',
-        'Species': 's_'
-    }
+def adjust_taxonomy(row, taxonomy_columns):
+    # Define prefixes for taxonomy tiers
+    prefixes = {col: f"{col[0].lower()}_" for col in taxonomy_columns}
 
-    taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
     if all(pd.isna(row[col]) for col in taxonomy_columns):
         row['Category'] = 'unmapped'
         
@@ -183,13 +173,17 @@ def adjust_taxonomy(row):
             row[tier] = "unmapped"
 
     for tier, prefix in prefixes.items():
-        if not pd.isna(row[tier]):
-            row[tier] = f"{prefix}{row[tier]}"
+        if not pd.isna(row['Customized annotation']):
+            row[tier] = row[tier]
         else:
-            row[tier] = f"{prefix} Unclassified {row['Category']}"
+            if not pd.isna(row[tier]):
+                row[tier] = f"{prefix}{row[tier]}"
+            else:
+                row[tier] = f"{prefix} Unclassified {row['Category']}"
+                
     return row
 
-def process_data(contig_data, binning_data, taxonomy_data, contig_matrix):
+def process_data(contig_data, binning_data, taxonomy_data, contig_matrix, taxonomy_columns):
     try:
         logger.info("Starting data preparation...")
         
@@ -207,7 +201,7 @@ def process_data(contig_data, binning_data, taxonomy_data, contig_matrix):
         combined_data = pd.merge(combined_data, taxonomy_data, on='Bin index', how="left")
 
         # Apply taxonomy adjustments
-        combined_data = combined_data.apply(lambda row: adjust_taxonomy(row), axis=1)
+        combined_data = combined_data.apply(lambda row: adjust_taxonomy(row, taxonomy_columns), axis=1)
 
         # Fill missing bins with Contig index
         combined_data['Bin index'] = combined_data['Bin index'].fillna(combined_data['Contig index'])
@@ -284,11 +278,16 @@ def create_upload_layout_method1():
                 'raw-bin-taxonomy', 
                 'Upload Taxonomy File (.csv)', 
                 'assets/examples/bin_taxonomy.csv',
-                "This file includes the following columns: 'Bin index', 'Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', and 'Customized annotation'.  \n\n"
-                "The taxonomy columns ('Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', and 'Customized annotation') are optional; leave them blank if not applicable.  \n\n"
-                "If the 'Customized annotation' column contains a value, it will be used to fill all blank columns across all taxonomy levels.  \n"
+                "This file includes the following columns: 'Bin index', 'Customized annotation' and taxonomy columns.  \n\n"
+                "Users have the flexibility to define their taxonomy levels based on their specific needs.  \n"
+                "Users can include any number of taxonomy columns, up to a maximum of 8 levels (e.g., Realm, Phylum, Order, Genus, etc.).  \n"
+                "Taxonomy column names can be customized. For example, Domain or Superkingdom could be used instead of Realm.  \n\n"
+                "If the Customized annotation column is filled, its values will be used to populate any missing entries across the specified taxonomy levels.  \n"
                 "The 'Customized annotation' should only contain letters (a-z, A-Z), numbers (0-9), or the underscore (_) character.  \n"
-                "This feature can be used to annotate bins that cannot be classified within the standard taxonomy system (plamid or virus).  \n\n"
+                "This feature ensures that unclassified bins or missing taxonomy details are assigned meaningful labels.  \n"
+                "This feature is particularly useful for annotating bins or contigs that do not align with traditional taxonomy systems,  \n"
+                "such as plasmid GenBank Accession Numbers (NZ_CP123456) or viruse Zoonotic Virus Classification (SARS-CoV). \n"
+                "It allows users to provide a specific annotation for such bins or contigs.  \n\n"
                 "If all the taxonomy columns are blank, the bin will be marked as 'unmapped'."
             ))
         ])
@@ -573,14 +572,15 @@ def register_preparation_callbacks(app):
         
         try:
             taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
-            validate_csv(taxonomy_data, ['Bin index'], ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Customized annotation'])
-            taxonomy_columns = ['Domain', 'Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+            taxonomy_columns = [col for col in taxonomy_data.columns if col not in ['Bin index', 'Customized annotation']]
+
+            save_to_redis(f'{user_folder}:taxonomy-levels', taxonomy_columns)
+            
             for col in taxonomy_columns:
                 taxonomy_data[col] = taxonomy_data.apply(
                     lambda row: row['Customized annotation'] if pd.notna(row['Customized annotation']) and pd.isna(row[col]) else row[col],
                     axis=1
                 )
-            taxonomy_data.drop(columns=['Customized annotation'], inplace=True)
         except Exception as e:
             logger.error(f"Validation failed for Taxonomy Information file: {e}")
             return False, ""
@@ -589,7 +589,8 @@ def register_preparation_callbacks(app):
             
         try:    
             # Process data using parsed dataframes directly
-            combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data)
+            combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data, taxonomy_columns)
+            combined_data.drop(columns=['Customized annotation'], inplace=True)
     
             # Save `raw_contact_matrix.npz` using `save_file_to_user_folder`
             save_file_to_user_folder(contig_matrix, 'raw_contact_matrix.npz', user_folder)

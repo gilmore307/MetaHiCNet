@@ -138,7 +138,10 @@ def load_from_redis(key):
             # Attempt to load as DataFrame format JSON
             return pd.read_json(StringIO(decoded_data), orient='split')
         except ValueError:
-            # If not a DataFrame, try loading as a JSON string for list or dict
-            return json.loads(decoded_data)
+            # If not a DataFrame, check if it's a simple list or dictionary
+            parsed_data = json.loads(decoded_data)
+            # Return as a DataFrame if the parsed data is a list of lists or dict
+            if isinstance(parsed_data, list) or isinstance(parsed_data, dict):
+                return parsed_data
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise ValueError(f"Unable to load data from Redis for key: {key}, unknown format.")

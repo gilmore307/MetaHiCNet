@@ -299,50 +299,36 @@ def generating_bin_information(contig_info, contact_matrix, remove_unmapped_cont
         keep_mask[unmapped_contigs] = False
         dense_matrix = dense_matrix[keep_mask, :][:, keep_mask]
 
-    # Aggregate bin data
-    bin_info = contig_info.groupby('Bin index').agg({
+    # Identify columns for aggregation
+    known_agg = {
         'Contig index': lambda x: ', '.join(x),
         'The number of restriction sites': 'sum',
         'Contig length': 'sum',
-        'Contig coverage': lambda x: (x * contig_info.loc[x.index, 'Contig length']).sum() / contig_info.loc[x.index, 'The number of restriction sites'].sum(),
-        'Within-contig Hi-C contacts': 'sum',
-        'Category': 'first',
-        'Domain': 'first',
-        'Kingdom': 'first',
-        'Phylum': 'first',
-        'Class': 'first',
-        'Order': 'first',
-        'Family': 'first',
-        'Genus': 'first',
-        'Species': 'first'
-    }).reset_index()
+        'Contig coverage': lambda x: (x * contig_info.loc[x.index, 'Contig length']).sum() /
+                                     contig_info.loc[x.index, 'The number of restriction sites'].sum(),
+        'Within-contig Hi-C contacts': 'sum'
+    }
+    unknown_columns = [col for col in contig_info.columns if col not in known_agg]
     
+    # Apply 'first' aggregation for unknown columns
+    for col in unknown_columns:
+        known_agg[col] = 'first'
+
+    # Aggregate bin data
+    bin_info = contig_info.groupby('Bin index', as_index=False).agg(known_agg)
     bin_info['Contig coverage'] = bin_info['Contig coverage'].astype(float).map("{:.2f}".format)
 
+    # Separate chromosome rows and non-chromosome rows
     chromosome_rows = contig_info[contig_info['Category'] == 'chromosome']
     non_chromosome_rows = contig_info[contig_info['Category'] != 'chromosome']
     
-    grouped_chromosome_rows = chromosome_rows.groupby('Bin index').agg({
-        'Contig index': lambda x: ', '.join(x),
-        'The number of restriction sites': 'sum',
-        'Contig length': 'sum',
-        'Contig coverage': lambda x: (x * chromosome_rows.loc[x.index, 'Contig length']).sum() / chromosome_rows.loc[x.index, 'The number of restriction sites'].sum(),
-        'Within-contig Hi-C contacts': 'sum',
-        'Category': 'first',
-        'Domain': 'first',
-        'Kingdom': 'first',
-        'Phylum': 'first',
-        'Class': 'first',
-        'Order': 'first',
-        'Family': 'first',
-        'Genus': 'first',
-        'Species': 'first'
-    }).reset_index()
-    
+    grouped_chromosome_rows = chromosome_rows.groupby('Bin index', as_index=False).agg(known_agg)
     grouped_chromosome_rows['Contig coverage'] = grouped_chromosome_rows['Contig coverage'].astype(float).map("{:.2f}".format)
+    grouped_chromosome_rows['Contig index'] = grouped_chromosome_rows['Bin index']
     
     # Combine grouped chromosome rows and non-chromosome rows
     contig_info = pd.concat([grouped_chromosome_rows, non_chromosome_rows], ignore_index=True)
+    contig_info['Contig coverage'] = contig_info['Contig coverage'].astype(float).map("{:.2f}".format)
     
     # Create a mapping for temporary renaming
     rename_map = {
