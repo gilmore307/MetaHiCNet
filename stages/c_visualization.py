@@ -594,7 +594,7 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
     logger.debug(f"Classification data:\n{classification_data_df}")
 
     data_dict = {
-        'Ratio of classified bins across taxonomy levels': classification_data_df
+        'Ratio of classified bins by taxonomic Level': classification_data_df
     }
 
     bar_fig = create_bar_chart(data_dict)
@@ -1007,36 +1007,47 @@ base_stylesheet = [
 
 hover_info = {
     'download-btn': 
-        ("The Download Button allows users to download the dataset they are currently viewing or working with.  \n\n"
-         
+       ("The Download Button allows users to download the dataset they are currently viewing or working with.  \n\n"
+        
          "This downloaded data can be re-uploaded to the app when visiting the website again, "
-         "enabling returning users to continue from where they left off with their previously analyzed data."),
+         "enabling returning users to continue from where they left off with their previously analyzed data.  \n\n"
+         
+         "Use this to save your progress or share your dataset for collaborative analysis."),
         
     'reset-btn': 
-        ("The Reset Button resets all user selections and filters, bringing the visualization back to the 'Taxonomy interaction' visualization."),
+        ("The Reset Button resets all user selections and filters, bringing the visualization back to the 'Cross-Taxa Hi-C Interaction' visualization."),
         
     'confirm-btn': 
-        ("The Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly."),
+        ("The Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly.  \n\n"
+         
+         "After making selections, use this button to refresh and reflect your choices in the visualizations."),
         
     "tooltip-toggle-container":
         ("Check the box next to 'Enable Help Tooltip' to activate tooltips.  \n\n"
-         "Once enabled, hovering over buttons, charts, tables, or other interactive elements will display helpful instructions."),
+         
+         "Once enabled, hovering over buttons, charts, tables, or other interactive elements will display helpful instructions.  \n\n"
+         
+         "Use tooltips for guidance on how to interpret and interact with elements on the interface."),
         
     'dropdowns':
         ("The Taxonomy Level Selector allows users to choose the taxonomic level they wish to focus on in the dataset. \n"
-         "Users can select from various taxonomic levels, such as Domain, Phylum, Class, Order, Family, Genus, and Species. \n"
+         "The bar chart in the Taxonomic Framework, titled 'Ratio of classified bins across taxonomic levels,' can help users identify the taxonomic level with the highest saturability. \n"
          "Once a taxonomic level is selected, the visualization and data tables will update IMMEDIATELY without clicking confirm button. \n\n"
          
          "The rest of dropdown selectors allow users to filter and select specific annotations, bins, or contigs within the dataset. \n\n"
-         "It always displays the current selected item. \n"
+         
          "Click the Confirm button to apply the selection in selectors."),
         
     'bar-chart-container':
-        ("By interacting with the bar chart, users can explore relationships and variations between different traces and elements in the dataset.  \n\n"
+        ("The bar chart provides a dynamic and interactive way to explore various aspects of the dataset. \n"
+         "Each aspect highlights a different characteristic of the data.  \n"
+         "Users can select which aspect to display by choosing from the available options.  \n\n"
          
-         "The bar chart displays multiple traces, each corresponding to a different aspect of the dataset.  \n"
-         "Each trace highlights a different characteristic of the data, allowing users to compare multiple aspects simultaneously.  \n"
-         "Users can select which trace to display by choosing from the available options.  \n\n"
+         "In the Taxonomic Framework, the bar chart titled 'Ratio of classified bins across taxonomy levels' highlights the percentage of classified bins at each taxonomy level. \n"
+         "This visualization helps users identify taxonomy levels with the highest saturability, where a higher percentage indicates more complete classification information.  \n\n"
+         
+         "In other visualizations, the bar chart presents metrics relevant to the selected view.   \n"
+         "For instance, in Bin and Contig visualizations, the bar chart displays interaction or coverage data that helps users analyze relationships and connections within the dataset.  \n\n"
          
          "A scroll bar is available at the bottom of the chart, allowing users to set the number of bars to display at once.  \n\n"
          
@@ -1044,10 +1055,8 @@ hover_info = {
 
     'info-table-container': 
         ("The Visibility Filter checkbox filters the table to display only elements represented in the main visualization.   \n\n"
-         
-         "The Bin Info Tab displays data specific to bins, and the Contig Info Tab displays data specific to contigs. Users can switch between these tabs.  \n\n"
-         
-         "Cells in the 'Bin index' or 'Contig index' columns are colored based on the corresponding node in the Cytoscape Graph.  \n"
+                  
+         "Cells in the 'Index'column are colored based on the corresponding node in the Cytoscape Graph.  \n"
          "Cells in the column of the selected taxonomy level are colored using the unified color for the type (chromosome, plasmid, or virus).  \n"
          "Cells in numeric columns are highlighted with a bluish color. Higher values have a deeper color.  \n\n"
          
@@ -1059,7 +1068,7 @@ hover_info = {
          "The table allows users to filter and sort columns to organize data according to taxonomic groups and metrics."),
     
     'treemap-graph-container': 
-        ("The Treemap Graph provides a hierarchical view of taxonomic data, showing relationships between groups at different taxonomic levels.  \n\n"
+        ("The Treemap Graph provides a hierarchical view of taxonomic data.  \n\n"
          
          "Each box represents a taxonomic level or group. Visual encoding allows users to quickly identify dominant groups, their levels, and types within the dataset.  \n"
          "Darker colors indicate higher taxonomy levels (e.g., Domain), while lighter colors represent lower levels within the hierarchy (e.g., Species).  \n"
@@ -1069,17 +1078,14 @@ hover_info = {
         ("The Cytoscape Graph is a network-style visualization that represents relationships between annotations, "
          "bins, or contigs, depending on the selected visualization type.  \n\n"
          
-         "Selecting a node in 'Taxonomy interaction' may highlight its connected nodes, showing relationships within the network.  \n"
-         "Selection made on Cytoscape Graph in 'Taxonomy interaction' can be remove by clicking on blank area.  \n\n"
+         "Selecting a node in 'Cross-Taxa Hi-C Interaction' may highlight its connected nodes, showing relationships within the network.  \n"
+         "Selection made on Cytoscape Graph in 'Cross-Taxa Hi-C Interaction' can be remove by clicking on blank area.  \n\n"
          
-         "Selecting a node in 'Bin interaction' or 'Contig interaction' may filter the rows being displayed in the information table.  \n\n"
+         "Selecting a node in 'Cross-Bin Hi-C Interactions' or 'Cross-Contig Hi-C Interactions' may filter the rows being displayed in the information table.  \n\n"
          
-         "Colors may vary based on element types:  \n"
+         "Colors of nodes may vary based on element types:  \n"
          "Chromosomes are in bluish color, plasmids are in greenish color, and virus are in reddish color.  \n"
          "This color coding helps users quickly identify the biological role of each node.  \n\n"
-         
-         "Nodes are sized based on coverage within the dataset.  \n"
-         "A node with higher coverage may appear larger, making it stand out in the graph.  \n\n"
          
          "Nodes that are densely connected may form clusters. There might be a higher contact between these nodes.  \n"
          "The geometry distribution of nodes allows users to identify groups of closely related elements. "),
