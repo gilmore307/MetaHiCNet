@@ -1411,8 +1411,8 @@ def register_visualization_callbacks(app):
                 "headerName": "Contact Information",
                 "children": [
                     {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
-                    {"headerName": "Bin Size", "field": "Contig length", "width": 150, "wrapHeaderText": True},
-                    {"headerName": "Bin coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Bin Size/ Contig length", "field": "Contig length", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Bin coverage/ Contig coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
                     {"headerName": "Visibility", "field": "Visibility", "hide": True}
                 ]
             }
@@ -1434,8 +1434,8 @@ def register_visualization_callbacks(app):
                 "headerName": "Contact Information",
                 "children": [
                     {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
-                    {"headerName": "Contig length", "field": "Contig length", "width": 150, "wrapHeaderText": True},
-                    {"headerName": "Contig coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Bin Size/ Contig length", "field": "Contig length", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "CBin coverage/ Contig coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
                     {"headerName": "Visibility", "field": "Visibility", "hide": True}
                 ]
             }
