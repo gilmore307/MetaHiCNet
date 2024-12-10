@@ -109,15 +109,6 @@ def validate_contig_matrix(contig_data, contact_matrix):
         logger.error(f"The contact matrix dimensions {matrix_shape} do not match the number of contigs.")
         raise ValueError(f"The contact matrix dimensions {matrix_shape} do not match the number of contigs.")
     
-    # Validate 'Within-contig Hi-C contacts' column if present
-    if 'Within-contig Hi-C contacts' in contig_data.columns:
-        # Convert COO to dense format for diagonal validation
-        diagonal_values = contact_matrix.diagonal()
-        self_contact = contig_data['Within-contig Hi-C contacts'].dropna()
-        if not np.allclose(self_contact, diagonal_values[:len(self_contact)]):
-            logger.error("The 'Within-contig Hi-C contacts' column values do not match the diagonal of the contact matrix.")
-            raise ValueError("The 'Within-contig Hi-C contacts' column values do not match the diagonal of the contact matrix.")
-    
     return True
 
 def validate_unnormalized_folder(folder):
@@ -146,7 +137,7 @@ def adjust_taxonomy(row, taxonomy_columns):
     prefixes = {col: f"{col[0].lower()}_" for col in taxonomy_columns}
 
     if all(pd.isna(row[col]) for col in taxonomy_columns):
-        row['Category'] = 'unmapped'
+        row['Category'] = 'unclassified'
         
     if row['Category'] == 'virus':
         for tier in taxonomy_columns:
@@ -161,25 +152,12 @@ def adjust_taxonomy(row, taxonomy_columns):
                 row[tier] = row[tier] + '_p'
         row['Contig index'] = row['Contig index'] + "_p"
         row['Bin index'] = row['Bin index'] + "_p"
-    
-    elif row['Category'] == 'chromosome':
-        for tier in taxonomy_columns:
-            if not pd.isna(row[tier]):
-                row[tier] = row[tier] + '_c'
-        row['Contig index'] = row['Contig index'] + "_c"
-        row['Bin index'] = row['Bin index'] + "_c"
-    else:
-        for tier in taxonomy_columns:
-            row[tier] = "unmapped"
-
+        
     for tier, prefix in prefixes.items():
-        if not pd.isna(row['Customized annotation']):
-            row[tier] = row[tier]
+        if not pd.isna(row[tier]):
+            row[tier] = f"{prefix}{row[tier]}"
         else:
-            if not pd.isna(row[tier]):
-                row[tier] = f"{prefix}{row[tier]}"
-            else:
-                row[tier] = f"{prefix} Unclassified {row['Category']}"
+            row[tier] = f"{prefix}"
                 
     return row
 
@@ -251,7 +229,7 @@ def create_upload_layout_method1():
                 'assets/examples/contig_information.csv',
                 "This file includes the following columns: 'Contig index', 'The number of restriction sites', 'Contig length', 'Contig coverage', and 'Within-contig Hi-C contacts'.  \n\n"
                 "'Within-contig Hi-C contacts' is an optional column used to ensure that the contig sequence in the Contig Information aligns with the contig sequence in the Contact Matrix; leave it blank if not applicable.  \n\n"
-                "'Contig coverage' is an optional column that can be calculated by dividing 'Within-contig Hi-C contacts' by the 'Contig length' if not provided."
+                "'Contig coverage' is an optional column that can be automatically calculated by dividing 'Within-contig Hi-C contacts' by the 'Contig length' if not provided."
             )),
             dbc.Col(create_upload_component(
                 'raw-contig-matrix', 
@@ -267,17 +245,17 @@ def create_upload_layout_method1():
         dbc.Row([
             dbc.Col(create_upload_component(
                 'raw-binning-info', 
-                'Upload Binning and Category Information File (.csv)', 
+                'Upload Binning Information File (.csv)', 
                 'assets/examples/binning_information.csv',
                 "This file includes the following columns: 'Contig index', 'Bin index', and 'Category'.  \n\n"
                 "'Bin index' is an optional column; if left blank (contigs are not binned), the value from the 'Contig index' column will be used as the bin index.  \n\n"
                 "Please indicate the category of bin in the 'Category' column if it is a 'virus' or 'plasmid'.  \n"
-                "Feel free to leave the colunn blank if it is 'chromosome' or 'unmapped' (cannot be assigned to any known reference or taxonomy)."
+                "Feel free to leave the colunn blank if it is 'chromosome' or 'unclassified' (cannot be assigned to any known reference or taxonomy)."
             )),
             dbc.Col(create_upload_component(
                 'raw-bin-taxonomy', 
-                'Upload Taxonomy File (.csv)', 
-                'assets/examples/bin_taxonomy.csv',
+                'Upload Taxonomy Information File (.csv)', 
+                'assets/examples/taxonomy_information.csv',
                 "This file includes the following columns: 'Bin index', 'Customized annotation' and taxonomy columns.  \n\n"
                 "Users have the flexibility to define their taxonomy levels based on their specific needs.  \n"
                 "Users can include any number of taxonomy columns, up to a maximum of 8 levels (e.g., Realm, Phylum, Order, Genus, etc.).  \n"
@@ -288,7 +266,7 @@ def create_upload_layout_method1():
                 "This feature is particularly useful for annotating bins or contigs that do not align with traditional taxonomy systems,  \n"
                 "such as plasmid GenBank Accession Numbers (NZ_CP123456) or viruse Zoonotic Virus Classification (SARS-CoV). \n"
                 "It allows users to provide a specific annotation for such bins or contigs.  \n\n"
-                "If all the taxonomy columns are blank, the bin will be marked as 'unmapped'."
+                "If all the taxonomy columns are blank, the bin will be marked as 'unclassified'."
             ))
         ])
     ])
@@ -523,7 +501,7 @@ def register_preparation_callbacks(app):
         try:
             # Parse and validate the contents directly
             contig_data = parse_contents(contig_info, contig_info_name)
-            validate_csv(contig_data, ['Contig index', 'The number of restriction sites', 'Contig length'], ['Within-contig Hi-C contacts', 'Contig coverage'])
+            validate_csv(contig_data, ['Contig index', 'The number of restriction sites', 'Contig length'], ['Contig coverage'])
         except Exception as e:
             logger.error(f"Validation failed for Contig Information file: {e}")
             return False, ""
@@ -550,8 +528,7 @@ def register_preparation_callbacks(app):
             diagonal_values = contig_matrix_data.diagonal()
             
             contig_data['Within-contig Hi-C contacts'] = contig_data.apply(
-                lambda row: diagonal_values[contig_data.index.get_loc(row.name)] 
-                if pd.isna(row['Within-contig Hi-C contacts']) else row['Within-contig Hi-C contacts'], axis=1)
+                lambda row: diagonal_values[contig_data.index.get_loc(row.name)], axis=1)
             
             contig_data['Contig coverage'] = contig_data.apply(
                 lambda row: row['Within-contig Hi-C contacts'] / row['Contig length'] 
@@ -562,25 +539,20 @@ def register_preparation_callbacks(app):
         
         try:
             binning_data = parse_contents(binning_info, binning_info_name)
-            validate_csv(binning_data, ['Contig index'], ['Bin index', 'Category'])
+            validate_csv(binning_data, ['Contig index'], ['Bin index'])
             binning_data['Bin index'] = binning_data.apply(
                 lambda row: row['Contig index'] if pd.isna(row['Bin index']) else row['Bin index'], axis=1)
-            binning_data['Category'] = binning_data['Category'].fillna('chromosome')
+
         except Exception as e:
-            logger.error(f"Validation failed for Bining and Category Information file: {e}")
+            logger.error(f"Validation failed for Bining Information file: {e}")
             return False, ""
         
         try:
             taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
-            taxonomy_columns = np.array([col for col in taxonomy_data.columns if col not in ['Bin index', 'Customized annotation']])
+            taxonomy_columns = np.array([col for col in taxonomy_data.columns if col not in ['Bin index', 'Category']])
+            taxonomy_data.replace("Unclassified", None, inplace=True)
 
             save_to_redis(f'{user_folder}:taxonomy-levels', taxonomy_columns)
-            
-            for col in taxonomy_columns:
-                taxonomy_data[col] = taxonomy_data.apply(
-                    lambda row: row['Customized annotation'] if pd.notna(row['Customized annotation']) and pd.isna(row[col]) else row[col],
-                    axis=1
-                )
         except Exception as e:
             logger.error(f"Validation failed for Taxonomy Information file: {e}")
             return False, ""
@@ -590,7 +562,7 @@ def register_preparation_callbacks(app):
         try:    
             # Process data using parsed dataframes directly
             combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data, taxonomy_columns)
-            combined_data.drop(columns=['Customized annotation'], inplace=True)
+            combined_data['Category'] = combined_data['Category'].fillna('chromosome')
     
             # Save `raw_contact_matrix.npz` using `save_file_to_user_folder`
             save_file_to_user_folder(contig_matrix, 'raw_contact_matrix.npz', user_folder)

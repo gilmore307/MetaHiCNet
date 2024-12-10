@@ -285,18 +285,18 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         logger.error(f"Error during {method} normalization: {e}")
         return None
 
-def generating_bin_information(contig_info, contact_matrix, remove_unmapped_contigs=False, remove_host_host=False):
+def generating_bin_information(contig_info, contact_matrix, remove_unclassified_contigs=False, remove_host_host=False):
     # Ensure dense matrix for processing
     dense_matrix = contact_matrix.toarray()
 
-    # Handle unmapped contigs
-    if remove_unmapped_contigs:
-        unmapped_contigs = contig_info[contig_info['Category'] == "unmapped"].index.tolist()
-        contig_info = contig_info.drop(unmapped_contigs).reset_index(drop=True)
+    # Handle unclassified contigs
+    if remove_unclassified_contigs:
+        unclassified_contigs = contig_info[contig_info['Category'] == "unclassified"].index.tolist()
+        contig_info = contig_info.drop(unclassified_contigs).reset_index(drop=True)
         
         # Mask for rows/columns to keep
         keep_mask = np.ones(dense_matrix.shape[0], dtype=bool)
-        keep_mask[unmapped_contigs] = False
+        keep_mask[unclassified_contigs] = False
         dense_matrix = dense_matrix[keep_mask, :][:, keep_mask]
 
     # Identify columns for aggregation
@@ -436,20 +436,6 @@ def create_normalization_layout():
         ], className="my-3"),
         
         html.Div([
-            html.Div([
-                dcc.Checklist(
-                    id='remove-unmapped-contigs',
-                    options=[{'label': 'Remove Unmapped Contigs', 'value': 'remove_unmapped'}],
-                    value=['remove_unmapped'],
-                    style={'margin-right': '20px'}
-                ),
-                dcc.Checklist(
-                    id='remove-host-host',
-                    options=[{'label': 'Remove Host-Host Interactions', 'value': 'remove_host'}],
-                    value=['remove_host'],
-                )
-            ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}),
-
             # Threshold input
             html.Div([
                 html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
@@ -498,7 +484,21 @@ def create_normalization_layout():
                 )
             ], id='tol-container', className="my-3")
 
-        ], id='normalization-parameters', className="my-3")
+        ], id='normalization-parameters', className="my-3"),
+        
+        html.Div([
+            dcc.Checklist(
+                id='remove-unclassified-contigs',
+                options=[{'label': 'Remove Unclassified Contigs', 'value': 'remove_unclassified'}],
+                value=['remove_unclassified'],
+                style={'margin-right': '20px'}
+            ),
+            dcc.Checklist(
+                id='remove-host-host',
+                options=[{'label': 'Remove Host-Host Interactions', 'value': 'remove_host'}],
+                value=['remove_host'],
+            )
+        ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}),
     ])
 
     return layout
@@ -530,7 +530,7 @@ def register_normalization_callbacks(app):
          State('thres-input', 'value'),
          State('max-iter-input', 'value'),
          State('tol-input', 'value'),
-         State('remove-unmapped-contigs', 'value'),
+         State('remove-unclassified-contigs', 'value'),
          State('remove-host-host', 'value'),
          State('user-folder', 'data'),
          State('current-method', 'data'),
@@ -539,7 +539,7 @@ def register_normalization_callbacks(app):
     )
 
     def execute_normalization(n_clicks, normalization_method, epsilon, threshold, max_iter, tolerance,
-                              remove_unmapped_contigs, remove_host_host, user_folder, selected_method, current_stage):
+                              remove_unclassified_contigs, remove_host_host, user_folder, selected_method, current_stage):
         # Only trigger if in the 'Normalization' stage for the selected methods
         if not n_clicks or selected_method not in ['method1', 'method2'] or current_stage != 'Normalization':
             raise PreventUpdate
@@ -553,7 +553,7 @@ def register_normalization_callbacks(app):
         tolerance = tolerance if tolerance is not None else 1e-6
     
         # Convert checkbox values to booleans
-        remove_unmapped_contigs = 'remove_unmapped' in remove_unmapped_contigs
+        remove_unclassified_contigs = 'remove_unclassified' in remove_unclassified_contigs
         remove_host_host = 'remove_host' in remove_host_host
         
         contig_info, contact_matrix = preprocess_normalization(user_folder)
@@ -586,7 +586,7 @@ def register_normalization_callbacks(app):
         bin_info, contig_info, bin_contact_matrix, contig_contact_matrix = generating_bin_information(
             contig_info,
             normalized_matrix,
-            remove_unmapped_contigs,
+            remove_unclassified_contigs,
             remove_host_host
         )
         logger.info("Bin information generation completed successfully.")
