@@ -1119,38 +1119,47 @@ def create_visualization_layout():
                         ], 
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '30vw'}
                     ),
+                    
                     html.Div(
                         id="middle-column",
                         children=[
-                            html.Div(
-                                id="treemap-graph-container",
+                            dcc.Loading(
+                                id="loading-spinner",
+                                type="default",
+                                delay_show=1000,
                                 children=[
-                                    dcc.Graph(
-                                        id='treemap-graph', 
-                                        figure=go.Figure(), 
-                                        config={'displayModeBar': False}, 
-                                        style={'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
-                                    )
-                                ]
-                            ),
-                            html.Div(
-                                id="cyto-graph-container",
-                                children=[
-                                    cyto.Cytoscape(
-                                        id='cyto-graph',
-                                        elements=[],
-                                        stylesheet=base_stylesheet,
-                                        style={},
-                                        layout={'name': 'preset'},
-                                        zoom=1,
-                                        userZoomingEnabled=True,
-                                        wheelSensitivity=0.1
+                                    html.Div(
+                                        id="treemap-graph-container",
+                                        children=[
+                                            dcc.Graph(
+                                                id='treemap-graph',
+                                                figure=go.Figure(),
+                                                config={'displayModeBar': False},
+                                                style={'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
+                                            )
+                                        ]
+                                    ),
+                                    html.Div(
+                                        id="cyto-graph-container",
+                                        children=[
+                                            cyto.Cytoscape(
+                                                id='cyto-graph',
+                                                elements=[],
+                                                stylesheet=base_stylesheet,
+                                                style={},
+                                                layout={'name': 'preset'},
+                                                zoom=1,
+                                                userZoomingEnabled=True,
+                                                wheelSensitivity=0.1
+                                            ),
+                                        ]
                                     ),
                                 ]
-                            ),
-                        ], 
+                            )
+                        ],
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '49vw'}
                     ),
+
                     html.Div(
                         id="right-column",
                         children=[
