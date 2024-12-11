@@ -13,6 +13,7 @@ import plotly.colors as colors
 import math 
 from math import sqrt, sin, cos
 import os
+import time
 import io
 import logging
 import json
@@ -73,17 +74,18 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
 
     # Filter out edges involving nodes to remove
     for edge in G.edges(data=True):
-        if edge[0] not in nodes_to_remove and edge[1] not in nodes_to_remove:
-            elements.append({
-                'data': {
-                    'source': edge[0],
-                    'target': edge[1],
-                    'width': edge[2].get('width', 1),
-                    'color': edge[2].get('color', '#bbb'),
-                    'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element',
-                    'selectable': False
-                }
-            })
+        if edge[0] in G.nodes and edge[1] in G.nodes:
+            if edge[0] not in nodes_to_remove and edge[1] not in nodes_to_remove:
+                elements.append({
+                    'data': {
+                        'source': edge[0],
+                        'target': edge[1],
+                        'width': edge[2].get('width', 1),
+                        'color': edge[2].get('color', '#bbb'),
+                        'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element',
+                        'selectable': False
+                    }
+                })
 
     return elements
 
@@ -685,7 +687,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     return cyto_elements, None, cyto_style
 
 # Function to visualize bin relationships
-def bin_visualization(selected_bin, bin_information, bin_dense_matrix, unique_annotations):
+def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin):
     
     # Find the index of the selected bin
     selected_bin_index = bin_information[bin_information['Bin index'] == selected_bin].index[0]
@@ -754,8 +756,8 @@ def bin_visualization(selected_bin, bin_information, bin_dense_matrix, unique_an
 
 
     fixed_positions = {selected_annotation: (0, 0)}
-    pos = nx.spring_layout(G, iterations=200, k=1, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
-
+    pos = nx.spring_layout(G, iterations=200, k=2, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
+    
     # Remove the edges after positioning
     G.remove_edges_from(list(G.edges()))
 
@@ -768,7 +770,7 @@ def bin_visualization(selected_bin, bin_information, bin_dense_matrix, unique_an
     # Add bin nodes to the graph
     for annotation in contacts_annotation.unique():
         annotation_bins = contacts_bins[contacts_annotation == annotation]
-        bin_positions = arrange_nodes(annotation_bins, [], distance=25, center_position=pos[annotation], selected_element=None)
+        bin_positions = arrange_nodes(annotation_bins, [], distance=40, center_position=pos[annotation], selected_element=None)
         for bin, (x, y) in bin_positions.items():
             G.add_node(bin, 
                        size=10, 
@@ -884,11 +886,6 @@ hover_info = {
     'reset-btn': 
         ("The Reset Button resets all user selections and filters, bringing the visualization back to the 'Cross-Taxa Hi-C Interaction' visualization."),
         
-    'confirm-btn': 
-        ("The Confirm Button confirms the current selections made in the dropdowns and updates the visualization accordingly.  \n\n"
-         
-         "After making selections, use this button to refresh and reflect your choices in the visualizations."),
-        
     "tooltip-toggle-container":
         ("Check the box next to 'Enable Help Tooltip' to activate tooltips.  \n\n"
          
@@ -989,7 +986,6 @@ def create_visualization_layout():
                     dcc.Download(id="download"),
     
                     html.Button("Download Files", id="download-btn", style={**common_text_style}),
-                    html.Button("Reset Selection", id="reset-btn", style={**common_text_style}),
                     html.Div(
                         id="tooltip-toggle-container",
                         children=[
@@ -1031,25 +1027,25 @@ def create_visualization_layout():
                                 options=[],
                                 value=None,
                                 placeholder="Select Taxonomy Level",
-                                style={}
+                                style={'display': 'none'}
                             ),
                             dcc.Dropdown(
                                 id='annotation-selector',
                                 options=[],
                                 value=None,
                                 placeholder="Select an annotation",
-                                style={}
+                                style={'display': 'none'}
                             ),
                             dcc.Dropdown(
                                 id='bin-selector',
                                 options=[],
                                 value=None,
                                 placeholder="Select a bin",
-                                style={}
+                                style={'display': 'none'}
                             )
                         ]
                     ),
-                    html.Button("Confirm Selection", id="confirm-btn", style={**common_text_style}),
+                    html.Button("Reset Selection", id="reset-btn", style={**common_text_style})
                 ], 
                 style={
                     'display': 'flex',
@@ -1268,7 +1264,7 @@ def register_visualization_callbacks(app):
         # Update visualization mode state
         current_visualization_mode = {
             'visualization_type': 'taxonomy_hierarchy',
-            'taxonomy_level': None,
+            'taxonomy_level': default_taxonomy_level,
             'selected_annotation': None,
             'selected_bin': None
         }
@@ -1282,26 +1278,19 @@ def register_visualization_callbacks(app):
          Output('contact-table', 'defaultColDef'),
          Output('contact-table', 'styleConditions'),
          Output('annotation-selector', 'options'),
-         Output('reset-btn', 'n_clicks'),
-         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
+         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True),
+         Output('current-visualization-mode', 'data', allow_duplicate=True)],
         [Input('taxonomy-level-selector', 'value')],
         [State('user-folder', 'data')],
         prevent_initial_call=True
     )
     def update_data(taxonomy_level, user_folder):
-            
         logger.info("Updating taxonomy level data.")
         # Define Redis keys that incorporate the user_folder to avoid concurrency issues
         bin_matrix_key = f'{user_folder}:bin-dense-matrix'
         bin_info_key = f'{user_folder}:bin-information'
         unique_annotations_key = f'{user_folder}:unique-annotations'
         contact_matrix_key = f'{user_folder}:contact-matrix'
-    
-        try:
-            unique_annotations = load_from_redis(unique_annotations_key)
-            reset_clicks = no_update
-        except:
-            reset_clicks = 0
     
         bin_information = load_from_redis(bin_info_key)
         bin_dense_matrix = load_from_redis(bin_matrix_key)
@@ -1336,8 +1325,15 @@ def register_visualization_callbacks(app):
         save_to_redis(contact_matrix_key, contact_matrix)
     
         annotation_options = [{'label': annotation, 'value': annotation} for annotation in unique_annotations]
+        
+        current_visualization_mode = {
+            'visualization_type': 'taxonomy_hierarchy',
+            'taxonomy_level': taxonomy_level,
+            'selected_annotation': None,
+            'selected_bin': None
+        }
     
-        return 1, row_data, column_defs, default_col_def, style_conditions, annotation_options, reset_clicks, 1
+        return 1, row_data, column_defs, default_col_def, style_conditions, annotation_options, 1, current_visualization_mode
 
     @app.callback(
         [Output('bin-info-table', 'rowData'),
@@ -1345,15 +1341,15 @@ def register_visualization_callbacks(app):
          Output('bin-info-table', 'filterModel'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
+         Input('data-loaded', 'data'),
          Input('annotation-selector', 'value'),
          Input('visibility-filter', 'value')],
         [State('cyto-graph', 'elements'),
          State('user-folder', 'data'),
-         State('data-loaded', 'data'),
          State('current-visualization-mode', 'data')],  # Use current-visualization-mode instead of taxonomy_level
         prevent_initial_call=True
     )
-    def display_info_table(reset_clicks, selected_annotation, filter_value, cyto_elements, user_folder, data_loaded, current_visualization_mode):
+    def generate_info_table(reset_clicks, data_loaded, selected_annotation, filter_value, cyto_elements, user_folder, current_visualization_mode):
         if not data_loaded:
             raise PreventUpdate
     
@@ -1371,12 +1367,6 @@ def register_visualization_callbacks(app):
     
         # Apply filtering logic for the selected table and annotation
         def apply_filter_logic(row_data, dense_matrix):
-            # Filter out rows containing 'Unclassified' in the taxonomy level
-            row_data = [
-                row for row in row_data
-                if 'Unclassified' not in row[taxonomy_level]
-            ]
-    
             # Apply visibility filter if checkbox is selected
             filter_model = {}
             if 'filter' in filter_value:
@@ -1413,14 +1403,9 @@ def register_visualization_callbacks(app):
                             }
                         ]
                     }
-                    for row in row_data:
-                        if row[taxonomy_level] != selected_annotation:
-                            row['Visibility'] = 2
-                else:
-                    filter_model = {}
         
                 # Set visibility based on the current visualization mode
-                if selected_bin:
+                elif selected_bin:
                     bin_information = load_from_redis(f'{user_folder}:bin-information')
                     selected_bin_index = bin_information[bin_information['Bin index'] == selected_bin].index[0]
             
@@ -1432,6 +1417,9 @@ def register_visualization_callbacks(app):
                     for row in row_data:
                         if row['Bin index'] not in connected_bins and row['Bin index'] != selected_bin:
                             row['Visibility'] = 0
+                            
+                else:
+                    filter_model = {}
                         
             return filter_model, row_data
     
@@ -1439,7 +1427,7 @@ def register_visualization_callbacks(app):
         bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
         bin_information = load_from_redis(f'{user_folder}:bin-information')
     
-        bin_style = {'display': 'block', 'height': '47vh'}
+        bin_style = {'display': 'block', 'height': '52vh'}
     
         # Apply filter logic to all rows
         bin_filter_model, edited_bin_data = apply_filter_logic(bin_information.to_dict('records'), bin_dense_matrix)
@@ -1454,7 +1442,7 @@ def register_visualization_callbacks(app):
          State('data-loaded', 'data')],
         prevent_initial_call=True
     )
-    def update_table_styles(bin_virtual_row_data, cyto_elements, taxonomy_level, user_folder, data_loaded):
+    def update_info_table(bin_virtual_row_data, cyto_elements, taxonomy_level, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
@@ -1492,26 +1480,30 @@ def register_visualization_callbacks(app):
          Output('current-visualization-mode', 'data', allow_duplicate=True)],
         [Input('reset-btn', 'n_clicks'),
          Input('visualization-selector', 'value'),
-         Input('taxonomy-level-selector', 'value'),  # Selector Inputs
          Input('annotation-selector', 'value'),
          Input('bin-selector', 'value'),
          Input('contact-table', 'selectedRows'),
          Input('bin-info-table', 'selectedRows'),
-         Input('cyto-graph', 'selectedNodeData')],
+         Input('cyto-graph', 'selectedNodeData'),
+         Input('data-loaded', 'data')],
         [State('taxonomy-level-selector', 'value'),
          State('user-folder', 'data'),
-         State('data-loaded', 'data')],
-         prevent_initial_call=True
+         State('current-visualization-mode', 'data')]
     )
-    def sync_selectors(reset_clicks, visualization_type, taxonomy_level, selected_annotation, selected_bin,
-                       contact_table_selected_rows, bin_info_selected_rows, selected_node_data,
-                       taxonomy_level_state, user_folder, data_loaded):
+    def sync_selectors(reset_clicks, visualization_type, selected_annotation, selected_bin,
+                       contact_table_selected_rows, bin_info_selected_rows, selected_node_data, data_loaded,
+                       taxonomy_level, user_folder, current_visualization_mode):
         if not data_loaded:
             raise PreventUpdate
     
         ctx = callback_context
-        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        logger.info(f"sync_selectors triggered by {triggered_id}")
+        triggered_props = [t['prop_id'].split('.')[0] for t in ctx.triggered]
+
+        # Save initial values
+        initial_visualization_type = current_visualization_mode.get('visualization_type')
+        initial_selected_annotation = current_visualization_mode.get('selected_annotation')
+        initial_selected_bin = current_visualization_mode.get('selected_bin')
+        initial_taxonomy_level = current_visualization_mode.get('taxonomy_level')
     
         # Initialize the styles as hidden
         bin_information = load_from_redis(f'{user_folder}:bin-information')
@@ -1520,50 +1512,59 @@ def register_visualization_callbacks(app):
         taxonomy_selector_style = {'display': 'none'}
     
         # If reset button is clicked
-        if triggered_id == 'reset-btn':
+        if 'reset-btn' in triggered_props:
             visualization_type = 'basic'
             selected_annotation = None
             selected_bin = None
     
-        # If a selector value is updated directly, skip redundant logic
-        elif triggered_id in {'visualization-selector', 'taxonomy-level-selector', 'annotation-selector', 'bin-selector'}:
+        # If all triggers are from the selectors, skip redundant logic
+        elif all(t in {'visualization-selector', 'annotation-selector', 'bin-selector'} for t in triggered_props):
             pass
-
-        # Node selected in the network
-        elif triggered_id == 'cyto-graph':
+    
+        # If data-loaded is triggered
+        elif 'data-loaded' in triggered_props:
+            time.sleep(0.5)
+            visualization_type = visualization_type
+            selected_bin = selected_bin
+    
+        # If cyto-graph node is selected
+        elif 'cyto-graph' in triggered_props:
             if selected_node_data:
                 selected_node_id = selected_node_data[0]['id']
-                # Decide based on the active tab
                 if selected_node_id in bin_information['Bin index'].values:
                     visualization_type = 'bin'
-                    bin_info = bin_information[bin_information['Bin index'] == selected_node_id].iloc[0]
-                    selected_bin = bin_info['Bin index']
+                    selected_bin = selected_node_id
+                    selected_annotation = None  # Ensure only one selection
                 elif selected_node_id in bin_information['Annotation'].values:
                     visualization_type = 'basic'
                     selected_annotation = selected_node_id
+                    selected_bin = None  # Ensure only one selection
             else:
-                visualization_type = visualization_type
                 selected_annotation = None
                 selected_bin = None
     
-        # Row selected in bin-info-table
-        elif triggered_id == 'bin-info-table':
+        # If a row is selected in bin-info-table
+        elif 'bin-info-table' in triggered_props:
             if bin_info_selected_rows:
                 selected_row = bin_info_selected_rows[0]
-                if taxonomy_level in selected_row and 'Bin index' in selected_row:
+                if 'Bin index' in selected_row:
                     visualization_type = 'bin'
                     selected_bin = selected_row['Bin index']
+                    selected_annotation = None  # Ensure only one selection
     
-        # Cell selected in contact-table
-        elif triggered_id == 'contact-table':
+        # If a row is selected in contact-table
+        elif 'contact-table' in triggered_props:
             if contact_table_selected_rows:
                 selected_row = contact_table_selected_rows[0]
                 selected_annotation = selected_row['index']
                 visualization_type = 'basic'
-                
+                selected_bin = None  # Ensure only one selection
+    
         else:
-            PreventUpdate
-            
+            # No meaningful trigger, prevent update
+            raise PreventUpdate
+    
+        # Build the current visualization mode
         current_visualization_mode = {
             'visualization_type': visualization_type,
             'taxonomy_level': taxonomy_level,
@@ -1571,17 +1572,30 @@ def register_visualization_callbacks(app):
             'selected_bin': selected_bin
         }
     
+        # Compare initial and new values
+        if (visualization_type == initial_visualization_type and
+            selected_annotation == initial_selected_annotation and
+            selected_bin == initial_selected_bin and
+            taxonomy_level == initial_taxonomy_level):
+            # No change in critical outputs, prevent update
+            raise PreventUpdate
+    
         # Update styles based on selections
         if visualization_type == 'bin':
             taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
             bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            annotation_selector_style = {'display': 'none'}
         elif visualization_type == 'basic':
             taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
             annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            bin_selector_style = {'display': 'none'}
+        else:
+            # Default styles
+            taxonomy_selector_style = {'display': 'none'}
+            annotation_selector_style = {'display': 'none'}
+            bin_selector_style = {'display': 'none'}
     
-        logger.info(f"Current visualization mode: {current_visualization_mode}")
-    
-        return (visualization_type, taxonomy_selector_style, selected_annotation, annotation_selector_style, 
+        return (visualization_type, taxonomy_selector_style, selected_annotation, annotation_selector_style,
                 selected_bin, bin_selector_style, 1, current_visualization_mode)
 
     @app.callback(
@@ -1593,14 +1607,13 @@ def register_visualization_callbacks(app):
          Output('cyto-graph', 'stylesheet'),
          Output('cyto-graph', 'layout'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input('reset-btn', 'n_clicks'),
-         Input('current-visualization-mode', 'data')],
+        [Input('current-visualization-mode', 'data'),
+         Input('data-loaded', 'data')],
         [State('visualization-selector', 'value'),
-         State('user-folder', 'data'),
-         State('data-loaded', 'data')],
+         State('user-folder', 'data')],
         prevent_initial_call=True
     )
-    def update_visualization(reset_clicks, current_visualization_mode, visualization_type, user_folder, data_loaded):
+    def update_visualization(current_visualization_mode, data_loaded, visualization_type, user_folder):
         if not data_loaded:
             raise PreventUpdate
     
@@ -1617,22 +1630,11 @@ def register_visualization_callbacks(app):
         stylesheet = []
         layout = no_update
     
-        if triggered_id == 'reset-btn':
-            if reset_clicks == 0:
-                logger.info("Visualization initiated, displaying Taxonomy Framework visualization.")
-                visualization_type = 'taxonomy_hierarchy'
-                selected_annotation = None
-                selected_bin = None
-            else:
-                logger.info("Reset button clicked, switching to Taxonomy Interaction visualization.")
-                visualization_type = 'basic'
-                selected_annotation = None
-                selected_bin = None
-        else:
-            # Extract data from current_visualization_mode
-            visualization_type = current_visualization_mode.get('visualization_type', 'taxonomy_hierarchy')
-            selected_annotation = current_visualization_mode.get('selected_annotation')
-            selected_bin = current_visualization_mode.get('selected_bin')
+        # Extract data from current_visualization_mode
+        visualization_type = current_visualization_mode.get('visualization_type', 'taxonomy_hierarchy')
+        selected_annotation = current_visualization_mode.get('selected_annotation')
+        selected_bin = current_visualization_mode.get('selected_bin')
+        
     
         if visualization_type == 'taxonomy_hierarchy':
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
@@ -1675,7 +1677,7 @@ def register_visualization_callbacks(app):
             selected_nodes.append(selected_bin)
     
             logger.info(f"Displaying bin Interaction for selected bin: {selected_bin}.")
-            cyto_elements, bar_fig = bin_visualization(selected_bin, bin_information, bin_dense_matrix, unique_annotations)
+            cyto_elements, bar_fig = bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
@@ -1751,7 +1753,6 @@ def register_visualization_callbacks(app):
     @app.callback(
         [Output('download-btn', 'title'),
          Output('reset-btn', 'title'),
-         Output('confirm-btn', 'title'),
          Output('tooltip-toggle-container', 'title'),
          Output('dropdowns', 'title'),
          Output('bar-chart-container', 'title'),
@@ -1765,7 +1766,6 @@ def register_visualization_callbacks(app):
         if 'show-tooltip' in show_tooltip:
             return (hover_info['download-btn'], 
                     hover_info['reset-btn'], 
-                    hover_info['confirm-btn'], 
                     hover_info['tooltip-toggle-container'],
                     hover_info['dropdowns'],
                     hover_info['bar-chart-container'],
@@ -1774,4 +1774,4 @@ def register_visualization_callbacks(app):
                     hover_info['cyto-graph-container'],
                     hover_info['contact-table-container'])
         else:
-            return ("", "", "", "", "", "", "", "", "", "")
+            return ("", "", "", "", "", "", "", "", "")
