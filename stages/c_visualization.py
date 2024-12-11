@@ -1523,7 +1523,7 @@ def register_visualization_callbacks(app):
     
         # If data-loaded is triggered
         elif 'data-loaded' in triggered_props:
-            time.sleep(0.5)
+            time.sleep(1)
             visualization_type = visualization_type
             selected_bin = selected_bin
     
