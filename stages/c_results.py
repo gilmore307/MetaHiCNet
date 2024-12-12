@@ -39,12 +39,9 @@ def compute_plot_data(data, row, col, restriction_sites, contig_length, contig_c
         'Contacts': contacts,
     })
     
-    # Filter out rows where Contacts equals 0
-    plot_data = plot_data[plot_data['Contacts'] > 0].reset_index(drop=True)
-    
     # Filter out rows where Contacts exceeds the 99th percentile
     threshold = plot_data['Contacts'].quantile(0.99)
-    plot_data = plot_data[plot_data['Contacts'] <= threshold].reset_index(drop=True)
+    plot_data = plot_data[(plot_data['Contacts'] > 0) & (plot_data['Contacts'] <= threshold)].reset_index(drop=True)
     
     return plot_data
 
@@ -55,7 +52,7 @@ def calculate_pearson(df, factors, contacts_col="Contacts"):
         correlations[factor] = abs(correlation)
     return correlations
 
-def filter_close_nodes(plot_data, eps=0.1):
+def filter_close_nodes(plot_data, eps=0.2):
     coordinates = plot_data[["Product Sites", "Product Length", "Product Coverage"]].values
     clustering = DBSCAN(eps=eps, min_samples=1).fit(coordinates)
     plot_data['Cluster'] = clustering.labels_
