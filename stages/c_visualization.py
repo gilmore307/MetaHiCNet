@@ -9,7 +9,6 @@ import dash_ag_grid as dag
 import plotly.graph_objects as go
 from dash import callback_context
 import plotly.express as px
-import plotly.colors as colors
 import math 
 from math import sqrt, sin, cos
 import os

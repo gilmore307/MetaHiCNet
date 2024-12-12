@@ -25,18 +25,12 @@ def preprocess_normalization(user_folder, assets_folder='output'):
         
         # Locate the folder path for the data preparation output
         folder_path = os.path.join(assets_folder, user_folder)
-        logger.info(f"Folder path for data preparation output: {folder_path}")
 
         # Define paths for the files within the folder
-        contig_info_path = os.path.join(folder_path, 'contig_info_final.csv')
-        contact_matrix_path = os.path.join(folder_path, 'raw_contact_matrix.npz')
-
-        # Read the contig information file as a pandas DataFrame
-        logger.info(f"Reading contig information file from: {contig_info_path}")
+        contig_info_path = os.path.join(folder_path, 'contig_info.csv')
         contig_info = pd.read_csv(contig_info_path)
-
-        # Load the contact matrix from .npz and reconstruct it as a sparse COO matrix
-        logger.info(f"Loading contact matrix from: {contact_matrix_path}")
+        
+        contact_matrix_path = os.path.join(folder_path, 'unnormalized_matrix.npz')
         contact_matrix_data = np.load(contact_matrix_path)
         data = contact_matrix_data['data']
         row = contact_matrix_data['row']
@@ -44,7 +38,6 @@ def preprocess_normalization(user_folder, assets_folder='output'):
         shape = tuple(contact_matrix_data['shape'])
         contact_matrix = coo_matrix((data, (row, col)), shape=shape)
 
-        logger.info("Data preprocessing completed successfully.")
         return contig_info, contact_matrix
 
     except Exception as e:
@@ -304,7 +297,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
         'Contig index': lambda x: ', '.join(x),
         'The number of restriction sites': 'sum',
         'Contig length': 'sum',
-        'Contig coverage': lambda x: (x * contig_info.loc[x.index, 'Contig length']).sum() /
+        'Contig coverage': lambda x: (x * contig_info.loc[x.index, 'Contig length']).sum() / 
                                      contig_info.loc[x.index, 'The number of restriction sites'].sum(),
         'Within-contig Hi-C contacts': 'sum'
     }
@@ -318,18 +311,6 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
     bin_info = contig_info.groupby('Bin index', as_index=False).agg(known_agg)
     bin_info['Contig coverage'] = bin_info['Contig coverage'].astype(float).map("{:.2f}".format)
 
-    # Separate chromosome rows and non-chromosome rows
-    chromosome_rows = contig_info[contig_info['Category'] == 'chromosome']
-    non_chromosome_rows = contig_info[contig_info['Category'] != 'chromosome']
-    
-    grouped_chromosome_rows = chromosome_rows.groupby('Bin index', as_index=False).agg(known_agg)
-    grouped_chromosome_rows['Contig coverage'] = grouped_chromosome_rows['Contig coverage'].astype(float).map("{:.2f}".format)
-    grouped_chromosome_rows['Contig index'] = grouped_chromosome_rows['Bin index']
-    
-    # Combine grouped chromosome rows and non-chromosome rows
-    contig_info = pd.concat([grouped_chromosome_rows, non_chromosome_rows], ignore_index=True)
-    contig_info['Contig coverage'] = contig_info['Contig coverage'].astype(float).map("{:.2f}".format)
-    
     # Create a mapping for temporary renaming
     rename_map = {
         'virus': 'a_virus',
@@ -339,13 +320,8 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
     reverse_map = {v: k for k, v in rename_map.items()}
     
     bin_info['Category'] = bin_info['Category'].replace(rename_map)
-    contig_info['Category'] = contig_info['Category'].replace(rename_map)
-
     bin_info = bin_info.sort_values(by='Category', ascending=True)
-    contig_info = contig_info.sort_values(by='Category', ascending=True)
-
     bin_info['Category'] = bin_info['Category'].replace(reverse_map)
-    contig_info['Category'] = contig_info['Category'].replace(reverse_map)
 
     unique_bins = bin_info['Bin index']
     bin_indexes_dict = get_indexes(unique_bins, contig_info, 'Bin index')
@@ -353,67 +329,29 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
     non_host_bin = bin_info[~bin_info['Category'].isin(['chromosome'])]['Bin index'].tolist()
     bin_contact_matrix = pd.DataFrame(0.0, index=unique_bins, columns=unique_bins)
     
-    # Step 1: Get unique contig indices
-    unique_contigs = contig_info['Contig index'].unique()
-    contig_indexes_dict = get_indexes(unique_contigs, contig_info, 'Contig index')
-    host_contig = contig_info[contig_info['Category'] == 'chromosome']['Contig index'].tolist()
-    non_host_contig = contig_info[~contig_info['Category'].isin(['chromosome'])]['Contig index'].tolist()
-    contig_contact_matrix = pd.DataFrame(0.0, index=unique_contigs, columns=unique_contigs)
-
-
     # Combine pairs of all necessary interactions
     if remove_host_host:
         bin_non_host_pairs = list(combinations(non_host_bin, 2))
         bin_non_host_self_pairs = [(x, x) for x in non_host_bin]
         bin_host_non_host_pairs = list(product(host_bin, non_host_bin))
         bin_all_pairs = bin_non_host_pairs + bin_non_host_self_pairs + bin_host_non_host_pairs
-        
-        chromosome_indices = contig_info[contig_info['Category'] == 'chromosome'].index.tolist()
-        for i in chromosome_indices:
-            for j in chromosome_indices:
-                dense_matrix[i, j] = 0
-        
-        contig_non_host_pairs = list(combinations(non_host_contig, 2))
-        contig_non_host_self_pairs = [(x, x) for x in non_host_contig]
-        contig_host_non_host_pairs = list(product(host_contig, non_host_contig))
-        contig_all_pairs = contig_non_host_pairs + contig_non_host_self_pairs + contig_host_non_host_pairs
-        
-        # Mask out chromosome-chromosome contacts in the dense matrix (zero out these values)
-        chromosome_indices = contig_info[contig_info['Category'] == 'chromosome'].index.tolist()
-        for i in chromosome_indices:
-            for j in chromosome_indices:
-                dense_matrix[i, j] = 0
     else:
         bin_non_self_pairs = list(combinations(unique_bins, 2))
         bin_self_pairs = [(x, x) for x in unique_bins]
         bin_all_pairs = bin_non_self_pairs + bin_self_pairs
-        
-        contig_non_self_pairs = list(combinations(unique_contigs, 2))
-        contig_self_pairs = [(x, x) for x in unique_contigs]
-        contig_all_pairs = contig_non_self_pairs + contig_self_pairs
-        
-    results = Parallel(n_jobs=-1)(
+
+    results = Parallel(n_jobs=-1)( 
         delayed(calculate_submatrix_sum)(pair, bin_indexes_dict, dense_matrix) for pair in bin_all_pairs
     )
     
     for annotation_i, annotation_j, value in results:
         bin_contact_matrix.at[annotation_i, annotation_j] = value
         bin_contact_matrix.at[annotation_j, annotation_i] = value
-        
-    results = Parallel(n_jobs=-1)(
-        delayed(calculate_submatrix_sum)(pair, contig_indexes_dict, dense_matrix) for pair in contig_all_pairs
-    )
-    
-    # Step 2: Fill the contig contact matrix with the calculated values
-    for annotation_i, annotation_j, value in results:
-        contig_contact_matrix.at[annotation_i, annotation_j] = value
-        contig_contact_matrix.at[annotation_j, annotation_i] = value
 
     # Convert to COO sparse matrices for storage
     bin_contact_matrix = coo_matrix(bin_contact_matrix)
-    contig_contact_matrix = coo_matrix(contig_contact_matrix)
 
-    return bin_info, contig_info, bin_contact_matrix, contig_contact_matrix
+    return bin_info, bin_contact_matrix
 
 def create_normalization_layout():
     normalization_methods = [
@@ -489,15 +427,16 @@ def create_normalization_layout():
         html.Div([
             dcc.Checklist(
                 id='remove-unclassified-contigs',
-                options=[{'label': 'Remove Unclassified Contigs', 'value': 'remove_unclassified'}],
+                options=[{'label': '  Remove Unclassified Contigs', 'value': 'remove_unclassified'}],
                 value=['remove_unclassified'],
                 style={'margin-right': '20px'}
             ),
             dcc.Checklist(
                 id='remove-host-host',
-                options=[{'label': 'Remove Host-Host Interactions', 'value': 'remove_host'}],
+                options=[{'label': '  Remove Host-Host Interactions', 'value': 'remove_host'}],
                 value=['remove_host'],
-            )
+            ),
+            html.Label("Don't enable these two options if the Binning Information File and Taxonomy Information File were not uploaded."),
         ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}),
     ])
 
@@ -583,7 +522,7 @@ def register_normalization_callbacks(app):
     
         # Perform bin information generation after normalization
         logger.info("Generating bin level information table and contact matrix...")
-        bin_info, contig_info, bin_contact_matrix, contig_contact_matrix = generating_bin_information(
+        bin_info, bin_contact_matrix = generating_bin_information(
             contig_info,
             normalized_matrix,
             remove_unclassified_contigs,
@@ -596,13 +535,13 @@ def register_normalization_callbacks(app):
         os.makedirs(user_output_path, exist_ok=True)
     
         bin_info_final_path = os.path.join(user_output_path, 'bin_info_final.csv')
-        contig_info_final_path = os.path.join(user_output_path, 'contig_info_final.csv')
         bin_contact_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
-        contig_contact_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
+        contig_info_path = os.path.join(user_output_path, 'contig_info.csv')
+        normalized_matrix_path = os.path.join(user_output_path, 'normalized_matrix.npz')
+        unnormalized_matrix_path = os.path.join(user_output_path, 'unnormalized_matrix.npz')
     
         # Save each file
         bin_info.to_csv(bin_info_final_path, index=False)
-        contig_info.to_csv(contig_info_final_path, index=False)
         np.savez_compressed(
             bin_contact_matrix_path,
             data=bin_contact_matrix.data,
@@ -610,35 +549,45 @@ def register_normalization_callbacks(app):
             col=bin_contact_matrix.col,
             shape=bin_contact_matrix.shape
         )
+        contig_info.to_csv(contig_info_path, index=False)
         np.savez_compressed(
-            contig_contact_matrix_path,
-            data=contig_contact_matrix.data,
-            row=contig_contact_matrix.row,
-            col=contig_contact_matrix.col,
-            shape=contig_contact_matrix.shape
+            normalized_matrix_path,
+            data=normalized_matrix.data,
+            row=normalized_matrix.row,
+            col=normalized_matrix.col,
+            shape=normalized_matrix.shape
+        )
+        np.savez_compressed(
+            unnormalized_matrix_path,
+            data=contact_matrix.data,
+            row=contact_matrix.row,
+            col=contact_matrix.col,
+            shape=contact_matrix.shape
         )
 
         # Compress saved files into normalized_information.7z
         normalized_archive_path = os.path.join(user_output_path, 'normalized_information.7z')
         with py7zr.SevenZipFile(normalized_archive_path, 'w') as archive:
             archive.write(bin_info_final_path, 'bin_info_final.csv')
-            archive.write(contig_info_final_path, 'contig_info_final.csv')
             archive.write(bin_contact_matrix_path, 'bin_contact_matrix.npz')
-            archive.write(contig_contact_matrix_path, 'contig_contact_matrix.npz')
+            archive.write(contig_info_path, 'contig_info.csv')
+            archive.write(normalized_matrix_path, 'normalized_matrix.npz')
+            archive.write(unnormalized_matrix_path, 'unnormalized_matrix.npz')
     
         logger.info("File saving completed successfully.")
     
-        # Redis keys specific to each user folder
+        # Save the loaded data to Redis with keys specific to the user folder
         bin_info_key = f'{user_folder}:bin-information'
         bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-        contig_info_key = f'{user_folder}:contig-information'
-        contig_matrix_key = f'{user_folder}:contig-dense-matrix'
+        contig_info_key = f'{user_folder}:contig-info'
+        normalized_matrix_key = f'{user_folder}:normalized-matrix'
+        unnormalized_matrix_key = f'{user_folder}:unnormalized-matrix'
         
-        # Save the loaded data to Redis with keys specific to the user folder
         save_to_redis(bin_info_key, bin_info)       
         save_to_redis(bin_matrix_key, bin_contact_matrix)
-        save_to_redis(contig_info_key, contig_info)
-        save_to_redis(contig_matrix_key, contig_contact_matrix)
+        save_to_redis(contig_info_key, contig_info)       
+        save_to_redis(normalized_matrix_key, normalized_matrix)
+        save_to_redis(unnormalized_matrix_key, contact_matrix)
 
         logger.info("Data loaded and saved to Redis successfully.")
         

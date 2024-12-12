@@ -111,22 +111,6 @@ def validate_contig_matrix(contig_data, contact_matrix):
     
     return True
 
-def validate_unnormalized_folder(folder):
-    expected_files = ['contig_info_final.csv', 'raw_contact_matrix.npz']
-    missing_files = [file for file in expected_files if file not in folder]
-    if missing_files:
-        logger.error(f"Missing files in unnormalized folder: {', '.join(missing_files)}")
-        raise ValueError(f"Missing files in unnormalized folder: {', '.join(missing_files)}")
-    return True
-
-def validate_normalized_folder(folder):
-    expected_files = ['bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz']
-    missing_files = [file for file in expected_files if file not in folder]
-    if missing_files:
-        logger.error(f"Missing files in normalized folder: {', '.join(missing_files)}")
-        raise ValueError(f"Missing files in normalized folder: {', '.join(missing_files)}")
-    return True
-
 def list_files_in_7z(decoded):
     with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as z:
         file_list = z.getnames()
@@ -194,7 +178,7 @@ def process_data(contig_data, binning_data, taxonomy_data, contig_matrix, taxono
 
 def create_upload_component(component_id, text, example_url, instructions):
     return dbc.Card(
-        [
+        [            
             dcc.Upload(
                 id=component_id,
                 children=dbc.Button(text, color="primary", className="me-2", style={"width": "100%"}),
@@ -278,7 +262,7 @@ def create_upload_layout_method2():
                 'unnormalized-data-folder', 
                 'Upload Unnormalized Data Folder (.7z)', 
                 'assets/examples/unnormalized_information.7z',
-                "The folder must include the following files: 'contig_info_final.csv' and 'raw_contact_matrix.npz'."
+                "The folder must include the following files: 'contig_info.csv' and 'unnormalized_matrix.npz'."
             ))
         ])
     ])
@@ -290,7 +274,7 @@ def create_upload_layout_method3():
                 'normalized-data-folder', 
                 'Upload Visualization Data Folder (.7z)', 
                 'assets/examples/normalized_information.7z',
-                "This folder must include the following files: 'bin_info_final.csv', 'contig_info_final.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz'."
+                "This folder must include the following files: 'bin_info_final.csv', 'contig_info.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz'."
             ))
         ])
     ])
@@ -509,56 +493,61 @@ def register_preparation_callbacks(app):
             binning_info_file = os.path.join('assets', 'examples', 'binning_information.csv')
             bin_taxonomy_file = os.path.join('assets', 'examples', 'taxonomy_information.csv')
     
-            try:
-                # Load files from the folder
-                contig_data = pd.read_csv(contig_info_file)
-                
-                # Load the .npz file for contig matrix and convert to COO format
-                contig_matrix_data = np.load(contig_matrix_file)
-                row = contig_matrix_data['row']
-                col = contig_matrix_data['col']
-                data = contig_matrix_data['data']
-                contig_matrix_data = coo_matrix((data, (row, col)), shape=(contig_matrix_data['shape'][0], contig_matrix_data['shape'][1]))
-                
-                # Convert the COO matrix to base64-encoded .npz format
-                buffer = io.BytesIO()
-                np.savez_compressed(buffer, 
-                                    data=contig_matrix_data.data, 
-                                    row=contig_matrix_data.row, 
-                                    col=contig_matrix_data.col, 
-                                    shape=contig_matrix_data.shape)
-                
-                buffer.seek(0)  # Rewind the buffer
-                encoded_contig_matrix = base64.b64encode(buffer.read()).decode('utf-8')
-                
-                # Create the contig_matrix variable in the format of an uploaded file
-                contig_matrix = f"data:application/x-npz;base64,{encoded_contig_matrix}"
-                
-                # Load binning and taxonomy data
-                binning_data = pd.read_csv(binning_info_file)
-                taxonomy_data = pd.read_csv(bin_taxonomy_file)
+            # Load files from the folder
+            contig_data = pd.read_csv(contig_info_file)
             
-            except Exception as e:
-                logger.error(f"Error loading files from folder: {e}")
-                return False, ""
+            # Load the .npz file for contig matrix and convert to COO format
+            contig_matrix_data = np.load(contig_matrix_file)
+            row = contig_matrix_data['row']
+            col = contig_matrix_data['col']
+            data = contig_matrix_data['data']
+            contig_matrix_data = coo_matrix((data, (row, col)), shape=(contig_matrix_data['shape'][0], contig_matrix_data['shape'][1]))
+            
+            # Convert the COO matrix to base64-encoded .npz format
+            buffer = io.BytesIO()
+            np.savez_compressed(buffer, 
+                                data=contig_matrix_data.data, 
+                                row=contig_matrix_data.row, 
+                                col=contig_matrix_data.col, 
+                                shape=contig_matrix_data.shape)
+            
+            buffer.seek(0)  # Rewind the buffer
+            encoded_contig_matrix = base64.b64encode(buffer.read()).decode('utf-8')
+            
+            # Create the contig_matrix variable in the format of an uploaded file
+            contig_matrix = f"data:application/x-npz;base64,{encoded_contig_matrix}"
+            
+            # Load binning and taxonomy data
+            binning_data = pd.read_csv(binning_info_file)
+            taxonomy_data = pd.read_csv(bin_taxonomy_file)
     
-        elif triggered_input == 'execute-button':  # Process uploaded files
-            if not all([contig_info, contig_matrix, binning_info, bin_taxonomy]):
-                logger.error("Validation failed: Missing required files.")
-                return False, ""
-            
+        elif triggered_input == 'execute-button':
             try:
-                # Parse and validate the contents directly (this is for uploaded files)
+                if binning_info:
+                    binning_data = parse_contents(binning_info, binning_info_name)
+                else:
+                    logger.info("No files uploaded for binning_info. Using default file.")
+                    binning_info_file = os.path.join('assets', 'examples', 'empty_binning_information.csv')
+                    binning_data = pd.read_csv(binning_info_file)
+                    
+                if bin_taxonomy:
+                    taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
+                else:
+                    logger.info("No files uploaded for taxonomy_info. Using default file.")
+                    taxonomy_info_file = os.path.join('assets', 'examples', 'empty_taxonomy_information.csv')
+                    taxonomy_data = pd.read_csv(taxonomy_info_file)
+                
+                if not all([contig_info, contig_matrix]):
+                    logger.error("Validation failed: Missing required files.")
+                    return False, ""
+            
                 contig_data = parse_contents(contig_info, contig_info_name)
                 contig_matrix_data = parse_contents(contig_matrix, contig_matrix_name)
-                binning_data = parse_contents(binning_info, binning_info_name)
-                taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
     
             except Exception as e:
                 logger.error(f"Error parsing uploaded files: {e}")
                 return False, ""
     
-        # Now, restore your validation logic:
         try:
             validate_csv(contig_data, ['Contig index', 'The number of restriction sites', 'Contig length'], ['Contig coverage'])
             
@@ -601,15 +590,15 @@ def register_preparation_callbacks(app):
             combined_data['Category'] = combined_data['Category'].fillna('chromosome')
 
             # Save files to user folder
-            save_file_to_user_folder(contig_matrix, 'raw_contact_matrix.npz', user_folder)
+            save_file_to_user_folder(contig_matrix, 'unnormalized_matrix.npz', user_folder)
             encoded_csv_content = base64.b64encode(combined_data.to_csv(index=False).encode()).decode()
-            save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info_final.csv', user_folder)
+            save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info.csv', user_folder)
             # Compress into a 7z archive
             user_output_folder = os.path.join('output', user_folder)
             unnormalized_archive_path = os.path.join(user_output_folder, 'unnormalized_information.7z')
             with py7zr.SevenZipFile(unnormalized_archive_path, 'w') as archive:
-                archive.write(os.path.join(user_output_folder, 'raw_contact_matrix.npz'), 'raw_contact_matrix.npz')
-                archive.write(os.path.join(user_output_folder, 'contig_info_final.csv'), 'contig_info_final.csv')
+                archive.write(os.path.join(user_output_folder, 'unnormalized_matrix.npz'), 'unnormalized_matrix.npz')
+                archive.write(os.path.join(user_output_folder, 'contig_info.csv'), 'contig_info.csv')
             return True, ""
     
         except Exception as e:
@@ -671,10 +660,6 @@ def register_preparation_callbacks(app):
             # List files in the 7z archive
             file_list = list_files_in_7z(decoded)
             logger.info(f"Files in the uploaded archive: {file_list}")
-            
-            # Validate the folder contents
-            logger.info("Validating unnormalized folder contents...")
-            validate_unnormalized_folder(file_list)
     
             # Define the extraction path
             user_folder_path = f'output/{user_folder}'
@@ -683,6 +668,22 @@ def register_preparation_callbacks(app):
             # Extract the 7z file to the user's folder
             with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as archive:
                 archive.extractall(path=user_folder_path)
+                
+            contig_info_path = os.path.join(user_folder_path, 'contig_info.csv')    
+            contig_information = pd.read_csv(contig_info_path)
+            excluded_columns = [
+                'Contig index', 
+                'The number of restriction sites', 
+                'Contig length', 
+                'Contig coverage', 
+                'Within-contig Hi-C contacts', 
+                'Bin index', 
+                'Category'
+            ]
+            taxonomy_levels = np.array([col for col in contig_information.columns if col not in excluded_columns])
+            taxonomy_levels_key = f'{user_folder}:taxonomy-levels'
+            save_to_redis(taxonomy_levels_key, taxonomy_levels)
+                
             
             logger.info("Validation and extraction successful for Method 2.")
             return True  # Validation and extraction succeeded
@@ -747,10 +748,6 @@ def register_preparation_callbacks(app):
             # List files in the 7z archive
             file_list = list_files_in_7z(decoded)
             logger.info(f"Files in the uploaded archive: {file_list}")
-            
-            # Validate the folder contents
-            logger.info("Validating and save normalized folder contents...")
-            validate_normalized_folder(file_list)
     
             # Define the extraction path
             user_output_path = f'output/{user_folder}'
@@ -762,14 +759,16 @@ def register_preparation_callbacks(app):
         
             bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
             bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
-            contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
-            contig_matrix_path = os.path.join(user_output_path, 'contig_contact_matrix.npz')
+            contig_info_path = os.path.join(user_output_path, 'contig_info.csv')
+            normalized_matrix_path = os.path.join(user_output_path, 'normalized_matrix.npz')
+            unnormalized_matrix_path = os.path.join(user_output_path, 'unnormalized_matrix.npz')
         
             # Redis keys specific to each user folder
             bin_info_key = f'{user_folder}:bin-information'
             bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-            contig_info_key = f'{user_folder}:contig-information'
-            contig_matrix_key = f'{user_folder}:contig-dense-matrix'
+            contig_info_key = f'{user_folder}:contig-info'
+            normalized_matrix_key = f'{user_folder}:normalized-matrix'
+            unnormalized_matrix_key = f'{user_folder}:unnormalized-matrix'
             taxonomy_levels_key = f'{user_folder}:taxonomy-levels'
         
             try:
@@ -791,12 +790,18 @@ def register_preparation_callbacks(app):
                     shape=tuple(bin_matrix_data['shape'])
                 )
         
-                contig_information = pd.read_csv(contig_info_path)
+                contig_info = pd.read_csv(contig_info_path)
                 
-                contig_matrix_data = np.load(contig_matrix_path)
-                contig_dense_matrix = coo_matrix(
-                    (contig_matrix_data['data'], (contig_matrix_data['row'], contig_matrix_data['col'])),
-                    shape=tuple(contig_matrix_data['shape'])
+                normalized_matrix_data = np.load(normalized_matrix_path)
+                normalized_matrix = coo_matrix(
+                    (normalized_matrix_data['data'], (normalized_matrix_data['row'], normalized_matrix_data['col'])),
+                    shape=tuple(normalized_matrix_data['shape'])
+                )
+                
+                unnormalized_matrix_data = np.load(unnormalized_matrix_path)
+                unnormalized_matrix = coo_matrix(
+                    (unnormalized_matrix_data['data'], (unnormalized_matrix_data['row'], unnormalized_matrix_data['col'])),
+                    shape=tuple(unnormalized_matrix_data['shape'])
                 )
             except Exception as e:
                 logger.error(f"Error loading data from files: {e}")
@@ -805,8 +810,9 @@ def register_preparation_callbacks(app):
             # Save the loaded data to Redis with keys specific to the user folder
             save_to_redis(bin_info_key, bin_information)       
             save_to_redis(bin_matrix_key, bin_dense_matrix)
-            save_to_redis(contig_info_key, contig_information)
-            save_to_redis(contig_matrix_key, contig_dense_matrix)
+            save_to_redis(contig_info_key, contig_info)
+            save_to_redis(normalized_matrix_key, normalized_matrix)
+            save_to_redis(unnormalized_matrix_key, unnormalized_matrix)
             save_to_redis(taxonomy_levels_key, taxonomy_levels)
             
             logger.info("Data loaded and saved to Redis successfully.")
