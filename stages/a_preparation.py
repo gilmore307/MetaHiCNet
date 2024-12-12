@@ -299,7 +299,8 @@ def register_preparation_callbacks(app):
     # Callback for handling raw contig info upload with logging
     @app.callback(
         [Output('overview-raw-contig-info', 'children'),
-         Output('remove-raw-contig-info', 'style')],
+         Output('remove-raw-contig-info', 'style'),
+         Output('raw-contig-info', 'contents')],
         [Input('raw-contig-info', 'contents'),
          Input('remove-raw-contig-info', 'n_clicks')],
         [State('raw-contig-info', 'filename')],
@@ -312,7 +313,7 @@ def register_preparation_callbacks(app):
         
         if remove_click and ctx.triggered_id == 'remove-raw-contig-info':
             logger.info("Contig Info file removed.")
-            return '', {'display': 'none'}
+            return '', {'display': 'none'}, None
         
         file_size = get_file_size(contents)
         if 'csv' in filename:
@@ -321,14 +322,15 @@ def register_preparation_callbacks(app):
             return [
                 dbc.Table.from_dataframe(df.head(), striped=True, bordered=True, hover=True),
                 html.P(f"File Size: {file_size}")
-            ], {'display': 'block'}
+            ], {'display': 'block'}, contents
         
         logger.error("Unsupported file format for Contig Info.")
-        return "Unsupported file format", {'display': 'block'}
+        return "Unsupported file format", {'display': 'block'}, contents
     
     @app.callback(
         [Output('overview-raw-contig-matrix', 'children'),
-         Output('remove-raw-contig-matrix', 'style')],
+         Output('remove-raw-contig-matrix', 'style'),
+         Output('raw-contig-matrix', 'contents')],
         [Input('raw-contig-matrix', 'contents'),
          Input('remove-raw-contig-matrix', 'n_clicks')],
         [State('raw-contig-matrix', 'filename')],
@@ -341,7 +343,7 @@ def register_preparation_callbacks(app):
     
         if remove_click and ctx.triggered_id == 'remove-raw-contig-matrix':
             logger.info("Raw Contact Matrix file removed.")
-            return '', {'display': 'none'}
+            return '', {'display': 'none'}, None
     
         file_size = get_file_size(contents)
         if 'npz' in filename:
@@ -376,11 +378,11 @@ def register_preparation_callbacks(app):
     
                 overview = html.Ul(matrix_info)
                 logger.info(f"Uploaded Raw Matrix: {filename} with size {file_size}.")
-                return [overview, html.P(f"File Size: {file_size}")], {'display': 'block'}
+                return [overview, html.P(f"File Size: {file_size}")], {'display': 'block'}, contents
     
             except Exception as e:
                 logger.error(f"Error processing matrix file: {e}")
-                return "Error processing matrix file", {'display': 'block'}
+                return "Error processing matrix file", {'display': 'block'}, None
             
         elif 'csv' in filename or 'txt' in filename:
             try:
@@ -393,19 +395,20 @@ def register_preparation_callbacks(app):
                     html.P(f"File Size: {file_size}")
                 ]
                 logger.info(f"Uploaded Raw Matrix: {filename} with size {file_size}.")
-                return overview, {'display': 'block'}
+                return overview, {'display': 'block'}, contents
             
             except Exception as e:
                 logger.error(f"Error processing CSV/TXT file: {e}")
-                return "Error processing CSV/TXT file", {'display': 'block'}
+                return "Error processing CSV/TXT file", {'display': 'block'}, None
     
         logger.error("Unsupported file format for Raw Matrix.")
-        return "Unsupported file format", {'display': 'block'}
+        return "Unsupported file format", {'display': 'block'}, None
     
     # Callback for handling binning info upload with logging
     @app.callback(
         [Output('overview-raw-binning-info', 'children'),
-         Output('remove-raw-binning-info', 'style')],
+         Output('remove-raw-binning-info', 'style'),
+         Output('raw-binning-info', 'contents')],
         [Input('raw-binning-info', 'contents'),
          Input('remove-raw-binning-info', 'n_clicks')],
         [State('raw-binning-info', 'filename')],
@@ -418,7 +421,7 @@ def register_preparation_callbacks(app):
         
         if remove_click and ctx.triggered_id == 'remove-raw-binning-info':
             logger.info("Binning Info file removed.")
-            return '', {'display': 'none'}
+            return '', {'display': 'none'}, None
         
         file_size = get_file_size(contents)
         if 'csv' in filename:
@@ -427,15 +430,16 @@ def register_preparation_callbacks(app):
             return [
                 dbc.Table.from_dataframe(df.head(), striped=True, bordered=True, hover=True),
                 html.P(f"File Size: {file_size}")
-            ], {'display': 'block'}
+            ], {'display': 'block'}, contents
         
         logger.error("Unsupported file format for Binning Info.")
-        return "Unsupported file format", {'display': 'block'}
+        return "Unsupported file format", {'display': 'block'}, None
 
     # Callback for handling bin taxonomy upload with logging
     @app.callback(
         [Output('overview-raw-bin-taxonomy', 'children'),
-         Output('remove-raw-bin-taxonomy', 'style')],
+         Output('remove-raw-bin-taxonomy', 'style'),
+         Output('raw-bin-taxonomy', 'contents')],
         [Input('raw-bin-taxonomy', 'contents'),
          Input('remove-raw-bin-taxonomy', 'n_clicks')],
         [State('raw-bin-taxonomy', 'filename')],
@@ -448,7 +452,7 @@ def register_preparation_callbacks(app):
         
         if remove_click and ctx.triggered_id == 'remove-raw-bin-taxonomy':
             logger.info("Bin Taxonomy file removed.")
-            return '', {'display': 'none'}
+            return '', {'display': 'none'}, None
         
         file_size = get_file_size(contents)
         if 'csv' in filename:
@@ -457,10 +461,10 @@ def register_preparation_callbacks(app):
             return [
                 dbc.Table.from_dataframe(df.head(), striped=True, bordered=True, hover=True),
                 html.P(f"File Size: {file_size}")
-            ], {'display': 'block'}
+            ], {'display': 'block'}, contents
         
         logger.error("Unsupported file format for Bin Taxonomy.")
-        return "Unsupported file format", {'display': 'block'}
+        return "Unsupported file format", {'display': 'block'}, None
 
     # Callback for the 'Prepare Data' button (Method 1)
     @app.callback(
