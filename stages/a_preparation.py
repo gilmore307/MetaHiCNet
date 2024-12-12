@@ -470,7 +470,8 @@ def register_preparation_callbacks(app):
     @app.callback(
         [Output('preparation-status-method1', 'data'),
          Output('blank-element', 'children')],
-        [Input('execute-button', 'n_clicks')],
+        [Input('execute-button', 'n_clicks'),
+         Input('load-button', 'n_clicks')],
         [State('raw-contig-info', 'contents'),
          State('raw-contig-matrix', 'contents'),
          State('raw-binning-info', 'contents'),
@@ -482,108 +483,137 @@ def register_preparation_callbacks(app):
          State('user-folder', 'data'),
          State('current-method', 'data'),
          State('current-stage', 'data')],
-         prevent_initial_call=True
+        prevent_initial_call=True
     )
-    def prepare_data_method_1(n_clicks, contig_info, contig_matrix, binning_info, bin_taxonomy,
+    def prepare_data_method_1(n_clicks_execute, n_clicks_load,
+                              contig_info, contig_matrix, binning_info, bin_taxonomy,
                               contig_info_name, contig_matrix_name, binning_info_name, bin_taxonomy_name,
                               user_folder, selected_method, current_stage):
-        # Ensure the selected method is 'method1' and the current stage is 'Preparation'
+        
         ctx = dash.callback_context
-        if not ctx.triggered or ctx.triggered[0]['prop_id'].split('.')[0] != 'execute-button':
+        if not ctx.triggered:
             raise PreventUpdate
+    
+        triggered_input = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+        # Check if the triggered button is the load button (to load files from folder) or execute button (to process uploaded files)
         if selected_method != 'method1' or current_stage != 'Preparation':
             raise PreventUpdate
-        if n_clicks is None:
-            raise PreventUpdate
-
-        logger.info("Validating and preparing data for Method 1...")
     
-        if not all([contig_info, contig_matrix, binning_info, bin_taxonomy]):
-            logger.error("Validation failed: Missing required files.")
-            return False, ""
+        if triggered_input == 'load-button':  # Load files from folder
+            logger.info("Loading data from user folder...")
     
+            # Paths to the files in the user folder
+            contig_info_file = os.path.join('assets', 'examples', 'contig_information.csv')
+            contig_matrix_file = os.path.join('assets', 'examples', 'raw_contact_matrix.npz')
+            binning_info_file = os.path.join('assets', 'examples', 'binning_information.csv')
+            bin_taxonomy_file = os.path.join('assets', 'examples', 'taxonomy_information.csv')
+    
+            try:
+                # Load files from the folder
+                contig_data = pd.read_csv(contig_info_file)
+                
+                # Load the .npz file for contig matrix and convert to COO format
+                contig_matrix_data = np.load(contig_matrix_file)
+                row = contig_matrix_data['row']
+                col = contig_matrix_data['col']
+                data = contig_matrix_data['data']
+                contig_matrix_data = coo_matrix((data, (row, col)), shape=(contig_matrix_data['shape'][0], contig_matrix_data['shape'][1]))
+                
+                # Convert the COO matrix to base64-encoded .npz format
+                buffer = io.BytesIO()
+                np.savez_compressed(buffer, 
+                                    data=contig_matrix_data.data, 
+                                    row=contig_matrix_data.row, 
+                                    col=contig_matrix_data.col, 
+                                    shape=contig_matrix_data.shape)
+                
+                buffer.seek(0)  # Rewind the buffer
+                encoded_contig_matrix = base64.b64encode(buffer.read()).decode('utf-8')
+                
+                # Create the contig_matrix variable in the format of an uploaded file
+                contig_matrix = f"data:application/x-npz;base64,{encoded_contig_matrix}"
+                
+                # Load binning and taxonomy data
+                binning_data = pd.read_csv(binning_info_file)
+                taxonomy_data = pd.read_csv(bin_taxonomy_file)
+            
+            except Exception as e:
+                logger.error(f"Error loading files from folder: {e}")
+                return False, ""
+    
+        elif triggered_input == 'execute-button':  # Process uploaded files
+            if not all([contig_info, contig_matrix, binning_info, bin_taxonomy]):
+                logger.error("Validation failed: Missing required files.")
+                return False, ""
+            
+            try:
+                # Parse and validate the contents directly (this is for uploaded files)
+                contig_data = parse_contents(contig_info, contig_info_name)
+                contig_matrix_data = parse_contents(contig_matrix, contig_matrix_name)
+                binning_data = parse_contents(binning_info, binning_info_name)
+                taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
+    
+            except Exception as e:
+                logger.error(f"Error parsing uploaded files: {e}")
+                return False, ""
+    
+        # Now, restore your validation logic:
         try:
-            # Parse and validate the contents directly
-            contig_data = parse_contents(contig_info, contig_info_name)
             validate_csv(contig_data, ['Contig index', 'The number of restriction sites', 'Contig length'], ['Contig coverage'])
-        except Exception as e:
-            logger.error(f"Validation failed for Contig Information file: {e}")
-            return False, ""
-        
-        try:
-            contig_matrix_data = parse_contents(contig_matrix, contig_matrix_name)
-            # Verify that contig_matrix_data is of the expected type
+            
             if isinstance(contig_matrix_data, (coo_matrix, csc_matrix, csr_matrix)):
                 validate_contig_matrix(contig_data, contig_matrix_data)
             else:
                 row = contig_matrix_data['row'].values
                 col = contig_matrix_data['column'].values
                 data = contig_matrix_data['data'].values
-                
+    
                 # Calculate the shape based on max row and column index + 1 (since indices are 0-based)
                 num_rows = contig_matrix_data['row'].max() + 1
                 num_cols = contig_matrix_data['column'].max() + 1
                 shape = (num_rows, num_cols)
-                
+    
                 # Create the COO matrix with the calculated shape
                 contig_matrix_data = coo_matrix((data, (row, col)), shape=shape) 
                 validate_contig_matrix(contig_data, contig_matrix_data)
-            
+    
             diagonal_values = contig_matrix_data.diagonal()
-            
+    
             contig_data['Within-contig Hi-C contacts'] = contig_data.apply(
                 lambda row: diagonal_values[contig_data.index.get_loc(row.name)], axis=1)
-            
+    
             contig_data['Contig coverage'] = contig_data.apply(
                 lambda row: row['Within-contig Hi-C contacts'] / row['Contig length'] 
                 if pd.isna(row['Contig coverage']) else row['Contig coverage'], axis=1)
-        except Exception as e:
-            logger.error(f"Validation failed for Contact Matrix file: {e}")
-            return False, ""
-        
-        try:
-            binning_data = parse_contents(binning_info, binning_info_name)
-            validate_csv(binning_data, ['Contig index'], ['Bin index'])
+
             binning_data['Bin index'] = binning_data.apply(
                 lambda row: row['Contig index'] if pd.isna(row['Bin index']) else row['Bin index'], axis=1)
-
-        except Exception as e:
-            logger.error(f"Validation failed for Bining Information file: {e}")
-            return False, ""
-        
-        try:
-            taxonomy_data = parse_contents(bin_taxonomy, bin_taxonomy_name)
+            validate_csv(binning_data, ['Contig index'], ['Bin index'])
+            
             taxonomy_columns = np.array([col for col in taxonomy_data.columns if col not in ['Bin index', 'Category']])
             taxonomy_data.replace("Unclassified", None, inplace=True)
-
             save_to_redis(f'{user_folder}:taxonomy-levels', taxonomy_columns)
-        except Exception as e:
-            logger.error(f"Validation failed for Taxonomy Information file: {e}")
-            return False, ""
+            validate_csv(taxonomy_data, ['Bin index'], ['Category'])
     
-        logger.info("Validation successful. Proceeding with data preparation...")
-            
-        try:    
-            # Process data using parsed dataframes directly
+            # Process data
             combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data, taxonomy_columns)
             combined_data['Category'] = combined_data['Category'].fillna('chromosome')
-    
-            # Save `raw_contact_matrix.npz` using `save_file_to_user_folder`
-            save_file_to_user_folder(contig_matrix, 'raw_contact_matrix.npz', user_folder)
 
-            # Save `contig_info_final.csv`
+            # Save files to user folder
+            save_file_to_user_folder(contig_matrix, 'raw_contact_matrix.npz', user_folder)
             encoded_csv_content = base64.b64encode(combined_data.to_csv(index=False).encode()).decode()
             save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info_final.csv', user_folder)
-            
-            # Compress into `unnormalized_information.7z` including the two files
+            # Compress into a 7z archive
             user_output_folder = os.path.join('output', user_folder)
             unnormalized_archive_path = os.path.join(user_output_folder, 'unnormalized_information.7z')
             with py7zr.SevenZipFile(unnormalized_archive_path, 'w') as archive:
                 archive.write(os.path.join(user_output_folder, 'raw_contact_matrix.npz'), 'raw_contact_matrix.npz')
                 archive.write(os.path.join(user_output_folder, 'contig_info_final.csv'), 'contig_info_final.csv')
             return True, ""
+    
         except Exception as e:
-            logger.error(f"Preparation failed for Method 1: {e}")
+            logger.error(f"Error during preparation: {e}")
             return False, ""
 
     @app.callback(

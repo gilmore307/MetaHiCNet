@@ -214,6 +214,19 @@ def update_execute_button(current_stage):
     return button_text
 
 @app.callback(
+    Output('load-button', 'style'),
+    [Input('current-method', 'data'),
+     Input('current-stage', 'data')]
+)
+def show_quick_load_button(method, stage):
+    if method == 'method1' and stage == 'Preparation':
+        # Show the quick load button when in method1 preparation stage
+        return {'display': 'inline-block', 'width': '300px', 'margin-left': '100px'}
+    else:
+        # Hide the button for other methods or stages
+        return {'display': 'none'}
+
+@app.callback(
     Output('main-content', 'children'),  # Replace the entire content inside main-content
     [Input('current-stage', 'data')],
     [State('current-method', 'data')]
@@ -246,8 +259,9 @@ def update_main_content(current_stage, selected_method):
                 children=[
                     html.Div(id='dynamic-content', className="my-4"),
                     html.Div(id='blank-element', style={'display': 'none'}),
-                    dbc.Row([
-                        dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '100%'}), width=2)
+                    dbc.Col([
+                        dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '300px'}),
+                        dbc.Button('Load Example Files', id='load-button', style={'width': '300px'})
                     ])
                 ]
             ),
