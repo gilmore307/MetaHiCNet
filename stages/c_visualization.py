@@ -709,9 +709,9 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
 
     # Use a categorical color scale
     color_scale_mapping = {
-        'virus': colors.sequential.Redor,
-        'plasmid': colors.sequential.YlGn,
-        'chromosome': colors.sequential.BuPu
+        'virus': reds,
+        'plasmid': greens,
+        'chromosome': blues
     }
 
     # Rank annotation based on the number of bins with contact to the selected bin
@@ -847,6 +847,12 @@ type_colors = {
     'plasmid': '#D5ED9F'
 }
 default_color = '#808080' 
+reds = ['#F49AC2', '#CF71AF', '#FF007F', '#872657', '#E32636', 
+           '#C41E3A', '#960018', '#65000B', '#FF9966', '#FF5A36']
+greens = ['#BFFF00', '#D1E231', '#A4C639', '#808000', '#4B5320',
+          '#B2EC5D', '#00CC99', '#87A96B', '#138808', '#00FF6F']
+blues = ['#00FFFF', '#89CFF0', '#008B8B', '#6495ED', '#007FFF',
+         '#6082B6', '#1560BD', '#0047AB', '#CCCCFF', '#002FA7']
 
 base_stylesheet = [
     {
