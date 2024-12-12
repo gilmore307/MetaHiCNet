@@ -58,6 +58,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
 
     def denoise(matrix, threshold):
         matrix = matrix.tocoo()
+        matrix.data = matrix.data * 100
         threshold_value = np.percentile(matrix.data, threshold)
         mask = matrix.data > threshold_value
         return coo_matrix((matrix.data[mask].astype(int), (matrix.row[mask], matrix.col[mask])), shape=matrix.shape)
@@ -167,7 +168,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         
         # Return the balanced matrix and the scale vector 'x'
         X = spdiags(x, 0, n, n, 'csr')  # Create a diagonal matrix with x
-        balanced_matrix = X.T.dot(_orig.dot(X)) * 1000000
+        balanced_matrix = X.T.dot(_orig.dot(X)) * 10000
         return balanced_matrix 
 
     try:
@@ -557,15 +558,9 @@ def register_normalization_callbacks(app):
         # Save the loaded data to Redis with keys specific to the user folder
         bin_info_key = f'{user_folder}:bin-information'
         bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-        contig_info_key = f'{user_folder}:contig-info'
-        normalized_matrix_key = f'{user_folder}:normalized-matrix'
-        unnormalized_matrix_key = f'{user_folder}:unnormalized-matrix'
         
         save_to_redis(bin_info_key, bin_info)       
         save_to_redis(bin_matrix_key, bin_contact_matrix)
-        save_to_redis(contig_info_key, contig_info)       
-        save_to_redis(normalized_matrix_key, normalized_matrix)
-        save_to_redis(unnormalized_matrix_key, contact_matrix)
 
         logger.info("Data loaded and saved to Redis successfully.")
         

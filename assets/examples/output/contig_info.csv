@@ -269,7 +269,7 @@ contig_11164,655,67011,343.0,0,MAG_1459,chromosome,p_FirmicuteA,c_Clostridia,o_O
 contig_11176,1253,186765,436.0,0,MAG_68,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Limiplasma,s_
 contig_11177,1134,85235,14.0,0,MAG_350,chromosome,p_Proteobacteria,c_Alphaproteobacteria,o_RF32,f_UBA3637,g_RGIG4140,s_RGIG4140 sp017467335
 contig_11185,582,97578,104.0,0,MAG_1679,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_RUG11247,s_
-contig_11187,155,31859,1.0,0,contig_11187,unclassified,p_,c_,o_,f_,g_,s_
+contig_11187_p,155,31859,1.0,0,contig_11187_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Rhodospirillales_p,f_Acetobacteraceae_p,g_Acidiphilium_p,s_Acidiphilium_multivorum_p
 contig_11189,23,2478,1121.0,0,MAG_617,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_RUG806,s_
 contig_11190,1597,185193,333.0,0,MAG_617,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_RUG806,s_
 contig_11191,939,104236,452.0,0,MAG_102,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_RUG806,s_
@@ -320,7 +320,7 @@ contig_11370,2514,283773,459.0,0,MAG_777,chromosome,p_FirmicuteA,c_Clostridia,o_
 contig_11376,390,68166,11918.0,0,MAG_63,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Intestinimonas,s_Intestinimonas butyriciproducens
 contig_11384,13196,2214976,321.0,0,MAG_502,chromosome,p_Bacteroidota,c_Bacteroidia,o_Bacteroidales,f_Bacteroidaceae,g_Phocaeicola,s_
 contig_11395,2875,308976,855.0,0,MAG_777,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Ruminococcaceae,g_UMGS1668,s_UMGS1668 sp017847875
-contig_11406,1551,132729,840.0,0,contig_11406,unclassified,p_,c_,o_,f_,g_,s_
+contig_11406_p,1551,132729,840.0,0,contig_11406_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Paenibacillaceae_p,g_Paenibacillus_p,s_Paenibacillus_polymyxa_p
 contig_11411,646,148865,157.0,0,MAG_50,chromosome,p_Bacteroidota,c_Bacteroidia,o_Bacteroidales,f_Muribaculaceae,g_UBA7173,s_UBA7173 sp900545955
 contig_11412,1057,113998,17.0,0,MAG_23,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_11428,347,32683,594.0,0,MAG_1482,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_UBA737,s_
@@ -382,7 +382,7 @@ contig_11674,482,48480,3262.0,0,MAG_169,chromosome,p_FirmicuteA,c_Clostridia,o_O
 contig_11676,8455,1498891,7.0,0,MAG_1493,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-917,g_RGIG4097,s_RGIG4097 sp017461985
 contig_11684,113,13465,212.0,0,MAG_133,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Limiplasma,s_
 contig_11693,1192,118277,1053.0,0,MAG_1841,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Avoscillospira,s_
-contig_11696,507,110575,1.0,0,contig_11696,unclassified,p_,c_,o_,f_,g_,s_
+contig_11696_p,507,110575,1.0,0,contig_11696_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Bacillaceae_p,g_Priestia_p,s_Priestia_megaterium_p
 contig_11706,137,8111,129.0,0,MAG_1713,unclassified,p_,c_,o_,f_,g_,s_
 contig_11709,498,31654,11.0,0,MAG_1713,unclassified,p_,c_,o_,f_,g_,s_
 contig_11716,336,18120,14.0,0,MAG_1713,unclassified,p_,c_,o_,f_,g_,s_
@@ -481,7 +481,7 @@ contig_1206,20984,2472988,4961.0,0,MAG_1117,chromosome,p_FirmicuteA,c_Clostridia
 contig_12062,2310,369110,449.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
 contig_12063,403,55915,98.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
 contig_12065,133,21186,324.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
-contig_12067,384,75037,280.0,0,contig_12067,unclassified,p_,c_,o_,f_,g_,s_
+contig_12067_p,384,75037,280.0,0,contig_12067_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Rhodobacterales_p,f_Paracoccaceae_p,g_Paracoccus_p,s_Paracoccus_sp._AK26_p
 contig_12070,380,53587,679.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
 contig_12075,1352,213238,616.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
 contig_12078,786,118902,61.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
@@ -489,7 +489,7 @@ contig_12079,170,25166,178.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
 contig_12082,51,8706,5648.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
 contig_12084,3200,524666,59.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
 contig_12087,110,14945,9504.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
-contig_12088,3939,636612,274.0,0,contig_12088,unclassified,p_,c_,o_,f_,g_,s_
+contig_12088_p,3939,636612,274.0,0,contig_12088_p,plasmid,p_Pseudomonadota_p,c_Gammaproteobacteria_p,o_Legionellales_p,f_Legionellaceae_p,g_Legionella_p,s_Legionella_adelaidensis_p
 contig_12089,618,113172,162.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
 contig_12090,309,52705,245.0,0,MAG_1046,unclassified,p_,c_,o_,f_,g_,s_
 contig_12092,716,108434,4061.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
@@ -552,7 +552,7 @@ contig_12370,1005,118480,119.0,0,MAG_19,chromosome,p_FirmicuteA,c_Clostridia,o_O
 contig_12372,447,81945,3.0,0,MAG_305,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_UBA1750,g_SIG373,s_
 contig_12393,102,19667,19.0,0,MAG_1423,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_SZUA-448,s_
 contig_12397,430,74339,785.0,0,MAG_1423,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_SZUA-448,s_
-contig_12401,1210,105237,789.0,0,contig_12401,unclassified,p_,c_,o_,f_,g_,s_
+contig_12401_p,1210,105237,789.0,0,contig_12401_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Hyphomicrobiales_p,f_Rhizobiaceae_p,g_Allorhizobium_p,s_Allorhizobium_pseudoryzae_p
 contig_12402,1143,99816,1174.0,0,contig_12402,unclassified,p_,c_,o_,f_,g_,s_
 contig_12404_v,2609,148274,149.0,0,contig_12404_v,virus,p_,c_,o_Caudoviralev_v,f_Myoviridae_v,g_,s_
 contig_12411,286,89357,1456.0,0,MAG_1818,chromosome,p_Verrucomicrobiota,c_Verrucomicrobiae,o_Verrucomicrobiales,f_Akkermansiaceae,g_Akkermansia,s_Akkermansia sp015061985
@@ -735,7 +735,7 @@ contig_13156,317,43667,45.0,0,MAG_236,chromosome,p_FirmicuteA,c_Clostridia,o_Osc
 contig_13161,571,54402,14.0,0,MAG_253,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_CAG-170,s_CAG-170 sp003516765
 contig_13163,176,17879,3051.0,0,contig_13163,unclassified,p_,c_,o_,f_,g_,s_
 contig_13180,1994,238131,248.0,0,MAG_1231,unclassified,p_,c_,o_,f_,g_,s_
-contig_13181,634,145036,661.0,0,contig_13181,unclassified,p_,c_,o_,f_,g_,s_
+contig_13181_p,634,145036,661.0,0,contig_13181_p,plasmid,p_Bacteroidota_p,c_Bacteroidia_p,o_Bacteroidales_p,f_Prevotellaceae_p,g_Prevotella_p,s_Prevotella_nigrescens_p
 contig_13188,4982,489190,4.0,0,MAG_1555,chromosome,p_Bacteroidota,c_Bacteroidia,o_Bacteroidales,f_Tannerellaceae,g_Parabacteroides,s_Parabacteroides distasonis
 contig_13189,14,1187,323.0,0,contig_13189,unclassified,p_,c_,o_,f_,g_,s_
 contig_13209_v,2332,129259,235.0,0,contig_13209_v,virus,p_,c_,o_Caudoviralev_v,f_Podoviridae_v,g_,s_
@@ -927,7 +927,7 @@ contig_14118,223,42724,101.0,0,MAG_281,unclassified,p_,c_,o_,f_,g_,s_
 contig_14119,128,16443,43.0,0,MAG_17,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_14122,250,28385,307.0,0,MAG_618,chromosome,p_Elusimicrobiota,c_Elusimicrobia,o_Elusimicrobiales,f_Elusimicrobiaceae,g_UBA1436,s_
 contig_14125_v,152,57054,190758.0,0,contig_14125_v,virus,p_,c_,o_Caudoviralev_v,f_Siphoviridae_v,g_,s_
-contig_14129,30445,3450510,182.0,0,contig_14129,unclassified,p_,c_,o_,f_,g_,s_
+contig_14129_p,30445,3450510,182.0,0,contig_14129_p,plasmid,p_Bacillota_p,c_Clostridia_p,o_Eubacteriales_p,f_Lachnospiraceae_p,g_Pseudobutyrivibrio_p,s_Pseudobutyrivibrio_xylanivorans_p
 contig_14131,814,84914,8994.0,0,contig_14131,unclassified,p_,c_,o_,f_,g_,s_
 contig_14134,12011,1386698,253.0,0,MAG_709,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_RGIG1995,s_
 contig_1414,915,87465,4841.0,0,MAG_696,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_SFDP01,s_
@@ -1403,8 +1403,8 @@ contig_16087,721,77471,926.0,0,MAG_609,unclassified,p_,c_,o_,f_,g_,s_
 contig_16088,1005,133931,7.0,0,MAG_67,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Ventricola,s_
 contig_16096,428,61843,1020.0,0,contig_16096,unclassified,p_,c_,o_,f_,g_,s_
 contig_16104,677,107902,1944.0,0,MAG_97,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Dysosmobacter,s_
-contig_16113,1418,266381,404.0,0,contig_16113,unclassified,p_,c_,o_,f_,g_,s_
-contig_16114,1259,233652,33.0,0,contig_16114,unclassified,p_,c_,o_,f_,g_,s_
+contig_16113_p,1418,266381,404.0,0,contig_16113_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Lactobacillales_p,f_Streptococcaceae_p,g_Streptococcus_p,s_Streptococcus_oralis_p
+contig_16114_p,1259,233652,33.0,0,contig_16114_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Lactobacillales_p,f_Streptococcaceae_p,g_Streptococcus_p,s_Streptococcus_oralis_p
 contig_16120,333,20163,301.0,0,MAG_610,unclassified,p_,c_,o_,f_,g_,s_
 contig_16208,1494,86637,479.0,0,MAG_1722,unclassified,p_,c_,o_,f_,g_,s_
 contig_16218,2183,130983,11.0,0,MAG_391,chromosome,p_Firmicutes,c_Bacilli,o_RF39,f_UBA660,g_Aphodocola,s_
@@ -1442,7 +1442,7 @@ contig_16431,877,85724,35.0,0,MAG_681,chromosome,p_FirmicuteA,c_Clostridia,o_Mon
 contig_16432,1284,137736,200.0,0,MAG_1281,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_UBA737,s_
 contig_16437,8662,614414,129.0,0,MAG_228,chromosome,p_Planctomycetota,c_Planctomycetia,o_Pirellulales,f_Thermoguttaceae,g_RGIG3701,s_RGIG3701 sp017939795
 contig_16440,305,56174,5324.0,0,MAG_59,unclassified,p_,c_,o_,f_,g_,s_
-contig_16443,2161,364128,775.0,0,contig_16443,unclassified,p_,c_,o_,f_,g_,s_
+contig_16443_p,2161,364128,775.0,0,contig_16443_p,plasmid,p_Pseudomonadota_p,c_Betaproteobacteria_p,o_Burkholderiales_p,f_Burkholderiaceae_p,g_Cupriavidus_p,s_Cupriavidus_metallidurans_p
 contig_16444,1090,351715,239.0,0,MAG_1817,chromosome,p_Verrucomicrobiota,c_Verrucomicrobiae,o_Verrucomicrobiales,f_Akkermansiaceae,g_Akkermansia,s_Akkermansia sp015061985
 contig_16445,139,39451,36.0,0,MAG_103,chromosome,p_Verrucomicrobiota,c_Verrucomicrobiae,o_Verrucomicrobiales,f_Akkermansiaceae,g_Akkermansia,s_Akkermansia sp015061985
 contig_16446,46,15578,133.0,0,MAG_1820,chromosome,p_Verrucomicrobiota,c_Verrucomicrobiae,o_Verrucomicrobiales,f_Akkermansiaceae,g_Akkermansia,s_Akkermansia sp015061985
@@ -2188,9 +2188,9 @@ contig_19626,220,21650,246.0,0,MAG_295,chromosome,p_FirmicuteA,c_Clostridia,o_Os
 contig_19628,658,103492,8.0,0,MAG_126,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Dysosmobacter,s_
 contig_19629,212,23751,195.0,0,contig_19629,unclassified,p_,c_,o_,f_,g_,s_
 contig_1963,382,74419,402.0,0,contig_1963,unclassified,p_,c_,o_,f_,g_,s_
-contig_19633,1327,245145,1128.0,0,contig_19633,unclassified,p_,c_,o_,f_,g_,s_
-contig_19634,1450,312943,370.0,0,contig_19634,unclassified,p_,c_,o_,f_,g_,s_
-contig_19636,1585,330479,64.0,0,contig_19636,unclassified,p_,c_,o_,f_,g_,s_
+contig_19633_p,1327,245145,1128.0,0,contig_19633_p,plasmid,p_Actinomycetota_p,c_Actinomycetes_p,o_Mycobacteriales_p,f_Corynebacteriaceae_p,g_Corynebacterium_p,s_Corynebacterium_sp._FDAARGOS_1242_p
+contig_19634_p,1450,312943,370.0,0,contig_19634_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Hyphomicrobiales_p,f_Phyllobacteriaceae_p,g_Mesorhizobium_p,s_Mesorhizobium_sp._AR07_p
+contig_19636_p,1585,330479,64.0,0,contig_19636_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Lactobacillales_p,f_Streptococcaceae_p,g_Streptococcus_p,s_Streptococcus_oralis_p
 contig_19638,2440,255540,59.0,0,MAG_789,unclassified,p_,c_,o_,f_,g_,s_
 contig_19664,313,39056,70.0,0,MAG_131,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Lawsonibacter,s_
 contig_19670,295,48888,91.0,0,MAG_851,unclassified,p_,c_,o_,f_,g_,s_
@@ -2725,8 +2725,8 @@ contig_21862,3054,181981,87.0,0,MAG_128,unclassified,p_,c_,o_,f_,g_,s_
 contig_21875,72,11982,156.0,0,MAG_106,unclassified,p_,c_,o_,f_,g_,s_
 contig_21877,1276,180672,243.0,0,MAG_137,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_Christensenellaceae,g_,s_
 contig_21879,1509,173889,145.0,0,MAG_155,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Avoscillospira,s_
-contig_21881,455,78567,2515.0,0,contig_21881,unclassified,p_,c_,o_,f_,g_,s_
-contig_21883,1287,212995,63.0,0,contig_21883,unclassified,p_,c_,o_,f_,g_,s_
+contig_21881_p,455,78567,2515.0,0,contig_21881_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Lactobacillales_p,f_Enterococcaceae_p,g_Enterococcus_p,s_Enterococcus_faecalis_p
+contig_21883_p,1287,212995,63.0,0,contig_21883_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Lactobacillales_p,f_Enterococcaceae_p,g_Enterococcus_p,s_Enterococcus_faecalis_p
 contig_21885,249,24641,109.0,0,MAG_49,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_CAG-83,s_
 contig_2189,37,3517,940.0,0,MAG_301,unclassified,p_,c_,o_,f_,g_,s_
 contig_21899,1058,109935,77.0,0,MAG_397,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_,s_
@@ -3029,7 +3029,7 @@ contig_23059,642,61349,18.0,0,MAG_53,chromosome,p_FirmicuteA,c_Clostridia,o_Lach
 contig_23071,306,30191,1408.0,0,MAG_1180,chromosome,p_Bacteroidota,c_Bacteroidia,o_Bacteroidales,f_UBA932,g_Cryptobacteroides,s_
 contig_23073,4341,504469,87.0,0,MAG_109,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_RUG11130,s_
 contig_23074,1094,172198,429.0,0,MAG_433,unclassified,p_,c_,o_,f_,g_,s_
-contig_23075,1582,237847,79.0,0,contig_23075,unclassified,p_,c_,o_,f_,g_,s_
+contig_23075_p,1582,237847,79.0,0,contig_23075_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Hyphomicrobiales_p,f_Rhizobiaceae_p,g_Agrobacterium_p,s_Agrobacterium_fabacearum_p
 contig_23084,214,18973,10.0,0,MAG_551,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_DTU072,g_CAG-1782,s_
 contig_23086,60,9054,11.0,0,MAG_335,unclassified,p_,c_,o_,f_,g_,s_
 contig_23087,81,11191,12.0,0,MAG_335,unclassified,p_,c_,o_,f_,g_,s_
@@ -3377,7 +3377,7 @@ contig_24408,751,66435,48.0,0,MAG_32,chromosome,p_FirmicuteA,c_Clostridia,o_Osci
 contig_24414,182,23708,20.0,0,MAG_466,unclassified,p_,c_,o_,f_,g_,s_
 contig_24416,209,20550,1471.0,0,MAG_169,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_24418,556,79725,1875.0,0,MAG_396,unclassified,p_,c_,o_,f_,g_,s_
-contig_24425,1019,172984,8.0,0,contig_24425,unclassified,p_,c_,o_,f_,g_,s_
+contig_24425_p,1019,172984,8.0,0,contig_24425_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Hyphomicrobiales_p,f_Rhizobiaceae_p,g_Rhizobium_p,s_Rhizobium_leguminosarum_p
 contig_24432,33,5335,13.0,0,MAG_643,unclassified,p_,c_,o_,f_,g_,s_
 contig_24435,14,3200,116.0,0,MAG_159,unclassified,p_,c_,o_,f_,g_,s_
 contig_2444,4935,447993,398.0,0,MAG_1314,chromosome,p_FirmicuteB,c_Dehalobacteriia,o_UBA7702,f_UBA7702,g_UBA7702,s_
@@ -3478,7 +3478,7 @@ contig_2477,1145,193974,3.0,0,MAG_1540,chromosome,p_FirmicuteA,c_Clostridia,o_Ch
 contig_24771,921,95117,28.0,0,MAG_1470,unclassified,p_,c_,o_,f_,g_,s_
 contig_24775,292,41432,504.0,0,MAG_841,unclassified,p_,c_,o_,f_,g_,s_
 contig_24777,4680,329553,217.0,0,MAG_74,chromosome,p_Firmicutes,c_Bacilli,o_Erysipelotrichales,f_Erysipelotrichaceae,g_Holdemania,s_Holdemania sp900120005
-contig_24784,416,35726,13.0,0,contig_24784,unclassified,p_,c_,o_,f_,g_,s_
+contig_24784_p,416,35726,13.0,0,contig_24784_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Paenibacillaceae_p,g_Paenibacillus_p,s_Paenibacillus_cellulosilyticus_p
 contig_24787,315,23024,19.0,0,MAG_597,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Bariatricus,s_
 contig_24789,27,4540,2493.0,0,contig_24789,unclassified,p_,c_,o_,f_,g_,s_
 contig_24790,2930,336604,742.0,0,MAG_62,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Faecalimonas,s_
@@ -4950,7 +4950,7 @@ contig_31447,83,12699,37.0,0,MAG_208,unclassified,p_,c_,o_,f_,g_,s_
 contig_31448,322,34367,239.0,0,MAG_950,unclassified,p_,c_,o_,f_,g_,s_
 contig_31451,1408,150868,579.0,0,MAG_158,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Butyricicoccaceae,g_JAAZBA01,s_
 contig_31456,2545,208919,70.0,0,MAG_315,chromosome,p_Bacteroidota,c_Bacteroidia,o_Bacteroidales,f_Marinifilaceae,g_Butyricimonas,s_Butyricimonas virosa
-contig_31459,248,43695,43632.0,0,contig_31459,unclassified,p_,c_,o_,f_,g_,s_
+contig_31459_p,248,43695,43632.0,0,contig_31459_p,plasmid,p_Bacteroidota_p,c_Bacteroidia_p,o_Bacteroidales_p,f_Prevotellaceae_p,g_Prevotella_p,s_Prevotella_sp._oral_taxon_299_p
 contig_3146,22139,2657843,1837.0,0,MAG_1232,unclassified,p_,c_,o_,f_,g_,s_
 contig_31461_v,2072,153448,189.0,0,contig_31461_v,virus,p_,c_,o_Caudoviralev_v,f_Siphoviridae_v,g_,s_
 contig_31462_v,2041,146720,19.0,0,contig_31462_v,virus,p_,c_,o_Caudoviralev_v,f_Myoviridae_v,g_,s_
@@ -5452,12 +5452,12 @@ contig_33511,1100,190001,330.0,0,MAG_1081,unclassified,p_,c_,o_,f_,g_,s_
 contig_33515,1031,128949,51.0,0,MAG_31,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_Christensenellaceae,g_NSJ-63,s_NSJ-63 sp014384805
 contig_33516,163,20252,64.0,0,MAG_16,unclassified,p_,c_,o_,f_,g_,s_
 contig_33520,54,11734,19.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
-contig_33525,107,20294,1195.0,0,contig_33525,unclassified,p_,c_,o_,f_,g_,s_
+contig_33525_p,107,20294,1195.0,0,contig_33525_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Hyphomicrobiales_p,f_Rhizobiaceae_p,g_Shinella_p,s_Shinella_zoogloeoides_p
 contig_33528,1931,333102,4361.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
 contig_33529,3004,460845,648.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
 contig_33530,978,137210,75.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
 contig_33531,131,23251,1034.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
-contig_33533,438,67880,575.0,0,contig_33533,unclassified,p_,c_,o_,f_,g_,s_
+contig_33533_p,438,67880,575.0,0,contig_33533_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Rhodospirillales_p,f_Azospirillaceae_p,g_Azospirillum_p,s_Azospirillum_sp._TSH58_p
 contig_33534,356,55844,122.0,0,MAG_78,unclassified,p_,c_,o_,f_,g_,s_
 contig_33535,293,47698,231.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
 contig_33537,2651,246227,162.0,0,MAG_426,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_Borkfalkiaceae,g_Scatosoma,s_Scatosoma sp017467265
@@ -5505,7 +5505,7 @@ contig_33657,457,35766,120.0,0,MAG_526,unclassified,p_,c_,o_,f_,g_,s_
 contig_3366,492,62581,1367.0,0,MAG_224,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Ruminococcaceae,g_Angelakisella,s_
 contig_3367,1170,347992,26.0,0,MAG_1818,chromosome,p_Verrucomicrobiota,c_Verrucomicrobiae,o_Verrucomicrobiales,f_Akkermansiaceae,g_Akkermansia,s_Akkermansia sp015061985
 contig_33670,469,54786,106.0,0,MAG_446,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_RGIG2066,s_
-contig_33671,794,112305,34.0,0,contig_33671,unclassified,p_,c_,o_,f_,g_,s_
+contig_33671_p,794,112305,34.0,0,contig_33671_p,plasmid,p_Actinomycetota_p,c_Actinomycetes_p,o_Propionibacteriales_p,f_Propionibacteriaceae_p,g_Cutibacterium_p,s_Cutibacterium_acnes_p
 contig_33673,267,36395,39.0,0,MAG_284,unclassified,p_,c_,o_,f_,g_,s_
 contig_3368,978,55407,949.0,0,MAG_1896,unclassified,p_,c_,o_,f_,g_,s_
 contig_33686,60,8067,68.0,0,MAG_862,unclassified,p_,c_,o_,f_,g_,s_
@@ -5976,7 +5976,7 @@ contig_3582,8024,941173,19.0,0,MAG_1199,chromosome,p_Bacteroidota,c_Bacteroidia,
 contig_35825,1581,101857,140.0,0,MAG_344,unclassified,p_,c_,o_,f_,g_,s_
 contig_35827,453,66937,2054.0,0,MAG_46,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Lawsonibacter,s_Lawsonibacter sp905215425
 contig_3583,2984,420289,1316.0,0,MAG_860,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_CAG-83,s_CAG-83 sp015067525
-contig_35830,1749,143002,51.0,0,contig_35830,unclassified,p_,c_,o_,f_,g_,s_
+contig_35830_p,1749,143002,51.0,0,contig_35830_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Bacillaceae_p,g_Niallia_p,s_Niallia_circulans_p
 contig_35834,477,36841,46.0,0,contig_35834,unclassified,p_,c_,o_,f_,g_,s_
 contig_35839,1508,134458,89.0,0,MAG_580,unclassified,p_,c_,o_,f_,g_,s_
 contig_3584,265,29288,236.0,0,MAG_10,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Alloscillospira,s_
@@ -6589,7 +6589,7 @@ contig_3862,10981,1152040,255.0,0,MAG_1183,chromosome,p_FirmicuteA,c_Clostridia,
 contig_38634,1183,138985,255.0,0,MAG_282,unclassified,p_,c_,o_,f_,g_,s_
 contig_38639,1203,109068,382.0,0,MAG_1888,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Paralachnospira,s_
 contig_3864,9598,1028435,187.0,0,MAG_1276,chromosome,p_Bacteroidota,c_Bacteroidia,o_Bacteroidales,f_Bacteroidaceae,g_Phocaeicola_A,s_Phocaeicola_A sp017416805
-contig_38647,720,88041,76.0,0,contig_38647,unclassified,p_,c_,o_,f_,g_,s_
+contig_38647_p,720,88041,76.0,0,contig_38647_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Hyphomicrobiales_p,f_Rhizobiaceae_p,g_Rhizobium_p,s_Rhizobium_leguminosarum_p
 contig_38663,236,37096,345.0,0,MAG_808,unclassified,p_,c_,o_,f_,g_,s_
 contig_38666,3021,244578,283.0,0,MAG_74,chromosome,p_Firmicutes,c_Bacilli,o_Erysipelotrichales,f_Erysipelotrichaceae,g_Holdemania,s_Holdemania sp900120005
 contig_38668,3820,258786,227.0,0,MAG_74,chromosome,p_Firmicutes,c_Bacilli,o_Erysipelotrichales,f_Erysipelotrichaceae,g_Holdemania,s_Holdemania sp900120005
@@ -7108,7 +7108,7 @@ contig_41041,1290,355345,128.0,0,MAG_1243,chromosome,p_Desulfobacterota_I,c_Desu
 contig_41044,531,82927,141.0,0,MAG_202,chromosome,p_Desulfobacterota_I,c_Desulfovibrionia,o_Desulfovibrionales,f_Desulfovibrionaceae,g_Mailhella,s_
 contig_41050,761,85845,795.0,0,MAG_174,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Pelethomonas,s_
 contig_41055,922,80107,3441.0,0,MAG_1710,unclassified,p_,c_,o_,f_,g_,s_
-contig_41056,3988,325829,264.0,0,contig_41056,unclassified,p_,c_,o_,f_,g_,s_
+contig_41056_p,3988,325829,264.0,0,contig_41056_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Rhodobacterales_p,f_Paracoccaceae_p,g_Pseudorhodobacter_p,s_Pseudorhodobacter_turbinis_p
 contig_41060,1001,132774,40134.0,0,MAG_19,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_RUG11130,s_RUG11130 sp017481265
 contig_4107,18096,2212255,52.0,0,MAG_1593,unclassified,p_,c_,o_,f_,g_,s_
 contig_41080,320,39175,40.0,0,contig_41080,unclassified,p_,c_,o_,f_,g_,s_
@@ -7537,7 +7537,7 @@ contig_43055,524,57089,21.0,0,MAG_524,chromosome,p_FirmicuteA,c_Clostridia,o_Lac
 contig_43059,98,6187,166.0,0,MAG_1585,unclassified,p_,c_,o_,f_,g_,s_
 contig_43060,994,178477,46.0,0,MAG_1749,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_CAG-83,s_
 contig_43075,554,58479,19.0,0,MAG_649,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
-contig_43078,60,14307,90.0,0,contig_43078,unclassified,p_,c_,o_,f_,g_,s_
+contig_43078_p,60,14307,90.0,0,contig_43078_p,plasmid,p_Bacteroidota_p,c_Bacteroidia_p,o_Bacteroidales_p,f_Bacteroidaceae_p,g_Bacteroides_p,s_Bacteroides_sp._CACC_737_p
 contig_43081,365,35227,69.0,0,MAG_140,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Avoscillospira,s_
 contig_43087,688,71415,1939.0,0,MAG_311,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_43096,2132,255470,1363.0,0,MAG_1851,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_UMGS1279,s_
@@ -7695,7 +7695,7 @@ contig_43787,274,27213,57.0,0,MAG_1740,unclassified,p_,c_,o_,f_,g_,s_
 contig_43790,219,25516,38.0,0,MAG_120,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Evtepia,s_
 contig_43796,225,30744,16477.0,0,MAG_439,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_UBA1750,g_Spyradocola,s_
 contig_438,4634,440727,106.0,0,MAG_524,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_,s_
-contig_43801,303,66274,670.0,0,contig_43801,unclassified,p_,c_,o_,f_,g_,s_
+contig_43801_p,303,66274,670.0,0,contig_43801_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Bacillaceae_p,g_Mesobacillus_p,s_Mesobacillus_foraminis_p
 contig_43803,62,16878,56.0,0,contig_43803,unclassified,p_,c_,o_,f_,g_,s_
 contig_43807,188,26792,19.0,0,MAG_352,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_UBA5905,s_
 contig_43808,98,21110,74508.0,0,MAG_131,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Lawsonibacter,s_
@@ -7814,7 +7814,7 @@ contig_44290,134,14100,68.0,0,MAG_423,unclassified,p_,c_,o_,f_,g_,s_
 contig_44292,144,19276,83.0,0,MAG_190,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Faecaligallichristensenella,s_
 contig_44293,2134,130057,863.0,0,MAG_424,unclassified,p_,c_,o_,f_,g_,s_
 contig_443,3109,243106,107.0,0,MAG_85,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Lachnoclostridium_B,s_
-contig_44310,956,138351,36.0,0,contig_44310,unclassified,p_,c_,o_,f_,g_,s_
+contig_44310_p,956,138351,36.0,0,contig_44310_p,plasmid,p_Bacillota_p,c_Clostridia_p,o_Eubacteriales_p,f_Oscillospiraceae_p,g_Vescimonas_p,s_Vescimonas_fastidiosa_p
 contig_44311,273,36128,56.0,0,MAG_186,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_BX7,g_CAJFTX01,s_
 contig_44315,194,23861,326.0,0,MAG_174,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Pelethomonas,s_
 contig_44320,505,86473,125.0,0,MAG_72,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Limivicinus,s_Limivicinus sp003150355
@@ -8232,7 +8232,7 @@ contig_46239,378,63298,3483.0,0,MAG_338,chromosome,p_FirmicuteA,c_Clostridia,o_O
 contig_46247,474,85830,15.0,0,MAG_129,chromosome,p_Actinobacteriota,c_Coriobacteriia,o_Coriobacteriales,f_Eggerthellaceae,g_ZJ141,s_
 contig_46248,146,14160,102.0,0,MAG_13,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Ventricola,s_
 contig_4625,782,145547,196.0,0,MAG_218,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_Christensenellaceae,g_,s_
-contig_46251,301,32088,12307.0,0,contig_46251,unclassified,p_,c_,o_,f_,g_,s_
+contig_46251_p,301,32088,12307.0,0,contig_46251_p,plasmid,p_Actinomycetota_p,c_Actinomycetes_p,o_Mycobacteriales_p,f_Tsukamurellaceae_p,g_Tsukamurella_p,s_Tsukamurella_tyrosinosolvens_p
 contig_46259,10966,1266815,96.0,0,MAG_266,unclassified,p_,c_,o_,f_,g_,s_
 contig_46260,281,34349,19.0,0,MAG_266,unclassified,p_,c_,o_,f_,g_,s_
 contig_46291,661,60345,10.0,0,MAG_504,unclassified,p_,c_,o_,f_,g_,s_
@@ -8253,7 +8253,7 @@ contig_46359,372,34132,199.0,0,MAG_116,chromosome,p_FirmicuteA,c_Clostridia,o_Os
 contig_4636,1077,161947,77.0,0,MAG_1389,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_An92,s_
 contig_46368,428,43207,71.0,0,MAG_154,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Lactonifactor,s_
 contig_46370,240,13086,271.0,0,MAG_401,unclassified,p_,c_,o_,f_,g_,s_
-contig_46371,712,104656,159.0,0,contig_46371,unclassified,p_,c_,o_,f_,g_,s_
+contig_46371_p,712,104656,159.0,0,contig_46371_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Hyphomicrobiales_p,f_Rhizobiaceae_p,g_Rhizobium_p,s_Rhizobium_rhizoryzae_p
 contig_46374,3320,279300,656.0,0,MAG_491,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_46378,239,27140,84.0,0,MAG_2,chromosome,p_FirmicuteA,c_Clostridia,o_Eubacteriales,f_Eubacteriaceae,g_Eubacterium,s_Eubacterium callanderi
 contig_4638,431,47458,6121.0,0,MAG_1810,chromosome,p_FirmicuteA,c_Clostridia,o_Peptostreptococcales,f_Anaerovoracaceae,g_,s_
@@ -8630,7 +8630,7 @@ contig_48046,521,67624,47.0,0,MAG_1476,chromosome,p_FirmicuteA,c_Clostridia,o_Os
 contig_48049,489,54279,77.0,0,MAG_1476,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_CAG-83,s_CAG-83 sp004555205
 contig_48055,115,19161,55.0,0,contig_48055,unclassified,p_,c_,o_,f_,g_,s_
 contig_48057,87,12393,152.0,0,MAG_480,unclassified,p_,c_,o_,f_,g_,s_
-contig_48059,2264,205959,163.0,0,contig_48059,unclassified,p_,c_,o_,f_,g_,s_
+contig_48059_p,2264,205959,163.0,0,contig_48059_p,plasmid,p_Bacillota_p,c_Clostridia_p,o_Eubacteriales_p,f_Clostridiaceae_p,g_Clostridium_p,s_Clostridium_butyricum_p
 contig_48064,251,24589,79.0,0,MAG_278,unclassified,p_,c_,o_,f_,g_,s_
 contig_48070,50,18909,189.0,0,MAG_64,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Fimadaptatus,s_
 contig_48071,273,23159,16.0,0,MAG_196,unclassified,p_,c_,o_,f_,g_,s_
@@ -9183,7 +9183,7 @@ contig_50433,280,34863,335.0,0,MAG_620,chromosome,p_FirmicuteA,c_Clostridia,o_Ch
 contig_50436,1679,186272,136.0,0,MAG_65,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_50437,782,86918,159.0,0,MAG_55,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Ruminococcaceae,g_,s_
 contig_50438,453,65937,180.0,0,MAG_133,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Limiplasma,s_
-contig_50444,3303,211053,63.0,0,contig_50444,unclassified,p_,c_,o_,f_,g_,s_
+contig_50444_p,3303,211053,63.0,0,contig_50444_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Lactobacillales_p,f_Lactobacillaceae_p,g_Latilactobacillus_p,s_Latilactobacillus_curvatus_p
 contig_50450,264,32734,150.0,0,MAG_13,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Ventricola,s_
 contig_50456,980,99887,494.0,0,MAG_42,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_UMGS1264,s_
 contig_50459,1441,142765,54.0,0,MAG_48,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Merdiplasma,s_
@@ -9307,7 +9307,7 @@ contig_508,185,61552,56.0,0,MAG_686,unclassified,p_,c_,o_,f_,g_,s_
 contig_50801,200,28436,201.0,0,MAG_22,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Avoscillospira_A,s_
 contig_50804,495,63326,31.0,0,MAG_66,chromosome,p_FirmicuteA,c_Clostridia,o_Peptostreptococcales,f_Anaerovoracaceae,g_Fimisoma,s_Fimisoma sp002320005
 contig_50810,456,38161,231.0,0,MAG_142,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Eubacterium_G,s_
-contig_50816,512,114165,74.0,0,contig_50816,unclassified,p_,c_,o_,f_,g_,s_
+contig_50816_p,512,114165,74.0,0,contig_50816_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Rhodospirillales_p,f_Azospirillaceae_p,g_Indioceanicola_p,s_Indioceanicola_profundi_p
 contig_50817,1373,105389,128.0,0,MAG_1031,chromosome,p_Desulfobacterota_I,c_Desulfovibrionia,o_Desulfovibrionales,f_Desulfovibrionaceae,g_Desulfovibrio,s_
 contig_50826,484,48783,165.0,0,MAG_711,unclassified,p_,c_,o_,f_,g_,s_
 contig_50828,1179,141651,91.0,0,MAG_132,unclassified,p_,c_,o_,f_,g_,s_
@@ -9732,7 +9732,7 @@ contig_5215,6097,982000,31.0,0,MAG_1607,chromosome,p_FirmicuteA,c_Clostridia,o_C
 contig_52153,939,63691,53.0,0,MAG_1098,unclassified,p_,c_,o_,f_,g_,s_
 contig_52156,898,75745,184.0,0,MAG_142,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Eubacterium_G,s_
 contig_52160,497,66865,939.0,0,MAG_449,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_RGIG3159,s_
-contig_52166,1937,451534,60.0,0,contig_52166,unclassified,p_,c_,o_,f_,g_,s_
+contig_52166_p,1937,451534,60.0,0,contig_52166_p,plasmid,p_Bacteroidota_p,c_Bacteroidia_p,o_Bacteroidales_p,f_Prevotellaceae_p,g_Prevotella_p,s_Prevotella_sp._oral_taxon_299_p
 contig_52170,366,37916,126.0,0,MAG_512,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-382,g_SIG622,s_
 contig_52171,459,83704,541.0,0,MAG_73,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Lawsonibacter,s_
 contig_52172,1131,168065,137.0,0,MAG_86,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_CAG-74,g_Limiplasma,s_
@@ -10712,7 +10712,7 @@ contig_55048,231,30739,92.0,0,contig_55048,unclassified,p_,c_,o_,f_,g_,s_
 contig_55049,784,88262,27.0,0,MAG_1507,chromosome,p_FirmicuteB,c_Dehalobacteriia,o_UBA4068,f_UBA4068,g_RGIG3155,s_
 contig_55050,716,44906,2745.0,0,MAG_318,unclassified,p_,c_,o_,f_,g_,s_
 contig_55053,610,36376,1754.0,0,contig_55053,unclassified,p_,c_,o_,f_,g_,s_
-contig_55055,9852,1168805,867.0,0,contig_55055,unclassified,p_,c_,o_,f_,g_,s_
+contig_55055_p,9852,1168805,867.0,0,contig_55055_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Lactobacillales_p,f_Enterococcaceae_p,g_Enterococcus_p,s_Enterococcus_faecium_p
 contig_55057,1429,244392,2908.0,0,MAG_1389,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_An92,s_
 contig_55060,9618,1139795,631.0,0,MAG_885,chromosome,p_FirmicuteB,c_Dehalobacteriia,o_UBA4068,f_UBA4068,g_,s_
 contig_55061,1061,108960,1718.0,0,MAG_76,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_CAG-272,s_CAG-272 sp900556615
@@ -10760,7 +10760,7 @@ contig_5514,6554,870968,1486.0,0,MAG_1892,chromosome,p_FirmicuteA,c_Clostridia,o
 contig_55142,898,106370,238.0,0,MAG_102,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_RUG806,s_
 contig_55146,1809,161426,519.0,0,MAG_60,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Ruminococcaceae,g_,s_
 contig_55153,5507,477865,142.0,0,MAG_1648,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_RGIG2000,s_RGIG2000 sp017466455
-contig_5516,364,89675,351.0,0,contig_5516,unclassified,p_,c_,o_,f_,g_,s_
+contig_5516_p,364,89675,351.0,0,contig_5516_p,plasmid,p_Bacteroidota_p,c_Bacteroidia_p,o_Bacteroidales_p,f_Bacteroidaceae_p,g_Phocaeicola_p,s_Phocaeicola_dorei_p
 contig_55160,1141,123021,493.0,0,MAG_102,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_RUG806,s_
 contig_55165,1726,105513,371.0,0,MAG_1780,chromosome,p_FirmicuteA,c_Clostridia,o_TANB77,f_CAG-508,g_CAG-452,s_
 contig_55166_v,299,30787,73.0,0,contig_55166_v,virus,p_,c_,o_Caudoviralev_v,f_Siphoviridae_v,g_,s_
@@ -11117,7 +11117,7 @@ contig_56095,322,34879,234.0,0,MAG_735,chromosome,p_FirmicuteA,c_Clostridia,o_La
 contig_56097,1179,145701,117.0,0,MAG_71,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_SIG483,s_
 contig_56098,534,59240,41.0,0,MAG_100,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_CAG-170,s_CAG-170 sp900553545
 contig_561,650,81150,276.0,0,MAG_1807,chromosome,p_FirmicuteB,c_Dehalobacteriia,o_UBA7702,f_UBA7702,g_UBA7702,s_
-contig_56100,629,135765,46.0,0,contig_56100,unclassified,p_,c_,o_,f_,g_,s_
+contig_56100_p,629,135765,46.0,0,contig_56100_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Bacillaceae_p,g_Priestia_p,s_Priestia_megaterium_p
 contig_56104,645,59972,9101.0,0,MAG_311,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_56105,9679,1871240,14.0,0,MAG_1293,unclassified,p_,c_,o_,f_,g_,s_
 contig_5611,267,32561,238.0,0,MAG_1394,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
@@ -11167,7 +11167,7 @@ contig_56208,772,99692,522.0,0,MAG_317,unclassified,p_,c_,o_,f_,g_,s_
 contig_56209,246,32840,79.0,0,MAG_1487,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Ruminococcaceae,g_Ruminococcus,s_Ruminococcus sp015066935
 contig_56210,1087,107688,3971.0,0,MAG_1744,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_RUG12395,s_RUG12395 sp015064505
 contig_56213,2658,441636,57.0,0,MAG_185,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Pelethomonas,s_Pelethomonas sp900555795
-contig_56214,478,67443,229.0,0,contig_56214,unclassified,p_,c_,o_,f_,g_,s_
+contig_56214_p,478,67443,229.0,0,contig_56214_p,plasmid,p_Pseudomonadota_p,c_Alphaproteobacteria_p,o_Hyphomicrobiales_p,f_Rhizobiaceae_p,g_Neorhizobium_p,s_Neorhizobium_galegae_p
 contig_56217,1128,117087,362.0,0,MAG_31,chromosome,p_FirmicuteA,c_Clostridia,o_Christensenellales,f_Christensenellaceae,g_NSJ-63,s_NSJ-63 sp014384805
 contig_56221,1103,117942,34.0,0,MAG_1755,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_CAG-170,s_CAG-170 sp900553545
 contig_56230,827,43675,1937.0,0,MAG_1698,unclassified,p_,c_,o_,f_,g_,s_
@@ -11860,7 +11860,7 @@ contig_58095,268,21154,74.0,0,MAG_1519,unclassified,p_,c_,o_,f_,g_,s_
 contig_58097,198,36828,57.0,0,MAG_411,unclassified,p_,c_,o_,f_,g_,s_
 contig_58099,319,28443,182.0,0,MAG_351,chromosome,p_Spirochaetota,c_Spirochaetia,o_Treponematales,f_Treponemataceae,g_Treponema_D,s_Treponema_D berlinense
 contig_58102,1009,150504,464.0,0,MAG_271,chromosome,p_FirmicuteA,c_Clostridia,o_Peptostreptococcales,f_Anaerovoracaceae,g_RGIG7179,s_
-contig_58103,406,48076,3820.0,0,contig_58103,unclassified,p_,c_,o_,f_,g_,s_
+contig_58103_p,406,48076,3820.0,0,contig_58103_p,plasmid,p_Bacillota_p,c_Clostridia_p,o_Eubacteriales_p,f_Oscillospiraceae_p,g_Vescimonas_p,s_Vescimonas_fastidiosa_p
 contig_58104,4826,501895,713.0,0,MAG_340,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_58105,1062,113506,185.0,0,MAG_340,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_58106,1175,61985,134.0,0,MAG_1698,unclassified,p_,c_,o_,f_,g_,s_
@@ -12047,7 +12047,7 @@ contig_58558,2861,244333,207.0,0,MAG_204,chromosome,p_FirmicuteA,c_Clostridia,o_
 contig_5856,4692,539649,628.0,0,MAG_1450,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Acutalibacteraceae,g_CAG-488,s_CAG-488 sp017936645
 contig_58572,366,32990,346.0,0,MAG_278,unclassified,p_,c_,o_,f_,g_,s_
 contig_58575,1019,128822,1288.0,0,MAG_109,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_RUG11130,s_
-contig_58576,751,103370,1159.0,0,contig_58576,unclassified,p_,c_,o_,f_,g_,s_
+contig_58576_p,751,103370,1159.0,0,contig_58576_p,plasmid,p_Pseudomonadota_p,c_Gammaproteobacteria_p,o_Enterobacterales_p,f_Enterobacteriaceae_p,g_Salmonella_p,s_Salmonella_enterica_p
 contig_58577,567,96515,1189.0,0,MAG_353,unclassified,p_,c_,o_,f_,g_,s_
 contig_58578,434,44023,83.0,0,MAG_87,unclassified,p_,c_,o_,f_,g_,s_
 contig_58579,934,91402,164.0,0,MAG_370,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_UBA644,g_UBA644,s_
@@ -12767,7 +12767,7 @@ contig_60239,361,37831,627.0,0,MAG_233,chromosome,p_FirmicuteA,c_Clostridia,o_Pe
 contig_60241_v,487,111170,537.0,0,contig_60241_v,virus,p_,c_,o_Caudoviralev_v,f_Siphoviridae_v,g_,s_
 contig_60243,2115,327828,168.0,0,MAG_1816,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_60245,246,50067,330.0,0,MAG_201,unclassified,p_,c_,o_,f_,g_,s_
-contig_60246,348,30752,255.0,0,contig_60246,unclassified,p_,c_,o_,f_,g_,s_
+contig_60246_p,348,30752,255.0,0,contig_60246_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Bacillaceae_p,g_Bacillus_p,s_Bacillus_thuringiensis_p
 contig_60249,616,95006,122.0,0,MAG_126,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Dysosmobacter,s_
 contig_60253,760,80621,1089.0,0,MAG_251,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Faecousia,s_
 contig_60255,6702,634131,312.0,0,MAG_119,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_RGIG4284,s_
@@ -12851,7 +12851,7 @@ contig_60436,391,36916,1169.0,0,MAG_48,chromosome,p_FirmicuteA,c_Clostridia,o_La
 contig_60437,398,56167,224.0,0,MAG_640,unclassified,p_,c_,o_,f_,g_,s_
 contig_60438,350,53683,26.0,0,MAG_434,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_,s_
 contig_60439,412,53485,1326.0,0,MAG_731,unclassified,p_,c_,o_,f_,g_,s_
-contig_60444,1349,117880,902.0,0,contig_60444,unclassified,p_,c_,o_,f_,g_,s_
+contig_60444_p,1349,117880,902.0,0,contig_60444_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Bacillaceae_p,g_Bacillus_p,s_Bacillus_cereus_p
 contig_60446,245,30414,851.0,0,MAG_164,unclassified,p_,c_,o_,f_,g_,s_
 contig_60448,156,14142,87.0,0,MAG_1544,chromosome,p_FirmicuteA,c_Clostridia,o_Peptostreptococcales,f_Anaerovoracaceae,g_Copromorpha,s_
 contig_60449,957,90523,313.0,0,MAG_505,unclassified,p_,c_,o_,f_,g_,s_
@@ -13406,7 +13406,7 @@ contig_7179,652,95024,311.0,0,MAG_166,chromosome,p_FirmicuteA,c_Clostridia,o_Chr
 contig_718,3407,630282,350.0,0,MAG_1764,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Limivicinus,s_
 contig_7188,724,132604,58.0,0,MAG_131,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Lawsonibacter,s_
 contig_7203,1688,199706,9504.0,0,MAG_263,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_RUG11130,s_
-contig_7206,4718,736327,69.0,0,contig_7206,unclassified,p_,c_,o_,f_,g_,s_
+contig_7206_p,4718,736327,69.0,0,contig_7206_p,plasmid,p_Bacillota_p,c_Bacilli_p,o_Bacillales_p,f_Bacillaceae_p,g_Mesobacillus_p,s_Mesobacillus_foraminis_p
 contig_7207,248,34940,113.0,0,MAG_114,unclassified,p_,c_,o_,f_,g_,s_
 contig_721,3784,419647,4131.0,0,MAG_1606,unclassified,p_,c_,o_,f_,g_,s_
 contig_7212_v,11161,673447,13.0,0,contig_7212_v,virus,p_,c_,o_Caudoviralev_v,f_Myoviridae_v,g_,s_
@@ -13801,7 +13801,7 @@ contig_8849,619,66320,139963.0,0,MAG_651,unclassified,p_,c_,o_,f_,g_,s_
 contig_8851,5922,805997,395.0,0,MAG_1133,chromosome,p_Campylobacterota,c_Campylobacteria,o_Campylobacterales,f_Campylobacteraceae,g_Campylobacter,s_
 contig_8853,1335,208936,586.0,0,MAG_225,chromosome,p_Bacteroidota,c_Bacteroidia,o_Bacteroidales,f_UBA932,g_Cryptobacteroides,s_Cryptobacteroides sp000434935
 contig_8854,3587,324371,16193.0,0,MAG_112,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Choladousia,s_
-contig_8855,16444,3410435,811.0,0,contig_8855,unclassified,p_,c_,o_,f_,g_,s_
+contig_8855_p,16444,3410435,811.0,0,contig_8855_p,plasmid,p_Bacteroidota_p,c_Bacteroidia_p,o_Bacteroidales_p,f_Bacteroidaceae_p,g_Bacteroides_p,s_Bacteroides_xylanisolvens_p
 contig_8856,1870,297928,63.0,0,MAG_59,unclassified,p_,c_,o_,f_,g_,s_
 contig_8857,358,71691,8677.0,0,MAG_914,unclassified,p_,c_,o_,f_,g_,s_
 contig_8858,1160,332776,2992.0,0,MAG_518,unclassified,p_,c_,o_,f_,g_,s_

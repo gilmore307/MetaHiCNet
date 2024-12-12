@@ -16,10 +16,12 @@ from stages.a_preparation import (
 from stages.b_normalization import (
     create_normalization_layout, 
     register_normalization_callbacks)
-from stages.c_visualization import (
+from stages.c_results import (
+    results_layout, 
+    register_results_callbacks)
+from stages.d_visualization import (
     create_visualization_layout, 
     register_visualization_callbacks)
-
 
 # Part 1: Initialize the Dash app
 app = dash.Dash(
@@ -94,6 +96,7 @@ app.layout = dbc.Container([
     dcc.Store(id='preparation-status-method2', data=False, storage_type='session'),
     dcc.Store(id='preparation-status-method3', data=False, storage_type='session'),
     dcc.Store(id='normalization-status', data=False, storage_type='session'),
+    dcc.Store(id='visualization-status', data='results', storage_type='session'),
     dcc.Store(id='user-folder', storage_type='session'),
     dcc.Interval(id="ttl-interval", interval=SESSION_TTL*250),
     dcc.Location(id='url', refresh=True),
@@ -227,14 +230,20 @@ def show_quick_load_button(method, stage):
         return {'display': 'none'}
 
 @app.callback(
-    Output('main-content', 'children'),  # Replace the entire content inside main-content
-    [Input('current-stage', 'data')],
-    [State('current-method', 'data')]
+    Output('main-content', 'children'),
+    [Input('current-stage', 'data'),
+     Input('visualization-status', 'data')],
+    [State('user-folder', 'data'),
+     State('current-method', 'data')]
 )
-def update_main_content(current_stage, selected_method):
+def update_main_content(current_stage, visualization_status, user_folder, selected_method):
     if current_stage == 'Visualization':
-        # Replace main-content with visualization layout
-        return create_visualization_layout()
+        if visualization_status == 'results':
+            logger.info("Prepareing normalization results...")
+            
+            return results_layout(user_folder)
+        else:
+            return create_visualization_layout()
     else:
         # Default content for other stages
         return [
@@ -348,6 +357,7 @@ app.clientside_callback(
 register_preparation_callbacks(app)
 register_normalization_callbacks(app)
 register_visualization_callbacks(app)
+register_results_callbacks(app)
 
 if __name__ == "__main__":
     app.run_server(debug=True, host="0.0.0.0", port=8050)

@@ -710,16 +710,10 @@ def register_preparation_callbacks(app):
         
             bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
             bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
-            contig_info_path = os.path.join(user_output_path, 'contig_info.csv')
-            normalized_matrix_path = os.path.join(user_output_path, 'normalized_matrix.npz')
-            unnormalized_matrix_path = os.path.join(user_output_path, 'unnormalized_matrix.npz')
         
             # Redis keys specific to each user folder
             bin_info_key = f'{user_folder}:bin-information'
             bin_matrix_key = f'{user_folder}:bin-dense-matrix'
-            contig_info_key = f'{user_folder}:contig-info'
-            normalized_matrix_key = f'{user_folder}:normalized-matrix'
-            unnormalized_matrix_key = f'{user_folder}:unnormalized-matrix'
             taxonomy_levels_key = f'{user_folder}:taxonomy-levels'
         
             try:
@@ -738,10 +732,6 @@ def register_preparation_callbacks(app):
                 # Load matrix data using load_npz
                 bin_dense_matrix = load_npz(bin_matrix_path).tocoo()
                 
-                contig_info = pd.read_csv(contig_info_path)
-                
-                normalized_matrix = load_npz(normalized_matrix_path).tocoo()
-                unnormalized_matrix = load_npz(unnormalized_matrix_path).tocoo()
             except Exception as e:
                 logger.error(f"Error loading data from files: {e}")
                 return False
@@ -749,9 +739,6 @@ def register_preparation_callbacks(app):
             # Save the loaded data to Redis with keys specific to the user folder
             save_to_redis(bin_info_key, bin_information)       
             save_to_redis(bin_matrix_key, bin_dense_matrix)
-            save_to_redis(contig_info_key, contig_info)
-            save_to_redis(normalized_matrix_key, normalized_matrix)
-            save_to_redis(unnormalized_matrix_key, unnormalized_matrix)
             save_to_redis(taxonomy_levels_key, taxonomy_levels)
             
             logger.info("Data loaded and saved to Redis successfully.")

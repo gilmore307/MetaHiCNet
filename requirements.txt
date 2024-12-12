@@ -9,5 +9,7 @@ pandas==2.2.3
 plotly==5.23.0
 py7zr==0.22.0
 redis==5.2.0
+scikit_learn==1.6.0
 scipy==1.14.1
 statsmodels==0.14.4
+pytest

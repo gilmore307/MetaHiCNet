@@ -4,6 +4,7 @@ import networkx as nx
 from dash.exceptions import PreventUpdate
 from dash import dcc, html, no_update
 from dash.dependencies import Input, Output, State
+import dash_bootstrap_components as dbc
 import dash_cytoscape as cyto
 import dash_ag_grid as dag
 import plotly.graph_objects as go
@@ -11,12 +12,9 @@ from dash import callback_context
 import plotly.express as px
 import math 
 from math import sqrt, sin, cos
-import os
 import time
-import io
 import logging
 import json
-import py7zr
 from joblib import Parallel, delayed
 from itertools import combinations
 from stages.helper import (
@@ -974,7 +972,7 @@ def create_visualization_layout():
     
     common_text_style = {
         'height': '38px',
-        'width': '200px',
+        'width': '300px',
         'display': 'inline-block',
         'margin-right': '10px',
         'vertical-align': 'middle'
@@ -988,9 +986,15 @@ def create_visualization_layout():
                 children=[
                     dcc.Store(id='data-loaded', data=False),
                     dcc.Store(id='current-visualization-mode', data={}),
-                    dcc.Download(id="download"),
-    
-                    html.Button("Download Files", id="download-btn", style={**common_text_style}),
+
+                    dbc.Button("Switch to Nomalization Results", id="switch-visualization-network", color="primary",
+                                style={'height': '38px',
+                                       'width': '300px',
+                                       'display': 'inline-block',
+                                       'margin-right': '10px',
+                                       'margin-top': '0px',
+                                       'vertical-align': 'middle'}),
+                    
                     html.Div(
                         id="tooltip-toggle-container",
                         children=[
@@ -1020,11 +1024,11 @@ def create_visualization_layout():
                             dcc.Dropdown(
                                 id='visualization-selector',
                                 options=[
-                                    {'label': 'Taxonomic Framework', 'value': 'taxonomy_hierarchy'},
+                                    {'label': 'Taxonomic Framework', 'value': 'taxonomy'},
                                     {'label': 'Cross-Taxa Hi-C Interaction', 'value': 'basic'},
                                     {'label': 'Cross-Bin Hi-C Interactions', 'value': 'bin'},
                                 ],
-                                value='taxonomy_hierarchy',
+                                value='taxonomy',
                                 style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                             ),
                             dcc.Dropdown(
@@ -1278,7 +1282,7 @@ def register_visualization_callbacks(app):
     
         # Update visualization mode state
         current_visualization_mode = {
-            'visualization_type': 'taxonomy_hierarchy',
+            'visualization_type': 'taxonomy',
             'taxonomy_level': default_taxonomy_level,
             'selected_annotation': None,
             'selected_bin': None
@@ -1342,7 +1346,7 @@ def register_visualization_callbacks(app):
         annotation_options = [{'label': annotation, 'value': annotation} for annotation in unique_annotations]
         
         current_visualization_mode = {
-            'visualization_type': 'taxonomy_hierarchy',
+            'visualization_type': 'taxonomy',
             'taxonomy_level': taxonomy_level,
             'selected_annotation': None,
             'selected_bin': None
@@ -1646,12 +1650,12 @@ def register_visualization_callbacks(app):
         layout = no_update
     
         # Extract data from current_visualization_mode
-        visualization_type = current_visualization_mode.get('visualization_type', 'taxonomy_hierarchy')
+        visualization_type = current_visualization_mode.get('visualization_type', 'taxonomy')
         selected_annotation = current_visualization_mode.get('selected_annotation')
         selected_bin = current_visualization_mode.get('selected_bin')
         
     
-        if visualization_type == 'taxonomy_hierarchy':
+        if visualization_type == 'taxonomy':
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
             bin_information = load_from_redis(f'{user_folder}:bin-information')
     
@@ -1706,6 +1710,15 @@ def register_visualization_callbacks(app):
         return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, 1
 
     @app.callback(
+        Output('visualization-status', 'data', allow_duplicate=True),
+        Input('switch-visualization-network', 'n_clicks'),
+        prevent_initial_call=True
+    )
+    def switch_to_network(n_clicks):
+        if n_clicks:
+            return 'results'
+        
+    @app.callback(
         Output('log-box-visualization', 'value'),
         Input('logger-button-visualization', 'n_clicks'),
         State('user-folder', 'data'),
@@ -1735,35 +1748,6 @@ def register_visualization_callbacks(app):
         Output('log-box-visualization', 'value', allow_duplicate=True),  # Dummy output to trigger the callback
         Input('logger-button-visualization', 'n_clicks')
     )
-    
-    @app.callback(
-        [Output("download", "data"),
-         Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input("download-btn", "n_clicks")],
-        [State("user-folder", "data")]
-    )
-    def download_user_folder(n_clicks, user_folder):
-        if not n_clicks:
-            raise PreventUpdate
-    
-        # Path to the user folder
-        folder_path = f"output/{user_folder}"
-    
-        # Create a 7z archive in memory
-        memory_file = io.BytesIO()
-        with py7zr.SevenZipFile(memory_file, 'w') as archive:
-            # Add files to the archive
-            for root, _, files in os.walk(folder_path):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    archive.write(file_path, arcname=os.path.relpath(file_path, folder_path))
-        memory_file.seek(0)
-    
-        # Return the 7z file to download
-        return dcc.send_bytes(
-            memory_file.getvalue(),
-            filename=f"{user_folder}.7z"
-        ), 1
     
     @app.callback(
         [Output('download-btn', 'title'),
