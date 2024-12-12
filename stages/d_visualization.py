@@ -1172,25 +1172,13 @@ def create_visualization_layout():
                     html.Div(
                         id="right-column",
                         children=[
-                            dcc.Textarea(
-                                id='hover-info',
-                                style={'height': '10vh',
-                                       'width': '19vw',
-                                       'font-size': '12px',
-                                       'background-color': 'white',
-                                       'padding': '5px',
-                                       'border': '1px solid #ccc',
-                                       'margin-top': '3px',
-                                       'resize': 'none'},
-                                readOnly=True
-                            ),
                             html.Div(
                                 id="bar-chart-container",
                                 children=[
                                     dcc.Graph(id='bar-chart', 
                                               config={'displayModeBar': False}, 
                                               figure=go.Figure(), 
-                                              style={'height': '75vh', 'width': '19vw', 'display': 'inline-block'}                                 
+                                              style={'height': '85vh', 'width': '19vw', 'display': 'inline-block'}                                 
                                     ),
                                 ]
                             ),
