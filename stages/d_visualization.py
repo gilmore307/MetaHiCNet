@@ -1239,7 +1239,7 @@ def register_visualization_callbacks(app):
     
         # Generate taxonomy options from taxonomy levels
         taxonomy_options = [{'label': level, 'value': level} for level in taxonomy_levels]
-        default_taxonomy_level = taxonomy_levels[-1]  # Set the last level as the default value
+        default_taxonomy_level = taxonomy_levels[0]  # Set the last level as the default value
     
         # Dynamically create taxonomy columns for the bin info table
         taxonomy_columns = [

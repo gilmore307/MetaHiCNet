@@ -13,104 +13,156 @@ import py7zr
 from scipy.stats import pearsonr
 from sklearn.cluster import DBSCAN
 
-def normalization_visualization(norm_sparse_matrix, unnorm_sparse_matrix, contig_info):
-    # Extract relevant columns
-    restriction_sites = contig_info['The number of restriction sites']
-    contig_length = contig_info['Contig length']
-    contig_coverage = contig_info['Contig coverage']
-
-    def compute_product_values(data, row, col):
-        product_sites = restriction_sites.iloc[row].values * restriction_sites.iloc[col].values
-        product_length = contig_length.iloc[row].values * contig_length.iloc[col].values
-        product_coverage = contig_coverage.iloc[row].values * contig_coverage.iloc[col].values
-        contacts = data
-        return pd.DataFrame({
-            'Product Sites': product_sites,
-            'Product Length': product_length,
-            'Product Coverage': product_coverage,
-            'Contacts': contacts,
-        })
-
-    def compute_plot_data(data, row, col):
-        product_sites = restriction_sites.iloc[row].values * restriction_sites.iloc[col].values
-        product_length = contig_length.iloc[row].values * contig_length.iloc[col].values
-        product_coverage = contig_coverage.iloc[row].values * contig_coverage.iloc[col].values
-        contacts = data
-        
-        # Create the DataFrame
-        plot_data = pd.DataFrame({
-            'Product Sites': np.log1p(product_sites),
-            'Product Length': np.log1p(product_length),
-            'Product Coverage': np.log1p(product_coverage),
-            'Contacts': contacts,
-        })
-        
-        # Filter out rows where Contacts equals 0
-        plot_data = plot_data[plot_data['Contacts'] > 0].reset_index(drop=True)
-        
-        # Filter out rows where Contacts exceeds the 99th percentile
-        threshold = plot_data['Contacts'].quantile(0.99)
-        plot_data = plot_data[plot_data['Contacts'] <= threshold].reset_index(drop=True)
-        
-        return plot_data
-
-    def calculate_pearson(df, factors, contacts_col="Contacts"):
-        correlations = {}
-        for factor in factors:
-            correlation, _ = pearsonr(df[contacts_col], df[factor])
-            correlations[factor] = abs(correlation)
-        return correlations
-
-    norm_data, norm_row, norm_col = norm_sparse_matrix.data, norm_sparse_matrix.row, norm_sparse_matrix.col
-    unnorm_data, unnorm_row, unnorm_col = unnorm_sparse_matrix.data, unnorm_sparse_matrix.row, unnorm_sparse_matrix.col
-
-    normalized_product_values = compute_product_values(norm_data, norm_row, norm_col)
-    unnormalized_product_values = compute_product_values(unnorm_data, unnorm_row, unnorm_col)
-
-    normalized_plot_data = compute_plot_data(norm_data, norm_row, norm_col)
-    unnormalized_plot_data = compute_plot_data(unnorm_data, unnorm_row, unnorm_col)
-
-    factors = ["Product Sites", "Product Length", "Product Coverage"]
-    normalized_correlations = calculate_pearson(normalized_product_values, factors)
-    unnormalized_correlations = calculate_pearson(unnormalized_product_values, factors)
-
-    correlation_results = pd.DataFrame({
-        "Metric": ["Normalized", "Unnormalized"],
-        "Site": [normalized_correlations["Product Sites"], unnormalized_correlations["Product Sites"]],
-        "Length": [normalized_correlations["Product Length"], unnormalized_correlations["Product Length"]],
-        "Coverage": [normalized_correlations["Product Coverage"], unnormalized_correlations["Product Coverage"]],
+def compute_product_values(data, row, col, restriction_sites, contig_length, contig_coverage):
+    product_sites = restriction_sites.iloc[row].values * restriction_sites.iloc[col].values
+    product_length = contig_length.iloc[row].values * contig_length.iloc[col].values
+    product_coverage = contig_coverage.iloc[row].values * contig_coverage.iloc[col].values
+    contacts = data
+    return pd.DataFrame({
+        'Product Sites': product_sites,
+        'Product Length': product_length,
+        'Product Coverage': product_coverage,
+        'Contacts': contacts,
     })
-    correlation_results = correlation_results.round(5)
 
-    def filter_close_nodes(plot_data, eps=0.1):
-        coordinates = plot_data[["Product Sites", "Product Length", "Product Coverage"]].values
-        clustering = DBSCAN(eps=eps, min_samples=1).fit(coordinates)
-        plot_data['Cluster'] = clustering.labels_
-        filtered_data = (
-            plot_data.groupby('Cluster', group_keys=False)
-            .apply(lambda group: group.iloc[0])
-            .reset_index(drop=True)
-        )
-        return filtered_data
+def compute_plot_data(data, row, col, restriction_sites, contig_length, contig_coverage):
+    product_sites = restriction_sites.iloc[row].values * restriction_sites.iloc[col].values
+    product_length = contig_length.iloc[row].values * contig_length.iloc[col].values
+    product_coverage = contig_coverage.iloc[row].values * contig_coverage.iloc[col].values
+    contacts = data
+    
+    # Create the DataFrame
+    plot_data = pd.DataFrame({
+        'Product Sites': np.log1p(product_sites),
+        'Product Length': np.log1p(product_length),
+        'Product Coverage': np.log1p(product_coverage),
+        'Contacts': contacts,
+    })
+    
+    # Filter out rows where Contacts equals 0
+    plot_data = plot_data[plot_data['Contacts'] > 0].reset_index(drop=True)
+    
+    # Filter out rows where Contacts exceeds the 99th percentile
+    threshold = plot_data['Contacts'].quantile(0.99)
+    plot_data = plot_data[plot_data['Contacts'] <= threshold].reset_index(drop=True)
+    
+    return plot_data
 
-    filtered_normalized_plot_data = filter_close_nodes(normalized_plot_data)
-    filtered_unnormalized_plot_data = filter_close_nodes(unnormalized_plot_data)
+def calculate_pearson(df, factors, contacts_col="Contacts"):
+    correlations = {}
+    for factor in factors:
+        correlation, _ = pearsonr(df[contacts_col], df[factor])
+        correlations[factor] = abs(correlation)
+    return correlations
 
-    return correlation_results, filtered_normalized_plot_data, filtered_unnormalized_plot_data
+def filter_close_nodes(plot_data, eps=0.1):
+    coordinates = plot_data[["Product Sites", "Product Length", "Product Coverage"]].values
+    clustering = DBSCAN(eps=eps, min_samples=1).fit(coordinates)
+    plot_data['Cluster'] = clustering.labels_
+    filtered_data = (
+        plot_data.groupby('Cluster', group_keys=False)
+        .apply(lambda group: group.iloc[0])
+        .reset_index(drop=True)
+    )
+    return filtered_data
+
+def generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_data):
+    # Normalized Data Plots
+    plot_sites_norm = dcc.Graph(
+        id='plot-sites-norm-filtered',
+        figure=px.scatter(
+            filtered_normalized_plot_data,
+            x='Product Sites',
+            y='Contacts',
+            title='Normalized: Product of sites vs. Contacts',
+            labels={'Product Sites': 'Product of Sites (log scale)', 'Contacts': 'Contacts'},
+            hover_data={}
+        ),
+        style={'width': '32%', 'display': 'inline-block'}
+    )
+
+    plot_lengths_norm = dcc.Graph(
+        id='plot-lengths-norm-filtered',
+        figure=px.scatter(
+            filtered_normalized_plot_data,
+            x='Product Length',
+            y='Contacts',
+            title='Normalized: Product of lengths vs. Contacts',
+            labels={'Product Length': 'Product of Length (log scale)', 'Contacts': 'Contacts'},
+            hover_data={}
+        ),
+        style={'width': '32%', 'display': 'inline-block'}
+    )
+
+    plot_coverage_norm = dcc.Graph(
+        id='plot-coverage-norm-filtered',
+        figure=px.scatter(
+            filtered_normalized_plot_data,
+            x='Product Coverage',
+            y='Contacts',
+            title='Normalized: Product of coverage vs. Contacts',
+            labels={'Product Coverage': 'Product of Coverage (log scale)', 'Contacts': 'Contacts'},
+            hover_data={}
+        ),
+        style={'width': '32%', 'display': 'inline-block'}
+    )
+
+    # Unnormalized Data Plots
+    plot_sites_unnorm = dcc.Graph(
+        id='plot-sites-unnorm-filtered',
+        figure=px.scatter(
+            filtered_unnormalized_plot_data,
+            x='Product Sites',
+            y='Contacts',
+            title='Unnormalized: Product of sites vs. Contacts',
+            labels={'Product Sites': 'Product of Sites (log scale)', 'Contacts': 'Contacts'},
+            hover_data={}
+        ),
+        style={'width': '32%', 'display': 'inline-block'}
+    )
+
+    plot_lengths_unnorm = dcc.Graph(
+        id='plot-lengths-unnorm-filtered',
+        figure=px.scatter(
+            filtered_unnormalized_plot_data,
+            x='Product Length',
+            y='Contacts',
+            title='Unnormalized: Product of lengths vs. Contacts',
+            labels={'Product Length': 'Product of Length (log scale)', 'Contacts': 'Contacts'},
+            hover_data={}
+        ),
+        style={'width': '32%', 'display': 'inline-block'}
+    )
+
+    plot_coverage_unnorm = dcc.Graph(
+        id='plot-coverage-unnorm-filtered',
+        figure=px.scatter(
+            filtered_unnormalized_plot_data,
+            x='Product Coverage',
+            y='Contacts',
+            title='Unnormalized: Product of coverage vs. Contacts',
+            labels={'Product Coverage': 'Product of Coverage (log scale)', 'Contacts': 'Contacts'},
+            hover_data={}
+        ),
+        style={'width': '32%', 'display': 'inline-block'}
+    )
+
+    # Returning the combined HTML structure
+    return html.Div([
+        html.Div([
+            plot_sites_norm,
+            plot_lengths_norm,
+            plot_coverage_norm
+        ], style={'display': 'flex', 'justify-content': 'space-between'}),
+    
+        html.Div([
+            plot_sites_unnorm,
+            plot_lengths_unnorm,
+            plot_coverage_unnorm
+        ], style={'display': 'flex', 'justify-content': 'space-between'})
+    ])
 
 def results_layout(user_folder):
-    contig_info_path = os.path.join('output', user_folder, 'contig_info.csv')
-    normalized_matrix_path = os.path.join('output', user_folder, 'normalized_matrix.npz')
-    unnormalized_matrix_path = os.path.join('output', user_folder, 'unnormalized_matrix.npz')
-    
-    contig_info = pd.read_csv(contig_info_path)
-    normalized_matrix = load_npz(normalized_matrix_path).tocoo()
-    unnormalized_matrix = load_npz(unnormalized_matrix_path).tocoo()
-    
-    correlation_results, filtered_normalized_plot_data, filtered_unnormalized_plot_data = normalization_visualization(
-        normalized_matrix, unnormalized_matrix, contig_info
-    )
-    
     instructions = (
         "The Download button allows users to download the dataset they are currently working with.  \n\n"
         "This downloaded data can be re-uploaded to the app when visiting the website again, "
@@ -120,7 +172,7 @@ def results_layout(user_folder):
     return html.Div([
         dcc.Loading(
             id="loading",
-            type="circle",
+            type="default",
             children=[
                 dbc.Button("Switch to Interaction Network", id="switch-visualization-results", color="primary",
                             style={'height': '38px',
@@ -156,7 +208,7 @@ def results_layout(user_folder):
                             {"headerName": "Length", "field": "Length", "sortable": True, "filter": True, "width": 200},
                             {"headerName": "Coverage", "field": "Coverage", "sortable": True, "filter": True, "width": 200},
                         ],
-                        rowData=correlation_results.to_dict("records"),
+                        rowData={},
                         dashGridOptions={"rowHeight": 47},
                         defaultColDef={"resizable": True, "sortable": True, "filter": True},
                         style={"height": "16vh", "width": "43vw", "margin": "auto"},
@@ -164,88 +216,60 @@ def results_layout(user_folder):
                 ]),
     
                 html.H4("Comparison between Normalized and Unnormalized Data", className="main-title text-center my-4", style={'marginTop': '100px'}),
-                html.Div([
-                    dcc.Graph(
-                        id='plot-sites-norm-filtered',
-                        figure=px.scatter(
-                            filtered_normalized_plot_data,
-                            x='Product Sites',
-                            y='Contacts',
-                            title='Normalized: Product of sites vs. Contacts',
-                            labels={'Product Sites': 'Product of Sites (log scale)', 'Contacts': 'Contacts'},
-                            hover_data={}
-                        ),
-                        style={'width': '32%', 'display': 'inline-block'}
-                    ),
-                    dcc.Graph(
-                        id='plot-lengths-norm-filtered',
-                        figure=px.scatter(
-                            filtered_normalized_plot_data,
-                            x='Product Length',
-                            y='Contacts',
-                            title='Normalized: Product of lengths vs. Contacts',
-                            labels={'Product Length': 'Product of Length (log scale)', 'Contacts': 'Contacts'},
-                            hover_data={}
-                        ),
-                        style={'width': '32%', 'display': 'inline-block'}
-                    ),
-                    dcc.Graph(
-                        id='plot-coverage-norm-filtered',
-                        figure=px.scatter(
-                            filtered_normalized_plot_data,
-                            x='Product Coverage',
-                            y='Contacts',
-                            title='Normalized: Product of coverage vs. Contacts',
-                            labels={'Product Coverage': 'Product of Coverage (log scale)', 'Contacts': 'Contacts'},
-                            hover_data={}
-                        ),
-                        style={'width': '32%', 'display': 'inline-block'}
-                    )
-                ], style={'display': 'flex', 'justify-content': 'space-between'}),
-    
-                html.Div([
-                    dcc.Graph(
-                        id='plot-sites-unnorm-filtered',
-                        figure=px.scatter(
-                            filtered_unnormalized_plot_data,
-                            x='Product Sites',
-                            y='Contacts',
-                            title='Unnormalized: Product of sites vs. Contacts',
-                            labels={'Product Sites': 'Product of Sites (log scale)', 'Contacts': 'Contacts'},
-                            hover_data={}
-                        ),
-                        style={'width': '32%', 'display': 'inline-block'}
-                    ),
-                    dcc.Graph(
-                        id='plot-lengths-unnorm-filtered',
-                        figure=px.scatter(
-                            filtered_unnormalized_plot_data,
-                            x='Product Length',
-                            y='Contacts',
-                            title='Unnormalized: Product of lengths vs. Contacts',
-                            labels={'Product Length': 'Product of Length (log scale)', 'Contacts': 'Contacts'},
-                            hover_data={}
-                        ),
-                        style={'width': '32%', 'display': 'inline-block'}
-                    ),
-                    dcc.Graph(
-                        id='plot-coverage-unnorm-filtered',
-                        figure=px.scatter(
-                            filtered_unnormalized_plot_data,
-                            x='Product Coverage',
-                            y='Contacts',
-                            title='Unnormalized: Product of coverage vs. Contacts',
-                            labels={'Product Coverage': 'Product of Coverage (log scale)', 'Contacts': 'Contacts'},
-                            hover_data={}
-                        ),
-                        style={'width': '32%', 'display': 'inline-block'}
-                    )
-                ], style={'display': 'flex', 'justify-content': 'space-between'})
+                html.Div(id="plots"),
             ]
         ),
     ])
 
 def register_results_callbacks(app):
+    @app.callback(
+        [Output("correlation-table", "rowData"),
+         Output("plots", "children")],
+        [Input("user-folder", "data")]
+    )
+    def normalization_visualization(user_folder):
+        contig_info_path = os.path.join('output', user_folder, 'contig_info.csv')
+        normalized_matrix_path = os.path.join('output', user_folder, 'normalized_matrix.npz')
+        unnormalized_matrix_path = os.path.join('output', user_folder, 'unnormalized_matrix.npz')
+        
+        contig_info = pd.read_csv(contig_info_path)
+        norm_sparse_matrix = load_npz(normalized_matrix_path).tocoo()
+        unnorm_sparse_matrix = load_npz(unnormalized_matrix_path).tocoo()
+        
+        # Extract relevant columns
+        restriction_sites = contig_info['The number of restriction sites']
+        contig_length = contig_info['Contig length']
+        contig_coverage = contig_info['Contig coverage']
+    
+        norm_data, norm_row, norm_col = norm_sparse_matrix.data, norm_sparse_matrix.row, norm_sparse_matrix.col
+        unnorm_data, unnorm_row, unnorm_col = unnorm_sparse_matrix.data, unnorm_sparse_matrix.row, unnorm_sparse_matrix.col
+    
+        normalized_product_values = compute_product_values(norm_data, norm_row, norm_col, restriction_sites, contig_length, contig_coverage)
+        unnormalized_product_values = compute_product_values(unnorm_data, unnorm_row, unnorm_col, restriction_sites, contig_length, contig_coverage)
+    
+        normalized_plot_data = compute_plot_data(norm_data, norm_row, norm_col, restriction_sites, contig_length, contig_coverage)
+        unnormalized_plot_data = compute_plot_data(unnorm_data, unnorm_row, unnorm_col, restriction_sites, contig_length, contig_coverage)
+    
+        factors = ["Product Sites", "Product Length", "Product Coverage"]
+        normalized_correlations = calculate_pearson(normalized_product_values, factors)
+        unnormalized_correlations = calculate_pearson(unnormalized_product_values, factors)
+    
+        correlation_results = pd.DataFrame({
+            "Metric": ["Normalized", "Unnormalized"],
+            "Site": [normalized_correlations["Product Sites"], unnormalized_correlations["Product Sites"]],
+            "Length": [normalized_correlations["Product Length"], unnormalized_correlations["Product Length"]],
+            "Coverage": [normalized_correlations["Product Coverage"], unnormalized_correlations["Product Coverage"]],
+        })
+        correlation_results = correlation_results.round(5)
+    
+        filtered_normalized_plot_data = filter_close_nodes(normalized_plot_data)
+        filtered_unnormalized_plot_data = filter_close_nodes(unnormalized_plot_data)
+    
+        plots = generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_data)
+        
+        return correlation_results.to_dict("records"), plots
+    
+    
     @app.callback(
         Output("download", "data"),
         [Input("download-btn", "n_clicks")],
