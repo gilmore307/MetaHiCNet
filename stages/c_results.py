@@ -52,7 +52,7 @@ def calculate_pearson(df, factors, contacts_col="Contacts"):
         correlations[factor] = abs(correlation)
     return correlations
 
-def filter_close_nodes(plot_data, eps=0.2):
+def filter_close_nodes(plot_data, eps=0.3):
     coordinates = plot_data[["Product Sites", "Product Length", "Product Coverage"]].values
     clustering = DBSCAN(eps=eps, min_samples=1).fit(coordinates)
     plot_data['Cluster'] = clustering.labels_
@@ -205,7 +205,7 @@ def results_layout(user_folder):
                             {"headerName": "Length", "field": "Length", "sortable": True, "filter": True, "width": 200},
                             {"headerName": "Coverage", "field": "Coverage", "sortable": True, "filter": True, "width": 200},
                         ],
-                        rowData={},
+                        rowData=[],
                         dashGridOptions={"rowHeight": 47},
                         defaultColDef={"resizable": True, "sortable": True, "filter": True},
                         style={"height": "16vh", "width": "43vw", "margin": "auto"},
@@ -265,7 +265,6 @@ def register_results_callbacks(app):
         plots = generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_data)
         
         return correlation_results.to_dict("records"), plots
-    
     
     @app.callback(
         Output("download", "data"),
