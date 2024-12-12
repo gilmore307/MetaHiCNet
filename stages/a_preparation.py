@@ -604,7 +604,6 @@ def register_preparation_callbacks(app):
 
         try:
             # Decode the uploaded file
-            logger.info(f"Decoding file: {filename}")
             content_type, content_string = contents.split(',')
             decoded = base64.b64decode(content_string)
             

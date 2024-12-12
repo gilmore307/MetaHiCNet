@@ -1028,7 +1028,7 @@ def create_visualization_layout():
                                     {'label': 'Cross-Taxa Hi-C Interaction', 'value': 'basic'},
                                     {'label': 'Cross-Bin Hi-C Interactions', 'value': 'bin'},
                                 ],
-                                value='taxonomy',
+                                value='basic',
                                 style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                             ),
                             dcc.Dropdown(
@@ -1637,8 +1637,8 @@ def register_visualization_callbacks(app):
             raise PreventUpdate
     
         ctx = callback_context
-        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        logger.info(f"Updating visualization. Triggered by: {triggered_id}")
+        triggered_props = [t['prop_id'].split('.')[0] for t in ctx.triggered]
+        logger.info(f"Updating visualization. Triggered by: {triggered_props}")
         logger.info(f"Visualization type: {visualization_type}")
             
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
@@ -1653,8 +1653,15 @@ def register_visualization_callbacks(app):
         visualization_type = current_visualization_mode.get('visualization_type', 'taxonomy')
         selected_annotation = current_visualization_mode.get('selected_annotation')
         selected_bin = current_visualization_mode.get('selected_bin')
-        
-    
+
+        if 'data-loaded' in triggered_props:
+            cyto_elements = []
+            cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+            bar_fig = go.Figure()
+            treemap_fig = go.Figure()
+            treemap_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
+            return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, 1
+            
         if visualization_type == 'taxonomy':
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
             bin_information = load_from_redis(f'{user_folder}:bin-information')

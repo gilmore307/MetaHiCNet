@@ -159,7 +159,7 @@ def results_layout(user_folder):
                         rowData=correlation_results.to_dict("records"),
                         dashGridOptions={"rowHeight": 47},
                         defaultColDef={"resizable": True, "sortable": True, "filter": True},
-                        style={"height": "16vh", "width": "42vw", "margin": "auto"},
+                        style={"height": "16vh", "width": "43vw", "margin": "auto"},
                     ),
                 ]),
     
