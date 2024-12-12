@@ -52,17 +52,6 @@ def calculate_pearson(df, factors, contacts_col="Contacts"):
         correlations[factor] = abs(correlation)
     return correlations
 
-def filter_close_nodes(plot_data, eps=0.3):
-    coordinates = plot_data[["Product Sites", "Product Length", "Product Coverage"]].values
-    clustering = DBSCAN(eps=eps, min_samples=1).fit(coordinates)
-    plot_data['Cluster'] = clustering.labels_
-    filtered_data = (
-        plot_data.groupby('Cluster', group_keys=False)
-        .apply(lambda group: group.iloc[0])
-        .reset_index(drop=True)
-    )
-    return filtered_data
-
 def generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_data):
     # Normalized Data Plots
     plot_sites_norm = dcc.Graph(
@@ -259,10 +248,7 @@ def register_results_callbacks(app):
         })
         correlation_results = correlation_results.round(5)
     
-        filtered_normalized_plot_data = filter_close_nodes(normalized_plot_data)
-        filtered_unnormalized_plot_data = filter_close_nodes(unnormalized_plot_data)
-    
-        plots = generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_data)
+        plots = generate_plots(normalized_plot_data, unnormalized_plot_data)
         
         return correlation_results.to_dict("records"), plots
     
