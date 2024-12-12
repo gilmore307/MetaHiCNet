@@ -10,6 +10,7 @@ import os
 import pandas as pd
 import py7zr
 import numpy as np
+from scipy.sparse import save_npz, load_npz
 from stages.helper import (
     save_to_redis,
     get_indexes,
@@ -31,12 +32,7 @@ def preprocess_normalization(user_folder, assets_folder='output'):
         contig_info = pd.read_csv(contig_info_path)
         
         contact_matrix_path = os.path.join(folder_path, 'unnormalized_matrix.npz')
-        contact_matrix_data = np.load(contact_matrix_path)
-        data = contact_matrix_data['data']
-        row = contact_matrix_data['row']
-        col = contact_matrix_data['col']
-        shape = tuple(contact_matrix_data['shape'])
-        contact_matrix = coo_matrix((data, (row, col)), shape=shape)
+        contact_matrix = load_npz(contact_matrix_path).tocoo()
 
         return contig_info, contact_matrix
 
@@ -542,28 +538,10 @@ def register_normalization_callbacks(app):
     
         # Save each file
         bin_info.to_csv(bin_info_final_path, index=False)
-        np.savez_compressed(
-            bin_contact_matrix_path,
-            data=bin_contact_matrix.data,
-            row=bin_contact_matrix.row,
-            col=bin_contact_matrix.col,
-            shape=bin_contact_matrix.shape
-        )
+        save_npz(bin_contact_matrix_path, bin_contact_matrix)
         contig_info.to_csv(contig_info_path, index=False)
-        np.savez_compressed(
-            normalized_matrix_path,
-            data=normalized_matrix.data,
-            row=normalized_matrix.row,
-            col=normalized_matrix.col,
-            shape=normalized_matrix.shape
-        )
-        np.savez_compressed(
-            unnormalized_matrix_path,
-            data=contact_matrix.data,
-            row=contact_matrix.row,
-            col=contact_matrix.col,
-            shape=contact_matrix.shape
-        )
+        save_npz(normalized_matrix_path, normalized_matrix)
+        save_npz(unnormalized_matrix_path, contact_matrix)
 
         # Compress saved files into normalized_information.7z
         normalized_archive_path = os.path.join(user_output_path, 'normalized_information.7z')

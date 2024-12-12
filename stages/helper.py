@@ -4,7 +4,7 @@ import numpy as np
 import base64
 import pandas as pd
 import logging
-from scipy.sparse import coo_matrix, isspmatrix_coo
+from scipy.sparse import save_npz, load_npz, isspmatrix_coo
 from joblib import Parallel, delayed
 from io import StringIO
 import pickle
@@ -16,7 +16,7 @@ def save_file_to_user_folder(contents, filename, user_folder, folder_name='outpu
     # Ensure the user folder exists
     user_folder_path = os.path.join(folder_name, user_folder)
     os.makedirs(user_folder_path, exist_ok=True)
-    
+
     # Define the full file path
     file_path = os.path.join(user_folder_path, filename)
 
@@ -33,14 +33,11 @@ def save_file_to_user_folder(contents, filename, user_folder, folder_name='outpu
 
         # Save as NPZ file in COO format
         elif filename.endswith('.npz'):
-            npz_file = np.load(io.BytesIO(decoded))
-            if all(key in npz_file for key in ['data', 'row', 'col', 'shape']):
-                # Already in COO format
-                coo = coo_matrix((npz_file['data'], (npz_file['row'], npz_file['col'])), shape=tuple(npz_file['shape']))
-                np.savez_compressed(file_path, data=coo.data, row=coo.row, col=coo.col, shape=coo.shape)
+            try:
+                sparse_matrix = load_npz(io.BytesIO(decoded))
+                save_npz(file_path, sparse_matrix)
                 print(f"COO NPZ file saved: {file_path}")
-            else:
-                # Save the raw npz content if not sparse
+            except:
                 with open(file_path, 'wb') as file:
                     file.write(decoded)
                 print(f"Raw NPZ file saved: {file_path}")
@@ -58,6 +55,7 @@ def save_file_to_user_folder(contents, filename, user_folder, folder_name='outpu
         print(f"Failed to save file {filename}: {str(e)}")
 
     return file_path
+
 
 def get_indexes(annotations, information_table, column):
     # Ensure annotations is a list

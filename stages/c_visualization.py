@@ -1193,30 +1193,31 @@ def create_visualization_layout():
                         ],
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '19vw'}
                     ),
-                ], 
-                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '98vw'}
-            ),
-            dcc.Loading(
-                id="loading-spinner",
-                type="default",
-                delay_show=2000,
-                children=[
-                    html.Div(
-                        id="contact-table-container",
+
+                    dcc.Loading(
+                        id="loading-spinner",
+                        type="default",
+                        delay_show=2000,
                         children=[
-                            dag.AgGrid(
-                                id='contact-table',
-                                rowData=[],
-                                columnDefs=[], 
-                                dashGridOptions = {
-                                    "rowSelection": "single"
-                                }
+                            html.Div(
+                                id="contact-table-container",
+                                children=[
+                                    dag.AgGrid(
+                                        id='contact-table',
+                                        rowData=[],
+                                        columnDefs=[], 
+                                        dashGridOptions = {
+                                            "rowSelection": "single"
+                                        }
+                                    )
+                                ], 
+                                style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'}
                             )
-                        ], 
-                        style={'width': '98vw', 'display': 'inline-block', 'vertical-align': 'top', 'margin-top': '3px'}
+                        ]
                     )
-                ]
-            )
+                ], 
+                style={'display': 'inline-block', 'vertical-align': 'top', 'width': '98vw'}
+            ),
         ]
     )
            

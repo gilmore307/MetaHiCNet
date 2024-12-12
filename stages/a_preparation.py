@@ -9,7 +9,7 @@ import os
 import py7zr
 import numpy as np
 import pandas as pd
-from scipy.sparse import coo_matrix, csr_matrix, csc_matrix
+from scipy.sparse import save_npz, load_npz, coo_matrix, csr_matrix, csc_matrix
 import logging
 from stages.helper import (
     save_file_to_user_folder,
@@ -34,29 +34,8 @@ def parse_contents(contents, filename):
     
     elif 'npz' in filename:
         # Load the npz file
-        npzfile = np.load(io.BytesIO(decoded))
-        
-        # Check for COO matrix keys
-        if all(key in npzfile for key in ['data', 'row', 'col', 'shape']):
-            data = npzfile['data']
-            row = npzfile['row']
-            col = npzfile['col']
-            shape = tuple(npzfile['shape'])
-            
-            # Reconstruct the sparse matrix in COO format
-            contact_matrix = coo_matrix((data, (row, col)), shape=shape)
-            return contact_matrix
-        
-        # Check for CSR or CSC matrix keys
-        elif all(key in npzfile for key in ['data', 'indices', 'indptr', 'shape']):
-            data = npzfile['data']
-            indices = npzfile['indices']
-            indptr = npzfile['indptr']
-            shape = tuple(npzfile['shape'])
-            
-            # Reconstruct and convert to COO
-            contact_matrix = csr_matrix((data, indices, indptr), shape=shape).tocoo()
-            return contact_matrix
+        sparse_matrix = load_npz(io.BytesIO(decoded))
+        return sparse_matrix.tocoo() 
     
     elif '7z' in filename:
         # Load and extract .7z archive
@@ -310,7 +289,7 @@ def register_preparation_callbacks(app):
         
         logger.error("Unsupported file format for Contig Info.")
         return "Unsupported file format", {'display': 'block'}, contents
-    
+
     @app.callback(
         [Output('overview-raw-contig-matrix', 'children'),
          Output('remove-raw-contig-matrix', 'style'),
@@ -330,64 +309,41 @@ def register_preparation_callbacks(app):
             return '', {'display': 'none'}, None
     
         file_size = get_file_size(contents)
-        if 'npz' in filename:
-            try:
-                contig_matrix = parse_contents(contents, filename)
-                
-                if not isinstance(contig_matrix, coo_matrix):
-                    logger.error("Parsed matrix is not a COO sparse matrix.")
-                    raise ValueError("Parsed matrix must be a COO sparse matrix.")
     
-                # Open the npz file again to extract keys and their values
-                decoded = base64.b64decode(contents.split(',')[1])
-                npzfile = np.load(io.BytesIO(decoded))
+        try:
+            # Parse contents using the updated parse_contents function
+            parsed_data = parse_contents(contents, filename)
     
+            if isinstance(parsed_data, coo_matrix):
                 # Display COO matrix keys and their information
-                matrix_info = []
-                for key in npzfile.files:
-                    if key == 'shape':
-                        # Display the shape of the matrix as a tuple
-                        shape_value = tuple(npzfile[key])
-                        matrix_info.append(html.Li(f"{key}: {shape_value}"))
-                    elif key in ['data', 'row', 'col']:
-                        # For COO matrix components, show the array's shape
-                        value = npzfile[key]
-                        value_str = f"Array with shape {value.shape}"
-                        matrix_info.append(html.Li(f"{key}: {value_str}"))
-                    else:
-                        # For other keys, display the value directly
-                        value = npzfile[key]
-                        value_str = str(value) if not isinstance(value, np.ndarray) else f"Array with shape {value.shape}"
-                        matrix_info.append(html.Li(f"{key}: {value_str}"))
+                matrix_info = [
+                    html.Li(f"data: Array with shape {parsed_data.data.shape}"),
+                    html.Li(f"row: Array with shape {parsed_data.row.shape}"),
+                    html.Li(f"col: Array with shape {parsed_data.col.shape}"),
+                    html.Li(f"shape: {parsed_data.shape}")
+                ]
     
                 overview = html.Ul(matrix_info)
                 logger.info(f"Uploaded Raw Matrix: {filename} with size {file_size}.")
                 return [overview, html.P(f"File Size: {file_size}")], {'display': 'block'}, contents
     
-            except Exception as e:
-                logger.error(f"Error processing matrix file: {e}")
-                return "Error processing matrix file", {'display': 'block'}, None
-            
-        elif 'csv' in filename or 'txt' in filename:
-            try:
-                # Parse the file into a DataFrame
-                df = parse_contents(contents, filename)
-                
+            elif isinstance(parsed_data, pd.DataFrame):
                 # Display the first few rows as an overview
-                overview =[
-                    dbc.Table.from_dataframe(df.head(), striped=True, bordered=True, hover=True),
+                overview = [
+                    dbc.Table.from_dataframe(parsed_data.head(), striped=True, bordered=True, hover=True),
                     html.P(f"File Size: {file_size}")
                 ]
                 logger.info(f"Uploaded Raw Matrix: {filename} with size {file_size}.")
                 return overview, {'display': 'block'}, contents
-            
-            except Exception as e:
-                logger.error(f"Error processing CSV/TXT file: {e}")
-                return "Error processing CSV/TXT file", {'display': 'block'}, None
     
-        logger.error("Unsupported file format for Raw Matrix.")
-        return "Unsupported file format", {'display': 'block'}, None
+            else:
+                logger.error("Unsupported data type parsed from the file.")
+                return "Unsupported file format", {'display': 'block'}, None
     
+        except Exception as e:
+            logger.error(f"Error processing file: {e}")
+            return f"Error processing file: {e}", {'display': 'block'}, None
+
     # Callback for handling binning info upload with logging
     @app.callback(
         [Output('overview-raw-binning-info', 'children'),
@@ -496,21 +452,12 @@ def register_preparation_callbacks(app):
             # Load files from the folder
             contig_data = pd.read_csv(contig_info_file)
             
-            # Load the .npz file for contig matrix and convert to COO format
-            contig_matrix_data = np.load(contig_matrix_file)
-            row = contig_matrix_data['row']
-            col = contig_matrix_data['col']
-            data = contig_matrix_data['data']
-            contig_matrix_data = coo_matrix((data, (row, col)), shape=(contig_matrix_data['shape'][0], contig_matrix_data['shape'][1]))
+            # Load the .npz file for contig matrix using load_npz
+            contig_matrix_data = load_npz(contig_matrix_file).tocoo()
             
             # Convert the COO matrix to base64-encoded .npz format
             buffer = io.BytesIO()
-            np.savez_compressed(buffer, 
-                                data=contig_matrix_data.data, 
-                                row=contig_matrix_data.row, 
-                                col=contig_matrix_data.col, 
-                                shape=contig_matrix_data.shape)
-            
+            save_npz(buffer, contig_matrix_data)
             buffer.seek(0)  # Rewind the buffer
             encoded_contig_matrix = base64.b64encode(buffer.read()).decode('utf-8')
             
@@ -590,7 +537,10 @@ def register_preparation_callbacks(app):
             combined_data['Category'] = combined_data['Category'].fillna('chromosome')
 
             # Save files to user folder
-            save_file_to_user_folder(contig_matrix, 'unnormalized_matrix.npz', user_folder)
+            user_output_folder = os.path.join('output', user_folder)
+            os.makedirs(user_output_folder, exist_ok=True)
+
+            save_npz(os.path.join('output', user_folder, 'unnormalized_matrix.npz'), contig_matrix_data)
             encoded_csv_content = base64.b64encode(combined_data.to_csv(index=False).encode()).decode()
             save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info.csv', user_folder)
             # Compress into a 7z archive
@@ -604,6 +554,7 @@ def register_preparation_callbacks(app):
         except Exception as e:
             logger.error(f"Error during preparation: {e}")
             return False, ""
+
 
     @app.callback(
         [Output('overview-unnormalized-data-folder', 'children'),
@@ -784,25 +735,13 @@ def register_preparation_callbacks(app):
                 ]
                 taxonomy_levels = np.array([col for col in bin_information.columns if col not in excluded_columns])
                 
-                bin_matrix_data = np.load(bin_matrix_path)
-                bin_dense_matrix = coo_matrix(
-                    (bin_matrix_data['data'], (bin_matrix_data['row'], bin_matrix_data['col'])),
-                    shape=tuple(bin_matrix_data['shape'])
-                )
-        
+                # Load matrix data using load_npz
+                bin_dense_matrix = load_npz(bin_matrix_path).tocoo()
+                
                 contig_info = pd.read_csv(contig_info_path)
                 
-                normalized_matrix_data = np.load(normalized_matrix_path)
-                normalized_matrix = coo_matrix(
-                    (normalized_matrix_data['data'], (normalized_matrix_data['row'], normalized_matrix_data['col'])),
-                    shape=tuple(normalized_matrix_data['shape'])
-                )
-                
-                unnormalized_matrix_data = np.load(unnormalized_matrix_path)
-                unnormalized_matrix = coo_matrix(
-                    (unnormalized_matrix_data['data'], (unnormalized_matrix_data['row'], unnormalized_matrix_data['col'])),
-                    shape=tuple(unnormalized_matrix_data['shape'])
-                )
+                normalized_matrix = load_npz(normalized_matrix_path).tocoo()
+                unnormalized_matrix = load_npz(unnormalized_matrix_path).tocoo()
             except Exception as e:
                 logger.error(f"Error loading data from files: {e}")
                 return False
