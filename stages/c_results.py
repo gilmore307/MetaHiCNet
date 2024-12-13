@@ -169,7 +169,9 @@ def results_layout(user_folder):
     
                 html.H2("Hi-C Contact Normalization Results", className="main-title text-center my-4"),
     
-                html.H4("Download User Folder", className="main-title text-center my-4", style={'marginTop': '100px'}),
+                html.H4("Section 1: Download User Folder", 
+                        className="main-title my-4", 
+                        style={'marginTop': '600px', 'textAlign': 'left'}),
                 dcc.Download(id="download"),
                 dbc.Card(
                     [
@@ -183,7 +185,9 @@ def results_layout(user_folder):
                     className="my-3"
                 ),
     
-                html.H4("Pearson Correlation Coefficients", className="main-title text-center my-4", style={'marginTop': '100px'}),
+                html.H4("Section 2: Pearson Correlation Coefficients", 
+                        className="main-title my-4", 
+                        style={'marginTop': '600px', 'textAlign': 'left'}),
                 html.Div([
                     dag.AgGrid(
                         id="correlation-table",
@@ -200,7 +204,11 @@ def results_layout(user_folder):
                     ),
                 ]),
     
-                html.H4("Comparison between Normalized and Unnormalized Data", className="main-title text-center my-4", style={'marginTop': '100px'}),
+                html.H4(
+                    "Section 3: Comparison between Normalized and Unnormalized Data", 
+                    className="main-title my-4", 
+                    style={'marginTop': '600px', 'textAlign': 'left'}
+                ),
                 html.Div(id="plots"),
             ]
         ),
