@@ -254,10 +254,14 @@ def register_results_callbacks(app):
     @app.callback(
         Output("download", "data"),
         [Input("download-btn", "n_clicks")],
-        [State("user-folder", "data")]
+        [State("user-folder", "data"),
+         State('current-stage', 'data')]
     )
-    def download_user_folder(n_clicks, user_folder):
+    def download_user_folder(n_clicks, user_folder, current_stage):
         if not n_clicks:
+            raise PreventUpdate
+            
+        if current_stage != 'Visualization':
             raise PreventUpdate
     
         # Path to the user folder

@@ -310,7 +310,7 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
 def styling_information_table(information_data, id_colors, unique_annotations, taxonomy_columns=None, taxonomy_level=None):
     if taxonomy_level is None:
         taxonomy_level = taxonomy_columns[-1]
-    columns = ['The number of restriction sites', 'Contig length', 'Contig coverage']
+    columns = ['The number of restriction sites', 'Contig length', 'Contig coverage', 'Connected bins']
     styles = []
     # Precompute numeric data
     numeric_data = information_data.select_dtypes(include=[np.number]).copy()
@@ -827,7 +827,7 @@ def prepare_data(bin_information, bin_dense_matrix, taxonomy_level):
     
     bin_information['Annotation'] = bin_information[taxonomy_level]
     bin_information['Visibility'] = 1
-
+    bin_information['Connected bins'] = np.count_nonzero(bin_dense_matrix, axis=1)
 
     unique_annotations = bin_information['Annotation'].unique()
     
@@ -1268,6 +1268,7 @@ def register_visualization_callbacks(app):
                     {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
                     {"headerName": "Bin Size/ Contig length", "field": "Contig length", "width": 150, "wrapHeaderText": True},
                     {"headerName": "Bin / Contig coverage", "field": "Contig coverage", "width": 150, "wrapHeaderText": True},
+                    {"headerName": "Number of Connected bins", "field": "Connected bins", "width": 150, "wrapHeaderText": True},
                     {"headerName": "Visibility", "field": "Visibility", "hide": True}
                 ]
             }
