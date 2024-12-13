@@ -234,6 +234,34 @@ def get_id_colors(cyto_elements):
 
     return id_colors
 
+def create_legend_html(id_colors):
+    legend_items = []
+    for node_id, color in id_colors.items():
+        legend_items.append(
+            html.Div(
+                style={
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'marginBottom': '5px'
+                },
+                children=[
+                    html.Div(
+                        style={
+                            'width': '20px',
+                            'height': '20px',
+                            'backgroundColor': color,
+                            'marginRight': '10px',
+                            'border': '1px solid #000'
+                        }
+                    ),
+                    html.Span(node_id)
+                ]
+            )
+        )
+    return html.Div(legend_items, 
+                    style={ 'width': '19vw', 'height': '25vh', 'overflowY': 'scroll',
+                           'padding': '10px', 'border': '1px solid #ccc', 'borderRadius': '5px'})
+
 # Function to style annotation contact table using Blugrn color scheme
 def styling_annotation_table(row_data, bin_information, unique_annotations):
     styles = []
@@ -1146,14 +1174,7 @@ def create_visualization_layout():
                                                 zoom=1,
                                                 userZoomingEnabled=True,
                                                 wheelSensitivity=0.1
-                                            ),
-                                            dcc.Dropdown(
-                                                id='taxonomy-level-selector',
-                                                options=[],
-                                                value=None,
-                                                placeholder="Select Taxonomy Level",
-                                                style={'display': 'none'}
-                                            ),
+                                            )
                                         ]
                                     ),
                                 ]
@@ -1165,13 +1186,27 @@ def create_visualization_layout():
                     html.Div(
                         id="right-column",
                         children=[
+                            html.Div([
+                                dcc.Dropdown(
+                                    id='taxonomy-level-selector',
+                                    options=[],
+                                    value=None,
+                                    placeholder="Select Taxonomy Level",
+                                    style={ 'width': '19vw', 'display': 'inline-block', 'margin-top': '4px'}
+                                ),
+                                
+                                html.Div(id='legend-div', 
+                                         style={ 'width': '19vw', 'height': '25vh',
+                                                'display': 'inline-block', 'margin-top': '4px'})
+                            ], style={'display': 'inline-block', 'vertical-align': 'top', 'height': '30vh', 'width': '19vw'}),
+
                             html.Div(
                                 id="bar-chart-container",
                                 children=[
                                     dcc.Graph(id='bar-chart', 
                                               config={'displayModeBar': False}, 
                                               figure=go.Figure(), 
-                                              style={'height': '85vh', 'width': '19vw', 'display': 'inline-block'}                                 
+                                              style={'height': '55vh', 'width': '19vw', 'display': 'inline-block'}                                 
                                     ),
                                 ],
                                 style={
@@ -1179,7 +1214,7 @@ def create_visualization_layout():
                                 }
                             ),
                         ],
-                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '19vw'}
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '55vh', 'width': '19vw'}
                     ),
 
                     dcc.Loading(
@@ -1475,7 +1510,6 @@ def register_visualization_callbacks(app):
 
     @app.callback(
         [Output('visualization-selector', 'value'),
-         Output('taxonomy-level-selector', 'style'),
          Output('annotation-selector', 'value'),
          Output('annotation-selector', 'style'),
          Output('bin-selector', 'value'),
@@ -1513,7 +1547,6 @@ def register_visualization_callbacks(app):
         bin_information = load_from_redis(f'{user_folder}:bin-information')
         annotation_selector_style = {'display': 'none'}
         bin_selector_style = {'display': 'none'}
-        taxonomy_selector_style = {'display': 'none'}
     
         # If reset button is clicked
         if 'reset-btn' in triggered_props:
@@ -1586,22 +1619,17 @@ def register_visualization_callbacks(app):
     
         # Update styles based on selections
         if visualization_type == 'bin':
-            taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 
-                                       'float': 'right', 'marginRight': '10px' }
             bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
             annotation_selector_style = {'display': 'none'}
         elif visualization_type == 'basic':
-            taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 
-                                       'float': 'right', 'marginRight': '10px' }
             annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
             bin_selector_style = {'display': 'none'}
         else:
             # Default styles
-            taxonomy_selector_style = {'display': 'none'}
             annotation_selector_style = {'display': 'none'}
             bin_selector_style = {'display': 'none'}
     
-        return (visualization_type, taxonomy_selector_style, selected_annotation, annotation_selector_style,
+        return (visualization_type, selected_annotation, annotation_selector_style,
                 selected_bin, bin_selector_style, 1, current_visualization_mode)
 
     @app.callback(
@@ -1612,6 +1640,7 @@ def register_visualization_callbacks(app):
          Output('treemap-graph', 'style'),
          Output('cyto-graph', 'stylesheet'),
          Output('cyto-graph', 'layout'),
+         Output('legend-div', 'children'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
         [Input('current-visualization-mode', 'data'),
          Input('data-loaded', 'data')],
@@ -1635,9 +1664,11 @@ def register_visualization_callbacks(app):
         selected_edges = []
         stylesheet = []
         layout = no_update
+        legend = None
     
         # Extract data from current_visualization_mode
         visualization_type = current_visualization_mode.get('visualization_type', 'taxonomy')
+        taxonomy_level = current_visualization_mode.get('taxonomy_level')
         selected_annotation = current_visualization_mode.get('selected_annotation')
         selected_bin = current_visualization_mode.get('selected_bin')
 
@@ -1647,7 +1678,7 @@ def register_visualization_callbacks(app):
             bar_fig = go.Figure()
             treemap_fig = go.Figure()
             treemap_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
-            return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, 1
+            return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, 1
             
         if visualization_type == 'taxonomy':
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
@@ -1658,6 +1689,13 @@ def register_visualization_callbacks(app):
             treemap_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
+            
+            type_colors = {
+                'chromosome': '#81BFDA',
+                'virus': '#AE445A',
+                'plasmid': '#D5ED9F'
+            }
+            legend = create_legend_html(type_colors)
     
         elif visualization_type == 'basic':
             bin_information = load_from_redis(f'{user_folder}:bin-information')
@@ -1683,6 +1721,13 @@ def register_visualization_callbacks(app):
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+            
+            type_colors = {
+                'chromosome': '#81BFDA',
+                'virus': '#AE445A',
+                'plasmid': '#D5ED9F'
+            }
+            legend = create_legend_html(type_colors)
     
         elif visualization_type == 'bin' and selected_bin:
             bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
@@ -1694,14 +1739,27 @@ def register_visualization_callbacks(app):
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
-        
+            
+            id_color_map = get_id_colors(cyto_elements)
+            
+            if id_color_map:
+                color_annotation_map = {}
+                unique_colors = {color: node_id for node_id, color in id_color_map.items() if color != '#FFFFFF'}.items()
+                for color, node_id in unique_colors:
+                    row = bin_information.loc[bin_information['Bin index'] == node_id]
+                    if not row.empty:
+                        annotation = row[taxonomy_level].iloc[0]
+                        color_annotation_map[annotation] = color
+                        
+                legend = create_legend_html(color_annotation_map)
+
         else:
             raise PreventUpdate
     
         # Update selected styles and hover info
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
     
-        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, 1
+        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, 1
 
     @app.callback(
         Output('visualization-status', 'data', allow_duplicate=True),
