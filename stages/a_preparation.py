@@ -106,15 +106,11 @@ def adjust_taxonomy(row, taxonomy_columns):
         for tier in taxonomy_columns:
             if not pd.isna(row[tier]):
                    row[tier] = row[tier] + '_v'
-        row['Contig index'] = row['Contig index'] + "_v"
-        row['Bin index'] = row['Bin index'] + "_v"
 
     elif row['Category'] == 'plasmid':
         for tier in taxonomy_columns:
             if not pd.isna(row[tier]):
                 row[tier] = row[tier] + '_p'
-        row['Contig index'] = row['Contig index'] + "_p"
-        row['Bin index'] = row['Bin index'] + "_p"
         
     for tier, prefix in prefixes.items():
         if not pd.isna(row[tier]):
@@ -139,6 +135,9 @@ def process_data(contig_data, binning_data, taxonomy_data, contig_matrix, taxono
 
         # Merge contig, binning, and taxonomy data
         combined_data = pd.merge(contig_data, binning_data, on='Contig index', how="left")
+        combined_data['Bin index'] = combined_data.apply(
+            lambda row: row['Contig index'] if pd.isna(row['Bin index']) else row['Bin index'], axis=1)
+        
         combined_data = pd.merge(combined_data, taxonomy_data, on='Bin index', how="left")
 
         # Apply taxonomy adjustments
@@ -516,16 +515,11 @@ def register_preparation_callbacks(app):
     
             diagonal_values = contig_matrix_data.diagonal()
     
-            contig_data['Within-contig Hi-C contacts'] = contig_data.apply(
-                lambda row: diagonal_values[contig_data.index.get_loc(row.name)], axis=1)
+            contig_data['Within-contig Hi-C contacts'] = diagonal_values
     
             contig_data['Contig coverage'] = contig_data.apply(
                 lambda row: row['Within-contig Hi-C contacts'] / row['Contig length'] 
                 if pd.isna(row['Contig coverage']) else row['Contig coverage'], axis=1)
-
-            binning_data['Bin index'] = binning_data.apply(
-                lambda row: row['Contig index'] if pd.isna(row['Bin index']) else row['Bin index'], axis=1)
-            validate_csv(binning_data, ['Contig index'], ['Bin index'])
             
             taxonomy_columns = np.array([col for col in taxonomy_data.columns if col not in ['Bin index', 'Category']])
             taxonomy_data.replace("Unclassified", None, inplace=True)

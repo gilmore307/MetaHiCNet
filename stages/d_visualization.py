@@ -1025,13 +1025,6 @@ def create_visualization_layout():
                                 style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
                             ),
                             dcc.Dropdown(
-                                id='taxonomy-level-selector',
-                                options=[],
-                                value=None,
-                                placeholder="Select Taxonomy Level",
-                                style={'display': 'none'}
-                            ),
-                            dcc.Dropdown(
                                 id='annotation-selector',
                                 options=[],
                                 value=None,
@@ -1047,7 +1040,7 @@ def create_visualization_layout():
                             )
                         ]
                     ),
-                    html.Button("Reset Selection", id="reset-btn", style={**common_text_style})
+                    html.Button("Reset Selection", id="reset-btn", style={**common_text_style}),
                 ], 
                 style={
                     'display': 'flex',
@@ -1154,6 +1147,13 @@ def create_visualization_layout():
                                                 userZoomingEnabled=True,
                                                 wheelSensitivity=0.1
                                             ),
+                                            dcc.Dropdown(
+                                                id='taxonomy-level-selector',
+                                                options=[],
+                                                value=None,
+                                                placeholder="Select Taxonomy Level",
+                                                style={'display': 'none'}
+                                            ),
                                         ]
                                     ),
                                 ]
@@ -1173,7 +1173,10 @@ def create_visualization_layout():
                                               figure=go.Figure(), 
                                               style={'height': '85vh', 'width': '19vw', 'display': 'inline-block'}                                 
                                     ),
-                                ]
+                                ],
+                                style={
+                                    'border': '2px solid #ccc',
+                                }
                             ),
                         ],
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '19vw'}
@@ -1583,11 +1586,13 @@ def register_visualization_callbacks(app):
     
         # Update styles based on selections
         if visualization_type == 'bin':
-            taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 
+                                       'float': 'right', 'marginRight': '10px' }
             bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
             annotation_selector_style = {'display': 'none'}
         elif visualization_type == 'basic':
-            taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            taxonomy_selector_style = {'width': '250px', 'display': 'inline-block', 
+                                       'float': 'right', 'marginRight': '10px' }
             annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
             bin_selector_style = {'display': 'none'}
         else:
@@ -1677,7 +1682,7 @@ def register_visualization_callbacks(app):
                 )
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
+            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
     
         elif visualization_type == 'bin' and selected_bin:
             bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
@@ -1688,7 +1693,7 @@ def register_visualization_callbacks(app):
             cyto_elements, bar_fig = bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
+            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
         
         else:
             raise PreventUpdate

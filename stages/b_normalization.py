@@ -294,8 +294,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
         'The number of restriction sites': 'sum',
         'Contig length': 'sum',
         'Contig coverage': lambda x: (x * contig_info.loc[x.index, 'Contig length']).sum() / 
-                                     contig_info.loc[x.index, 'The number of restriction sites'].sum(),
-        'Within-contig Hi-C contacts': 'sum'
+                                     contig_info.loc[x.index, 'The number of restriction sites'].sum()
     }
     unknown_columns = [col for col in contig_info.columns if col not in known_agg]
     
