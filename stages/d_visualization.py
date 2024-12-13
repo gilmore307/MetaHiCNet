@@ -408,14 +408,10 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
     return styles
 
 # Function to arrange bins
-def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center_position=(0, 0)):
+def arrange_nodes(bins, distance, center_position):
     distance /= 100 
     phi = (1 + sqrt(5)) / 2
     pi = math.pi
-
-    # Identify bins that connect to other annotation
-    connecting_bins = [bin for bin in bins if bin in inter_bin_edges and bin != selected_element]
-    other_bins = [bin for bin in bins if bin not in inter_bin_edges and bin != selected_element]
 
     # Arrange inner bins in a sunflower pattern
     inner_positions = {}
@@ -423,7 +419,7 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center
 
     max_inner_radius = 0  # To keep track of the maximum radius used for inner nodes
 
-    for k, bin in enumerate(other_bins, start=1):
+    for k, bin in enumerate(bins, start=1):
         r = distance * sqrt(k)
         theta = k * angle_stride
         x = center_position[0] + r * cos(theta)
@@ -432,31 +428,7 @@ def arrange_nodes(bins, inter_bin_edges, distance, selected_element=None, center
         if r > max_inner_radius:
             max_inner_radius = r
 
-    # Place selected bin in the center
-    if selected_element:
-        inner_positions[selected_element] = center_position
-
-    # Arrange connecting bins in concentric circles starting from the boundary of inner nodes
-    distance *= 2
-    outer_positions = {}
-    layer_radius = max_inner_radius + distance  # Start from the boundary of inner nodes
-    current_layer = 1
-    nodes_in_layer = int(2 * pi * layer_radius / distance)
-    angle_step = 2 * pi / nodes_in_layer
-
-    for i, bin in enumerate(connecting_bins):
-        if i >= nodes_in_layer * current_layer:
-            current_layer += 1
-            layer_radius = max_inner_radius + distance * current_layer
-            nodes_in_layer = int(2 * pi * layer_radius / distance)
-            angle_step = 2 * pi / nodes_in_layer
-
-        angle = (i % nodes_in_layer) * angle_step
-        x = center_position[0] + layer_radius * cos(angle)
-        y = center_position[1] + layer_radius * sin(angle)
-        outer_positions[bin] = (x, y)
-
-    return {**inner_positions, **outer_positions}
+    return {**inner_positions}
 
 def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_columns):
     taxonomy_columns = taxonomy_columns.tolist() if isinstance(taxonomy_columns, np.ndarray) else taxonomy_columns
@@ -707,18 +679,24 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     # If a node is selected, don't return the histogram
     return cyto_elements, None, cyto_style
 
-
 # Function to visualize bin relationships
 def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin):
+    # Error handling for selected_bin
+    if selected_bin not in bin_information['Bin index'].values:
+        logger.error(f'Selected bin {selected_bin} not found in bin_information.')
+        return [], go.Figure()
     
     # Find the index of the selected bin
     selected_bin_index = bin_information[bin_information['Bin index'] == selected_bin].index[0]
+    
+    if selected_bin_index >= bin_dense_matrix.shape[0]:
+        logger.error(f'Selected bin index {selected_bin_index} exceeds matrix dimensions.')
+        return [], go.Figure()
+
     selected_annotation = bin_information.loc[selected_bin_index, 'Annotation']
 
     # Get all indices that have contact with the selected bin
     contacts_indices = bin_dense_matrix[selected_bin_index].nonzero()[0]
-    contacts_indices = contacts_indices[contacts_indices != selected_bin_index]
-    print(contacts_indices)
 
     # If no contacts found, raise a warning
     if len(contacts_indices) == 0:
@@ -737,47 +715,34 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
         'chromosome': blues
     }
 
-    # Rank annotation based on the number of bins with contact to the selected bin
-    annotation_contact_counts = contacts_annotation.value_counts()
-    annotation_contact_ranks = annotation_contact_counts.rank(method='first').astype(int)
-    max_rank = annotation_contact_ranks.max()
-
+    color_index = 0
+    if selected_annotation not in contacts_annotation.unique():
+        contacts_annotation = pd.concat([contacts_annotation, pd.Series(selected_annotation)])
+        
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
         annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])  
-        annotation_rank = annotation_contact_ranks.get(annotation, int(max_rank/2))
-        gradient_color = color_scale[int((annotation_rank / max_rank) * (len(color_scale) - 1))]
-        G.add_node(annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
-
-    # Ensure selected_annotation is added
-    if selected_annotation not in G.nodes:
-        annotation_type = bin_information.loc[bin_information['Annotation'] == selected_annotation, 'Category'].values[0]
-        color_scale = color_scale_mapping.get(annotation_type, ['#00FF00'])
-        gradient_color = color_scale[len(color_scale) - 1]
-        G.add_node(selected_annotation, size=1, color='#FFFFFF', border_color=gradient_color, border_width=2)
+        color = color_scale[color_index % len(color_scale)]
+        color_index += 1
+        G.add_node(annotation, size=1, color='#FFFFFF', border_color=color)
 
     # Collect all contact values between selected_annotation and other annotations
     contact_values = []
     for annotation in contacts_annotation.unique():
         annotation_bins = bin_information[bin_information['Annotation'] == annotation].index
-        annotation_bins = annotation_bins[annotation_bins < bin_dense_matrix.shape[1]]  # Filter indices
-        contact_value = bin_dense_matrix[selected_bin_index, annotation_bins].sum()
-
-        if contact_value > 0:
-            contact_values.append(contact_value)
-    
-    scaled_weights = generate_gradient_values(contact_values, 1, 2) if contact_values else [1] * len(contacts_annotation.unique())
-    for i, annotation in enumerate(contacts_annotation.unique()):
-        annotation_bins = bin_information[bin_information['Annotation'] == annotation].index
-        annotation_bins = annotation_bins[annotation_bins < bin_dense_matrix.shape[1]]  # Filter indices
+        annotation_bins = annotation_bins[annotation_bins < bin_dense_matrix.shape[1]]
         contact_value = bin_dense_matrix[selected_bin_index, annotation_bins].sum()
         
         if contact_value > 0:
+            contact_values.append(contact_value)
             if G.has_node(annotation):
-                G.add_edge(selected_annotation, annotation, weight=scaled_weights[i])
-
-
+                G.add_edge(selected_annotation, annotation, weight=1)
+    
+    scaled_weights = generate_gradient_values(contact_values, 1, 2) if contact_values else [1] * len(contacts_annotation.unique())
+    for i, (u, v) in enumerate(G.edges()):
+        G[u][v]['weight'] = scaled_weights[i]
+        
     fixed_positions = {selected_annotation: (0, 0)}
     pos = nx.spring_layout(G, iterations=200, k=2, fixed=[selected_annotation], pos=fixed_positions, weight='weight')
     
@@ -793,7 +758,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
     # Add bin nodes to the graph
     for annotation in contacts_annotation.unique():
         annotation_bins = contacts_bins[contacts_annotation == annotation]
-        bin_positions = arrange_nodes(annotation_bins, [], distance=40, center_position=pos[annotation], selected_element=None)
+        bin_positions = arrange_nodes(annotation_bins, distance=40, center_position=pos[annotation])
         for bin, (x, y) in bin_positions.items():
             G.add_node(bin, 
                        size=10, 
@@ -829,7 +794,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
 
     data_dict = {
         'Across Bin Hi-C Contacts': bin_data,
-        'Across Taxa Hi-C Contact': annotation_data
+        'Across Taxa Hi-C Contacts': annotation_data
     }
 
     bar_fig = create_bar_chart(data_dict)

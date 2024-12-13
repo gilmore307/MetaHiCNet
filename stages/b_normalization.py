@@ -277,8 +277,6 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
 
 def generating_bin_information(contig_info, contact_matrix, remove_unclassified_contigs=False, remove_host_host=False):
     dense_matrix = contact_matrix.toarray()
-    np.fill_diagonal(dense_matrix, 0)
-
 
     # Handle unclassified contigs
     if remove_unclassified_contigs:
@@ -325,32 +323,46 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
     bin_indexes_dict = get_indexes(unique_bins, contig_info, 'Bin index')
     host_bin = bin_info[bin_info['Category'] == 'chromosome']['Bin index'].tolist()
     non_host_bin = bin_info[~bin_info['Category'].isin(['chromosome'])]['Bin index'].tolist()
-    bin_contact_matrix = pd.DataFrame(0.0, index=unique_bins, columns=unique_bins)
     
     # Combine pairs of all necessary interactions
     if remove_host_host:
         bin_non_host_pairs = list(combinations(non_host_bin, 2))
-        bin_non_host_self_pairs = [(x, x) for x in non_host_bin]
         bin_host_non_host_pairs = list(product(host_bin, non_host_bin))
-        bin_all_pairs = bin_non_host_pairs + bin_non_host_self_pairs + bin_host_non_host_pairs
+        bin_all_pairs = bin_non_host_pairs + bin_host_non_host_pairs
     else:
-        bin_non_self_pairs = list(combinations(unique_bins, 2))
-        bin_self_pairs = [(x, x) for x in unique_bins]
-        bin_all_pairs = bin_non_self_pairs + bin_self_pairs
+        bin_all_pairs = list(combinations(unique_bins, 2))
 
     results = Parallel(n_jobs=-1)( 
         delayed(calculate_submatrix_sum)(pair, bin_indexes_dict, dense_matrix) for pair in bin_all_pairs
     )
+
+    # Initialize lists to store row indices, column indices, and values
+    rows = []
+    cols = []
+    data = []
     
     for annotation_i, annotation_j, value in results:
         if annotation_i == annotation_j:
-            value = 0
-            
-        bin_contact_matrix.at[annotation_i, annotation_j] = value
-        bin_contact_matrix.at[annotation_j, annotation_i] = value
+            value = 0  # Set value to 0 for diagonal elements (self-connections)
+        
+        # Add entries to COO format lists
+        rows.append(annotation_i)
+        cols.append(annotation_j)
+        data.append(value)
+        
+        rows.append(annotation_j)
+        cols.append(annotation_i)
+        data.append(value)
     
-    # Convert to COO sparse matrices for storage
-    bin_contact_matrix = coo_matrix(bin_contact_matrix)
+    # Map annotations to numerical indices if necessary
+    bin_index_to_position = {bin_index: idx for idx, bin_index in enumerate(unique_bins)}
+    row_indices = [bin_index_to_position[annotation] for annotation in rows]
+    col_indices = [bin_index_to_position[annotation] for annotation in cols]
+    
+    # Create the COO sparse matrix
+    bin_contact_matrix = coo_matrix((data, (row_indices, col_indices)), shape=(len(unique_bins), len(unique_bins)))
+    
+    bin_info=bin_info.reset_index(drop=True)
 
     return bin_info, bin_contact_matrix
 
@@ -563,7 +575,7 @@ def register_normalization_callbacks(app):
         
         save_to_redis(bin_info_key, bin_info)       
         save_to_redis(bin_matrix_key, bin_contact_matrix)
-
+        
         logger.info("Data loaded and saved to Redis successfully.")
         
         return True, ""
