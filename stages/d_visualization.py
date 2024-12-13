@@ -115,7 +115,7 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
 
     return cyto_stylesheet
 
-def create_bar_chart(data_dict):
+def create_bar_chart(data_dict, taxonomy_level = []):
     traces = []
     buttons = []
 
@@ -124,7 +124,20 @@ def create_bar_chart(data_dict):
             logger.warning(f"No data or 'value' column missing for {trace_name}, skipping trace.")
             continue
 
-        bar_data = data_frame.sort_values(by='value', ascending=False)
+        # Sort data differently based on trace_name
+        if trace_name == "Fraction of classified bins by ranks":
+            # Create a dictionary to rank taxonomy levels based on their order in taxonomy_columns
+            taxonomy_order = {taxonomy: idx for idx, taxonomy in enumerate(taxonomy_level)}
+
+            # Rank the 'name' column by its position in taxonomy_columns
+            data_frame['taxonomy_rank'] = data_frame['name'].apply(lambda x: taxonomy_order.get(x, float('inf')))
+
+            # Sort by the taxonomy rank first, then by 'value'
+            bar_data = data_frame.sort_values(by=['taxonomy_rank', 'value'], ascending=[True, False])
+        else:
+            # Default sorting by 'value' for other traces
+            bar_data = data_frame.sort_values(by='value', ascending=False)
+            
         bar_colors = bar_data['color']
         hover_text = bar_data.get('hover', None)
 
@@ -591,7 +604,7 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
         'Fraction of classified bins by ranks': classification_data_df
     }
 
-    bar_fig = create_bar_chart(data_dict)
+    bar_fig = create_bar_chart(data_dict, taxonomy_columns)
     logger.debug("Bar chart created.")
 
     return fig, bar_fig

@@ -11,7 +11,6 @@ import os
 import io
 import py7zr
 from scipy.stats import pearsonr
-from sklearn.cluster import DBSCAN
 
 def compute_product_values(data, row, col, restriction_sites, contig_length, contig_coverage):
     product_sites = restriction_sites.iloc[row].values * restriction_sites.iloc[col].values

@@ -101,7 +101,9 @@ app.layout = dbc.Container([
     dcc.Interval(id="ttl-interval", interval=SESSION_TTL*250),
     dcc.Location(id='url', refresh=True),
     html.Div(id="dummy-output", style={"display": "none"}),
-    html.Div(id="main-content", children=[])
+    html.Div(id="main-content", children=[]),
+    html.P("Copyright © 2024 MetaHiCNet. All rights reserved.", 
+           style={'textAlign': 'center','padding': '20px','backgroundColor': 'lightgray'})
 ], fluid=True)
 
 @app.callback(
