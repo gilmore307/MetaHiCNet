@@ -731,7 +731,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
         logger.warning(f'No contacts found for the selected bin: {selected_bin}')
         return [], go.Figure()
     else:
-        contacts_annotation = bin_information.loc[contacts_indices, 'Annotation']
+        original_contacts_annotation = bin_information.loc[contacts_indices, 'Annotation']
         contacts_bins = bin_information.loc[contacts_indices, 'Bin index']
 
     G = nx.Graph()
@@ -744,8 +744,10 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
     }
 
     color_index = 0
-    if selected_annotation not in contacts_annotation.unique():
-        contacts_annotation = pd.concat([contacts_annotation, pd.Series(selected_annotation)])
+    if selected_annotation not in original_contacts_annotation.unique():
+        contacts_annotation = pd.concat([original_contacts_annotation, pd.Series(selected_annotation)])
+    else:
+        contacts_annotation = original_contacts_annotation
         
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
@@ -785,7 +787,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
 
     # Add bin nodes to the graph
     for annotation in contacts_annotation.unique():
-        annotation_bins = contacts_bins[contacts_annotation == annotation]
+        annotation_bins = contacts_bins[original_contacts_annotation == annotation]
         bin_positions = arrange_nodes(annotation_bins, distance=40, center_position=pos[annotation])
         for bin, (x, y) in bin_positions.items():
             G.add_node(bin, 
