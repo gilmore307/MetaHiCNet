@@ -51,12 +51,12 @@ def calculate_pearson(df, factors, contacts_col="Contacts"):
         correlations[factor] = abs(correlation)
     return correlations
 
-def generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_data):
+def generate_plots(normalized_plot_data):
     # Normalized Data Plots
     plot_sites_norm = dcc.Graph(
         id='plot-sites-norm-filtered',
         figure=px.scatter(
-            filtered_normalized_plot_data,
+            normalized_plot_data,
             x='Product Sites',
             y='Contacts',
             title='Normalized: Product of sites vs. Contacts',
@@ -69,7 +69,7 @@ def generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_dat
     plot_lengths_norm = dcc.Graph(
         id='plot-lengths-norm-filtered',
         figure=px.scatter(
-            filtered_normalized_plot_data,
+            normalized_plot_data,
             x='Product Length',
             y='Contacts',
             title='Normalized: Product of lengths vs. Contacts',
@@ -82,50 +82,10 @@ def generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_dat
     plot_coverage_norm = dcc.Graph(
         id='plot-coverage-norm-filtered',
         figure=px.scatter(
-            filtered_normalized_plot_data,
+            normalized_plot_data,
             x='Product Coverage',
             y='Contacts',
             title='Normalized: Product of coverage vs. Contacts',
-            labels={'Product Coverage': 'Product of Coverage (log scale)', 'Contacts': 'Contacts'},
-            hover_data={}
-        ),
-        style={'width': '32%', 'display': 'inline-block'}
-    )
-
-    # Unnormalized Data Plots
-    plot_sites_unnorm = dcc.Graph(
-        id='plot-sites-unnorm-filtered',
-        figure=px.scatter(
-            filtered_unnormalized_plot_data,
-            x='Product Sites',
-            y='Contacts',
-            title='Unnormalized: Product of sites vs. Contacts',
-            labels={'Product Sites': 'Product of Sites (log scale)', 'Contacts': 'Contacts'},
-            hover_data={}
-        ),
-        style={'width': '32%', 'display': 'inline-block'}
-    )
-
-    plot_lengths_unnorm = dcc.Graph(
-        id='plot-lengths-unnorm-filtered',
-        figure=px.scatter(
-            filtered_unnormalized_plot_data,
-            x='Product Length',
-            y='Contacts',
-            title='Unnormalized: Product of lengths vs. Contacts',
-            labels={'Product Length': 'Product of Length (log scale)', 'Contacts': 'Contacts'},
-            hover_data={}
-        ),
-        style={'width': '32%', 'display': 'inline-block'}
-    )
-
-    plot_coverage_unnorm = dcc.Graph(
-        id='plot-coverage-unnorm-filtered',
-        figure=px.scatter(
-            filtered_unnormalized_plot_data,
-            x='Product Coverage',
-            y='Contacts',
-            title='Unnormalized: Product of coverage vs. Contacts',
             labels={'Product Coverage': 'Product of Coverage (log scale)', 'Contacts': 'Contacts'},
             hover_data={}
         ),
@@ -138,12 +98,6 @@ def generate_plots(filtered_normalized_plot_data, filtered_unnormalized_plot_dat
             plot_sites_norm,
             plot_lengths_norm,
             plot_coverage_norm
-        ], style={'display': 'flex', 'justify-content': 'space-between'}),
-    
-        html.Div([
-            plot_sites_unnorm,
-            plot_lengths_unnorm,
-            plot_coverage_unnorm
         ], style={'display': 'flex', 'justify-content': 'space-between'})
     ])
 
@@ -185,7 +139,7 @@ def results_layout(user_folder):
                     className="my-3"
                 ),
     
-                html.H4("Section 2: Pearson Correlation Coefficients", 
+                html.H4("Section 2: Pearson Correlation Coefficients (Absolute Value) Between Normalized Valid Contacts and the Product of Each of the Three Factors of Explicit Biases", 
                         className="main-title my-4", 
                         style={'marginTop': '600px', 'textAlign': 'left'}),
                 html.Div([
@@ -198,14 +152,14 @@ def results_layout(user_folder):
                             {"headerName": "Coverage", "field": "Coverage", "sortable": True, "filter": True, "width": 200},
                         ],
                         rowData=[],
-                        dashGridOptions={"rowHeight": 47},
+                        dashGridOptions={"rowHeight": 50},
                         defaultColDef={"resizable": True, "sortable": True, "filter": True},
-                        style={"height": "16vh", "width": "43vw", "margin": "auto"},
+                        style={"height": "12vh", "width": "43vw", "margin": "auto"},
                     ),
                 ]),
     
                 html.H4(
-                    "Section 3: Comparison between Normalized and Unnormalized Data", 
+                    "Section 3: Relationship between raw interaction counts and the product of the number of restriction sites, length, and coverage between contig pairs.", 
                     className="main-title my-4", 
                     style={'marginTop': '600px', 'textAlign': 'left'}
                 ),
@@ -218,16 +172,18 @@ def register_results_callbacks(app):
     @app.callback(
         [Output("correlation-table", "rowData"),
          Output("plots", "children")],
-        [Input("user-folder", "data")]
+        [Input("user-folder", "data")],
+        [State('current-stage', 'data')]
     )
-    def normalization_visualization(user_folder):
+    def normalization_visualization(user_folder, current_stage):
+        if current_stage != 'Visualization':
+            raise PreventUpdate
+            
         contig_info_path = os.path.join('output', user_folder, 'contig_info.csv')
         normalized_matrix_path = os.path.join('output', user_folder, 'normalized_matrix.npz')
-        unnormalized_matrix_path = os.path.join('output', user_folder, 'unnormalized_matrix.npz')
         
         contig_info = pd.read_csv(contig_info_path)
         norm_sparse_matrix = load_npz(normalized_matrix_path).tocoo()
-        unnorm_sparse_matrix = load_npz(unnormalized_matrix_path).tocoo()
         
         # Extract relevant columns
         restriction_sites = contig_info['The number of restriction sites']
@@ -235,41 +191,33 @@ def register_results_callbacks(app):
         contig_coverage = contig_info['Contig coverage']
     
         norm_data, norm_row, norm_col = norm_sparse_matrix.data, norm_sparse_matrix.row, norm_sparse_matrix.col
-        unnorm_data, unnorm_row, unnorm_col = unnorm_sparse_matrix.data, unnorm_sparse_matrix.row, unnorm_sparse_matrix.col
     
         normalized_product_values = compute_product_values(norm_data, norm_row, norm_col, restriction_sites, contig_length, contig_coverage)
-        unnormalized_product_values = compute_product_values(unnorm_data, unnorm_row, unnorm_col, restriction_sites, contig_length, contig_coverage)
     
         normalized_plot_data = compute_plot_data(norm_data, norm_row, norm_col, restriction_sites, contig_length, contig_coverage)
-        unnormalized_plot_data = compute_plot_data(unnorm_data, unnorm_row, unnorm_col, restriction_sites, contig_length, contig_coverage)
     
         factors = ["Product Sites", "Product Length", "Product Coverage"]
         normalized_correlations = calculate_pearson(normalized_product_values, factors)
-        unnormalized_correlations = calculate_pearson(unnormalized_product_values, factors)
     
         correlation_results = pd.DataFrame({
-            "Metric": ["Normalized", "Unnormalized"],
-            "Site": [normalized_correlations["Product Sites"], unnormalized_correlations["Product Sites"]],
-            "Length": [normalized_correlations["Product Length"], unnormalized_correlations["Product Length"]],
-            "Coverage": [normalized_correlations["Product Coverage"], unnormalized_correlations["Product Coverage"]],
+            "Metric": ["Normalized"],
+            "Site": [normalized_correlations["Product Sites"]],
+            "Length": [normalized_correlations["Product Length"]],
+            "Coverage": [normalized_correlations["Product Coverage"]],
         })
         correlation_results = correlation_results.round(5)
     
-        plots = generate_plots(normalized_plot_data, unnormalized_plot_data)
+        plots = generate_plots(normalized_plot_data)
         
         return correlation_results.to_dict("records"), plots
     
     @app.callback(
         Output("download", "data"),
         [Input("download-btn", "n_clicks")],
-        [State("user-folder", "data"),
-         State('current-stage', 'data')]
+        [State("user-folder", "data")]
     )
-    def download_user_folder(n_clicks, user_folder, current_stage):
+    def download_user_folder(n_clicks, user_folder):
         if not n_clicks:
-            raise PreventUpdate
-            
-        if current_stage != 'Visualization':
             raise PreventUpdate
     
         # Path to the user folder

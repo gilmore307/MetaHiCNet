@@ -613,24 +613,28 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
 def annotation_visualization(bin_information, unique_annotations, contact_matrix, selected_node=None):
     G = nx.Graph()
     
+    if selected_node and len(selected_node) == 2:
+        logger.warning(f"Selected node '{selected_node}' is not classified.")
+        raise ValueError(f"The selected node '{selected_node}' is not classified.")
+    
+    # Filter out nodes with names of length 2
+    filtered_unique_annotations = [annotation for annotation in unique_annotations if len(annotation) != 2]
+    
     if selected_node:
         connected_nodes = [selected_node]
     
         # Only iterate over nodes connected to the selected node (i == selected_index)
-        for annotation_j in unique_annotations:
+        for annotation_j in filtered_unique_annotations:
             if annotation_j != selected_node:  # Skip the selected node itself
                 weight = contact_matrix.at[selected_node, annotation_j]
                 if weight > 0:
                     connected_nodes.append(annotation_j)
 
     else:
-        connected_nodes = unique_annotations
+        connected_nodes = filtered_unique_annotations
         
-    # Add nodes with size based on total bin coverage
-    total_bin_coverage = bin_information.groupby('Annotation')['Contig coverage'].sum().reindex(connected_nodes)
-
     node_colors = {}
-    for annotation in total_bin_coverage.index:
+    for annotation in connected_nodes:
         bin_type = bin_information.loc[
             bin_information['Annotation'] == annotation, 'Category'
         ].values[0]
@@ -650,19 +654,16 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
                 invisible_edges.add((annotation_i, annotation_j))
                 edge_weights.append(weight)
 
-
     if edge_weights:
         normalized_weights = generate_gradient_values(np.array(edge_weights), 1, 2)
         for (i, (u, v)) in enumerate(G.edges()):
             G[u][v]['weight'] = normalized_weights[i]
-    
 
     # Initial node positions using a force-directed layout with increased dispersion
     if selected_node:
         pos = nx.spring_layout(G, dim=2, k=2, iterations=200, weight='weight', scale=10.0, fixed=[selected_node], pos={selected_node: (0, 0)})
     else:
         pos = nx.spring_layout(G, dim=2, k=2, iterations=200, weight='weight', scale=10.0)
-
 
     cyto_elements = nx_to_cyto_elements(G, pos, invisible_edges=invisible_edges)
     cyto_style = {
@@ -673,21 +674,31 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     if not selected_node:
         inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
         total_bin_coverage_sum = bin_information.groupby('Annotation').apply(
-            lambda group: group['Contig coverage'].mul(group['Contig length']).sum() /
+            lambda group: group['Contig coverage'].mul(group['Contig length']).sum() / 
                           group['The number of restriction sites'].sum()
         ).reindex(unique_annotations).fillna(0).values
-    
+        
+        # For 'Across Taxonomy Hi-C Contacts' DataFrame
+        df_contacts = pd.DataFrame({'name': unique_annotations, 
+                                    'value': inter_annotation_contact_sum, 
+                                    'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]
+                                   }).query('value != 0')
+        
+        # Filter out rows where 'name' length is 2
+        df_contacts = df_contacts[df_contacts['name'].str.len() != 2]
+        
+        # For 'The coverage of different taxa' DataFrame
+        df_coverage = pd.DataFrame({'name': unique_annotations, 
+                                     'value': total_bin_coverage_sum, 
+                                     'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]
+                                    }).query('value != 0')
+        
+        # Filter out rows where 'name' length is 2
+        df_coverage = df_coverage[df_coverage['name'].str.len() != 2]
+
         data_dict = {
-            'Across Taxonomy Hi-C Contacts': 
-                pd.DataFrame({'name': unique_annotations, 
-                              'value': inter_annotation_contact_sum, 
-                              'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]
-                              }).query('value != 0'),
-            'The coverage of different taxa': 
-                pd.DataFrame({'name': unique_annotations, 
-                              'value': total_bin_coverage_sum, 
-                              'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]
-                              }).query('value != 0')
+            'Across Taxonomy Hi-C Contacts': df_contacts,
+            'The coverage of different taxa': df_coverage
         }
     
         bar_fig = create_bar_chart(data_dict)
@@ -695,6 +706,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
 
     # If a node is selected, don't return the histogram
     return cyto_elements, None, cyto_style
+
 
 # Function to visualize bin relationships
 def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin):

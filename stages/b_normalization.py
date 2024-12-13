@@ -421,6 +421,8 @@ def create_normalization_layout():
 
         ], id='normalization-parameters', className="my-3"),
         
+        html.Label("Don't enable these two options if the Binning Information File and Taxonomy Information File were not uploaded!",
+                   style={'color': 'orange', 'font-weight': 'bold'}),
         html.Div([
             dcc.Checklist(
                 id='remove-unclassified-contigs',
@@ -433,7 +435,6 @@ def create_normalization_layout():
                 options=[{'label': '  Remove Host-Host Interactions', 'value': 'remove_host'}],
                 value=['remove_host'],
             ),
-            html.Label("Don't enable these two options if the Binning Information File and Taxonomy Information File were not uploaded."),
         ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}),
     ])
 
