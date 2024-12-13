@@ -179,8 +179,8 @@ def register_results_callbacks(app):
         if current_stage != 'Visualization':
             raise PreventUpdate
             
-        contig_info_path = os.path.join('output', user_folder, 'contig_info.csv')
-        normalized_matrix_path = os.path.join('output', user_folder, 'normalized_matrix.npz')
+        contig_info_path = os.path.join('output', user_folder, 'contig_info_final.csv')
+        normalized_matrix_path = os.path.join('output', user_folder, 'normalized_contig_matrix.npz')
         
         contig_info = pd.read_csv(contig_info_path)
         norm_sparse_matrix = load_npz(normalized_matrix_path).tocoo()

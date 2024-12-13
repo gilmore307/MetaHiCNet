@@ -28,10 +28,10 @@ def preprocess_normalization(user_folder, assets_folder='output'):
         folder_path = os.path.join(assets_folder, user_folder)
 
         # Define paths for the files within the folder
-        contig_info_path = os.path.join(folder_path, 'contig_info.csv')
+        contig_info_path = os.path.join(folder_path, 'contig_info_final.csv')
         contig_info = pd.read_csv(contig_info_path)
         
-        contact_matrix_path = os.path.join(folder_path, 'unnormalized_matrix.npz')
+        contact_matrix_path = os.path.join(folder_path, 'unnormalized_contig_matrix.npz')
         contact_matrix = load_npz(contact_matrix_path).tocoo()
 
         return contig_info, contact_matrix
@@ -276,8 +276,9 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         return None
 
 def generating_bin_information(contig_info, contact_matrix, remove_unclassified_contigs=False, remove_host_host=False):
-    # Ensure dense matrix for processing
     dense_matrix = contact_matrix.toarray()
+    np.fill_diagonal(dense_matrix, 0)
+
 
     # Handle unclassified contigs
     if remove_unclassified_contigs:
@@ -342,9 +343,12 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
     )
     
     for annotation_i, annotation_j, value in results:
+        if annotation_i == annotation_j:
+            value = 0
+            
         bin_contact_matrix.at[annotation_i, annotation_j] = value
         bin_contact_matrix.at[annotation_j, annotation_i] = value
-
+    
     # Convert to COO sparse matrices for storage
     bin_contact_matrix = coo_matrix(bin_contact_matrix)
 
@@ -533,26 +537,23 @@ def register_normalization_callbacks(app):
         os.makedirs(user_output_path, exist_ok=True)
     
         bin_info_final_path = os.path.join(user_output_path, 'bin_info_final.csv')
-        bin_contact_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
-        contig_info_path = os.path.join(user_output_path, 'contig_info.csv')
-        normalized_matrix_path = os.path.join(user_output_path, 'normalized_matrix.npz')
-        unnormalized_matrix_path = os.path.join(user_output_path, 'unnormalized_matrix.npz')
+        bin_contact_matrix_path = os.path.join(user_output_path, 'normalized_bin_matrix.npz')
+        contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
+        normalized_matrix_path = os.path.join(user_output_path, 'normalized_contig_matrix.npz')
     
         # Save each file
         bin_info.to_csv(bin_info_final_path, index=False)
         save_npz(bin_contact_matrix_path, bin_contact_matrix)
         contig_info.to_csv(contig_info_path, index=False)
         save_npz(normalized_matrix_path, normalized_matrix)
-        save_npz(unnormalized_matrix_path, contact_matrix)
 
         # Compress saved files into normalized_information.7z
         normalized_archive_path = os.path.join(user_output_path, 'normalized_information.7z')
         with py7zr.SevenZipFile(normalized_archive_path, 'w') as archive:
             archive.write(bin_info_final_path, 'bin_info_final.csv')
-            archive.write(bin_contact_matrix_path, 'bin_contact_matrix.npz')
-            archive.write(contig_info_path, 'contig_info.csv')
-            archive.write(normalized_matrix_path, 'normalized_matrix.npz')
-            archive.write(unnormalized_matrix_path, 'unnormalized_matrix.npz')
+            archive.write(bin_contact_matrix_path, 'normalized_bin_matrix.npz')
+            archive.write(contig_info_path, 'contig_info_final.csv')
+            archive.write(normalized_matrix_path, 'normalized_contig_matrix.npz')
     
         logger.info("File saving completed successfully.")
     

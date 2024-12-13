@@ -241,7 +241,7 @@ def create_upload_layout_method2():
                 'unnormalized-data-folder', 
                 'Upload Unnormalized Data Folder (.7z)', 
                 'assets/examples/unnormalized_information.7z',
-                "The folder must include the following files: 'contig_info.csv' and 'unnormalized_matrix.npz'."
+                "The folder must include the following files: 'contig_info_final.csv' and 'unnormalized_contig_matrix.npz'."
             ))
         ])
     ])
@@ -253,7 +253,7 @@ def create_upload_layout_method3():
                 'normalized-data-folder', 
                 'Upload Visualization Data Folder (.7z)', 
                 'assets/examples/normalized_information.7z',
-                "This folder must include the following files: 'bin_info_final.csv', 'contig_info.csv', 'contig_contact_matrix.npz', 'bin_contact_matrix.npz'."
+                "This folder must include the following files: 'bin_info_final.csv', 'contig_info_final.csv', 'normalized_contig_matrix.npz.npz', 'normalized_bin_matrix.npz'."
             ))
         ])
     ])
@@ -447,7 +447,7 @@ def register_preparation_callbacks(app):
             contig_info_file = os.path.join('assets', 'examples', 'contig_information.csv')
             contig_matrix_file = os.path.join('assets', 'examples', 'raw_contact_matrix.npz')
             binning_info_file = os.path.join('assets', 'examples', 'binning_information.csv')
-            bin_taxonomy_file = os.path.join('assets', 'examples', 'taxonomy_information.csv')
+            taxonomy_info_file = os.path.join('assets', 'examples', 'taxonomy_information.csv')
     
             # Load files from the folder
             contig_data = pd.read_csv(contig_info_file)
@@ -466,7 +466,7 @@ def register_preparation_callbacks(app):
             
             # Load binning and taxonomy data
             binning_data = pd.read_csv(binning_info_file)
-            taxonomy_data = pd.read_csv(bin_taxonomy_file)
+            taxonomy_data = pd.read_csv(taxonomy_info_file)
     
         elif triggered_input == 'execute-button':
             try:
@@ -540,15 +540,15 @@ def register_preparation_callbacks(app):
             user_output_folder = os.path.join('output', user_folder)
             os.makedirs(user_output_folder, exist_ok=True)
 
-            save_npz(os.path.join('output', user_folder, 'unnormalized_matrix.npz'), contig_matrix_data)
+            save_npz(os.path.join('output', user_folder, 'unnormalized_contig_matrix.npz'), contig_matrix_data)
             encoded_csv_content = base64.b64encode(combined_data.to_csv(index=False).encode()).decode()
-            save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info.csv', user_folder)
+            save_file_to_user_folder(f"data:text/csv;base64,{encoded_csv_content}", 'contig_info_final.csv', user_folder)
             # Compress into a 7z archive
             user_output_folder = os.path.join('output', user_folder)
             unnormalized_archive_path = os.path.join(user_output_folder, 'unnormalized_information.7z')
             with py7zr.SevenZipFile(unnormalized_archive_path, 'w') as archive:
-                archive.write(os.path.join(user_output_folder, 'unnormalized_matrix.npz'), 'unnormalized_matrix.npz')
-                archive.write(os.path.join(user_output_folder, 'contig_info.csv'), 'contig_info.csv')
+                archive.write(os.path.join(user_output_folder, 'unnormalized_contig_matrix.npz'), 'unnormalized_contig_matrix.npz')
+                archive.write(os.path.join(user_output_folder, 'contig_info_final.csv'), 'contig_info_final.csv')
             return True, ""
     
         except Exception as e:
@@ -619,7 +619,7 @@ def register_preparation_callbacks(app):
             with py7zr.SevenZipFile(io.BytesIO(decoded), mode='r') as archive:
                 archive.extractall(path=user_folder_path)
                 
-            contig_info_path = os.path.join(user_folder_path, 'contig_info.csv')    
+            contig_info_path = os.path.join(user_folder_path, 'contig_info_final.csv')    
             contig_information = pd.read_csv(contig_info_path)
             excluded_columns = [
                 'Contig index', 
@@ -634,7 +634,6 @@ def register_preparation_callbacks(app):
             taxonomy_levels_key = f'{user_folder}:taxonomy-levels'
             save_to_redis(taxonomy_levels_key, taxonomy_levels)
                 
-            
             logger.info("Validation and extraction successful for Method 2.")
             return True  # Validation and extraction succeeded
 
@@ -708,7 +707,7 @@ def register_preparation_callbacks(app):
                 archive.extractall(path=user_output_path)
         
             bin_info_path = os.path.join(user_output_path, 'bin_info_final.csv')
-            bin_matrix_path = os.path.join(user_output_path, 'bin_contact_matrix.npz')
+            bin_matrix_path = os.path.join(user_output_path, 'normalized_bin_matrix.npz')
         
             # Redis keys specific to each user folder
             bin_info_key = f'{user_folder}:bin-information'

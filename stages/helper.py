@@ -83,6 +83,7 @@ def get_indexes(annotations, information_table, column):
 
 def calculate_submatrix_sum(pair, contig_indexes_dict, matrix):
     annotation_i, annotation_j = pair
+
     indexes_i = contig_indexes_dict[annotation_i]
     indexes_j = contig_indexes_dict[annotation_j]
     sub_matrix = matrix[np.ix_(indexes_i, indexes_j)]

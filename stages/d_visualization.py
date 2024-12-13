@@ -718,6 +718,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
     # Get all indices that have contact with the selected bin
     contacts_indices = bin_dense_matrix[selected_bin_index].nonzero()[0]
     contacts_indices = contacts_indices[contacts_indices != selected_bin_index]
+    print(contacts_indices)
 
     # If no contacts found, raise a warning
     if len(contacts_indices) == 0:
@@ -836,6 +837,8 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
     return cyto_elements, bar_fig
 
 def prepare_data(bin_information, bin_dense_matrix, taxonomy_level):
+    
+    np.fill_diagonal(bin_dense_matrix, 0)
     
     bin_information['Annotation'] = bin_information[taxonomy_level]
     bin_information['Visibility'] = 1
