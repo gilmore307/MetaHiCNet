@@ -716,8 +716,10 @@ def register_preparation_callbacks(app):
                     'Contig length', 
                     'Contig coverage', 
                     'Within-contig Hi-C contacts', 
+                    'Connected bins',
                     'Bin index', 
-                    'Category'
+                    'Category',
+                    'Visibility'
                 ]
                 taxonomy_levels = np.array([col for col in bin_information.columns if col not in excluded_columns])
                 

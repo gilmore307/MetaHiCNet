@@ -307,7 +307,7 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
     
     # Iterate over rows and compute styles
     for _, row in information_data.iterrows():
-        if row['Annotation'] in unique_annotations:
+        if row[taxonomy_level] in unique_annotations:
             style_id_column(row[id_column],  row['Category'], styles)
             
     # Add styles for italic taxonomy columns
@@ -633,7 +633,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     node_colors = {}
     for annotation in connected_nodes:
         bin_type = bin_information.loc[
-            bin_information['Annotation'] == annotation, 'Category'
+            bin_information[taxonomy_level] == annotation, 'Category'
         ].values[0]
         color = type_colors.get(bin_type, default_color)
         node_colors[annotation] = color
@@ -670,7 +670,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     
     if not selected_node:
         inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
-        total_bin_coverage_sum = bin_information.groupby('Annotation').apply(
+        total_bin_coverage_sum = bin_information.groupby(taxonomy_level).apply(
             lambda group: group['Contig coverage'].mul(group['Contig length']).sum() / 
                           group['The number of restriction sites'].sum()
         ).reindex(unique_annotations).fillna(0).values
@@ -718,7 +718,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         return cyto_elements, create_bar_chart(data_dict) , cyto_style
 
 # Function to visualize bin relationships
-def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin):
+def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, selected_bin):
     data_dict = {}
     # Error handling for selected_bin
     if selected_bin not in bin_information['Bin index'].values:
@@ -732,7 +732,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
         logger.error(f'Selected bin index {selected_bin_index} exceeds matrix dimensions.')
         return [], create_bar_chart(data_dict)
 
-    selected_annotation = bin_information.loc[selected_bin_index, 'Annotation']
+    selected_annotation = bin_information.loc[selected_bin_index, taxonomy_level]
 
     # Get all indices that have contact with the selected bin
     contacts_indices = bin_dense_matrix[selected_bin_index].nonzero()[0]
@@ -742,7 +742,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
         logger.warning(f'No contacts found for the selected bin: {selected_bin}')
         return [], create_bar_chart(data_dict)
     else:
-        original_contacts_annotation = bin_information.loc[contacts_indices, 'Annotation']
+        original_contacts_annotation = bin_information.loc[contacts_indices, taxonomy_level]
         contacts_bins = bin_information.loc[contacts_indices, 'Bin index']
 
     G = nx.Graph()
@@ -762,7 +762,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
         
     # Add annotation nodes
     for annotation in contacts_annotation.unique():
-        annotation_type = bin_information.loc[bin_information['Annotation'] == annotation, 'Category'].values[0]
+        annotation_type = bin_information.loc[bin_information[taxonomy_level] == annotation, 'Category'].values[0]
         color_scale = color_scale_mapping.get(annotation_type, [default_color])  
         color = color_scale[color_index % len(color_scale)]
         color_index += 1
@@ -772,7 +772,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
     contact_values = []
     
     for annotation in contacts_annotation.unique():
-        annotation_bins = bin_information[bin_information['Annotation'] == annotation].index
+        annotation_bins = bin_information[bin_information[taxonomy_level] == annotation].index
         annotation_bins = annotation_bins[annotation_bins < bin_dense_matrix.shape[1]]
         contact_value = bin_dense_matrix[selected_bin_index, annotation_bins].sum()
         
@@ -821,7 +821,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
         'name': contacts_bins, 
         'value': bin_contact_values, 
         'color': [G.nodes[bin]['color'] for bin in contacts_bins],
-        'hover': [f"({bin_information.loc[bin_information['Bin index'] == bin, 'Annotation'].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
+        'hover': [f"({bin_information.loc[bin_information['Bin index'] == bin, taxonomy_level].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
     }).query('value != 0')
     if not bin_data.empty:
         data_dict[f'Hi-C Contacts with {selected_bin}'] = bin_data
@@ -838,33 +838,6 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
     bar_fig = create_bar_chart(data_dict)
 
     return cyto_elements, bar_fig
-
-def prepare_data(bin_information, bin_dense_matrix, taxonomy_level):
-    
-    np.fill_diagonal(bin_dense_matrix, 0)
-    
-    bin_information['Annotation'] = bin_information[taxonomy_level]
-    bin_information['Visibility'] = 1
-    bin_information['Connected bins'] = np.count_nonzero(bin_dense_matrix, axis=1)
-
-    unique_annotations = bin_information['Annotation'].unique()
-    
-    contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
-    bin_indexes_dict = get_indexes(unique_annotations, bin_information, 'Annotation')
-
-    non_self_pairs = list(combinations(unique_annotations, 2))
-    self_pairs = [(x, x) for x in unique_annotations]
-    all_pairs = non_self_pairs + self_pairs
-    
-    results = Parallel(n_jobs=-1)(
-        delayed(calculate_submatrix_sum)(pair, bin_indexes_dict, bin_dense_matrix) for pair in all_pairs
-    )
-    
-    for annotation_i, annotation_j, value in results:
-        contact_matrix.at[annotation_i, annotation_j] = value
-        contact_matrix.at[annotation_j, annotation_i] = value
-
-    return bin_information, unique_annotations, contact_matrix
 
 # Create a logger and add the custom Dash logger handler
 logger = logging.getLogger("app_logger")
@@ -1327,7 +1300,7 @@ def register_visualization_callbacks(app):
         [State('user-folder', 'data')],
         prevent_initial_call=True
     )
-    def update_data(taxonomy_level, user_folder):
+    def generate_contact_matrix(taxonomy_level, user_folder):
         logger.info("Updating taxonomy level data.")
         # Define Redis keys that incorporate the user_folder to avoid concurrency issues
         bin_matrix_key = f'{user_folder}:bin-dense-matrix'
@@ -1338,9 +1311,24 @@ def register_visualization_callbacks(app):
         bin_information = load_from_redis(bin_info_key)
         bin_dense_matrix = load_from_redis(bin_matrix_key)
     
-        bin_information, unique_annotations, contact_matrix = prepare_data(
-            bin_information, bin_dense_matrix, taxonomy_level
+        np.fill_diagonal(bin_dense_matrix, 0)
+            
+        unique_annotations = bin_information[taxonomy_level].unique()
+        
+        contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
+        bin_indexes_dict = get_indexes(unique_annotations, bin_information, taxonomy_level)
+
+        non_self_pairs = list(combinations(unique_annotations, 2))
+        self_pairs = [(x, x) for x in unique_annotations]
+        all_pairs = non_self_pairs + self_pairs
+        
+        results = Parallel(n_jobs=-1)(
+            delayed(calculate_submatrix_sum)(pair, bin_indexes_dict, bin_dense_matrix) for pair in all_pairs
         )
+        
+        for annotation_i, annotation_j, value in results:
+            contact_matrix.at[annotation_i, annotation_j] = value
+            contact_matrix.at[annotation_j, annotation_i] = value
     
         # Create Annotation Table
         column_defs = [
@@ -1363,7 +1351,6 @@ def register_visualization_callbacks(app):
         }
     
         # Save updated data to Redis
-        save_to_redis(bin_info_key, bin_information)
         save_to_redis(unique_annotations_key, unique_annotations)
         save_to_redis(contact_matrix_key, contact_matrix)
     
@@ -1576,7 +1563,7 @@ def register_visualization_callbacks(app):
                     visualization_type = 'bin'
                     selected_bin = selected_node_id
                     selected_annotation = None  # Ensure only one selection
-                elif selected_node_id in bin_information['Annotation'].values:
+                elif selected_node_id in bin_information[taxonomy_level].values:
                     visualization_type = 'basic'
                     selected_annotation = selected_node_id
                     selected_bin = None  # Ensure only one selection
@@ -1740,7 +1727,7 @@ def register_visualization_callbacks(app):
             selected_nodes.append(selected_bin)
     
             logger.info(f"Displaying bin Interaction for selected bin: {selected_bin}.")
-            cyto_elements, bar_fig = bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin)
+            cyto_elements, bar_fig = bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, selected_bin)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}

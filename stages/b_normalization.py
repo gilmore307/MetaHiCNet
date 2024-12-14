@@ -362,6 +362,9 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
     bin_contact_matrix = coo_matrix((data, (row_indices, col_indices)), shape=(len(unique_bins), len(unique_bins)))
     
     bin_info=bin_info.reset_index(drop=True)
+    
+    bin_info['Connected bins'] = np.count_nonzero(bin_contact_matrix.toarray(), axis=1)
+    bin_info['Visibility'] = 1
 
     return bin_info, bin_contact_matrix
 
