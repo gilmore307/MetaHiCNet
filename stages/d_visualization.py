@@ -12,7 +12,6 @@ from dash import callback_context
 import plotly.express as px
 import math 
 from math import sqrt, sin, cos
-import time
 import logging
 import json
 from joblib import Parallel, delayed
@@ -1511,7 +1510,6 @@ def register_visualization_callbacks(app):
             pass
     
         elif 'data-loaded' in triggered_props:
-            #time.sleep(2)
             visualization_type = visualization_type
             selected_bin = selected_bin
     
@@ -1584,29 +1582,26 @@ def register_visualization_callbacks(app):
          Output('cyto-graph', 'layout'),
          Output('legend-div', 'children'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input('current-visualization-mode', 'data'),
-         Input('taxonomy-level-selector', 'value')],
+        [Input('current-visualization-mode', 'data')],
         [State('visualization-selector', 'value'),
          State('user-folder', 'data'),
          State('data-loaded', 'data')],
         prevent_initial_call=True
     )
-    def update_visualization(current_visualization_mode, taxonomy_level, visualization_type, user_folder, data_loaded):
+    def update_visualization(current_visualization_mode, visualization_type, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
     
         ctx = callback_context
         triggered_props = [t['prop_id'].split('.')[0] for t in ctx.triggered]
-
-        if 'taxonomy-level-selector' in triggered_props:
-            cyto_elements = []
-            return cyto_elements, no_update, no_update, no_update, no_update, no_update, no_update, no_update, 1
         
         logger.info(f"Updating visualization. Triggered by: {triggered_props}")
         logger.info(f"Visualization type: {visualization_type}")
             
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
         taxonomy_level_list = load_from_redis(f'{user_folder}:taxonomy-levels')
+        bin_information = load_from_redis(f'{user_folder}:bin-information')
+
     
         selected_nodes = []
         selected_edges = []
@@ -1622,7 +1617,6 @@ def register_visualization_callbacks(app):
             
         if visualization_type == 'taxonomy':
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
-            bin_information = load_from_redis(f'{user_folder}:bin-information')
     
             logger.info("Displaying Taxonomy Framework visualization.")
             treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_level_list)
@@ -1638,9 +1632,8 @@ def register_visualization_callbacks(app):
             legend = create_legend_html(type_colors)
     
         elif visualization_type == 'basic':
-            bin_information = load_from_redis(f'{user_folder}:bin-information')
-            unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
+            
             logger.info("Displaying Taxonomy Interaction.")
             selected_nodes.append(selected_annotation)
     
@@ -1671,10 +1664,9 @@ def register_visualization_callbacks(app):
     
         elif visualization_type == 'bin' and selected_bin:
             bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
-            bin_information = load_from_redis(f'{user_folder}:bin-information')
-            selected_nodes.append(selected_bin)
     
             logger.info(f"Displaying bin Interaction for selected bin: {selected_bin}.")
+            selected_nodes.append(selected_bin)
             cyto_elements, bar_fig = bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, selected_bin)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
@@ -1692,7 +1684,7 @@ def register_visualization_callbacks(app):
                         color_annotation_map[annotation] = color
                         
                 legend = create_legend_html(color_annotation_map)
-
+                
         else:
             raise PreventUpdate
     
@@ -1700,6 +1692,14 @@ def register_visualization_callbacks(app):
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
     
         return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, 1
+    
+    @app.callback(
+        Output('cyto-graph', 'elements', allow_duplicate=True),
+        Input('taxonomy-level-selector', 'value'),
+        prevent_initial_call=True
+    )
+    def refresh_visualization(taxonomy_level):
+        return []
     
     @app.callback(
         Output('bar-chart', 'figure', allow_duplicate=True),
