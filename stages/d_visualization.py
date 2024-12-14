@@ -1635,6 +1635,7 @@ def register_visualization_callbacks(app):
         ctx = callback_context
         triggered_props = [t['prop_id'].split('.')[0] for t in ctx.triggered]
         if 'data-loaded' in triggered_props:
+            print(1)
             cyto_elements = []
             return cyto_elements, no_update, no_update, no_update, no_update, no_update, no_update, no_update, 1
         
@@ -1655,15 +1656,6 @@ def register_visualization_callbacks(app):
         taxonomy_level = current_visualization_mode.get('taxonomy_level')
         selected_annotation = current_visualization_mode.get('selected_annotation')
         selected_bin = current_visualization_mode.get('selected_bin')
-
-        if 'data-loaded' in triggered_props:
-            cyto_elements = []
-            cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            
-            bar_fig = create_bar_chart({})
-            treemap_fig = go.Figure()
-            treemap_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
-            return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, 1
             
         if visualization_type == 'taxonomy':
             contact_matrix = load_from_redis(f'{user_folder}:contact-matrix')
@@ -1715,6 +1707,7 @@ def register_visualization_callbacks(app):
             legend = create_legend_html(type_colors)
     
         elif visualization_type == 'bin' and selected_bin:
+            print(2)
             bin_dense_matrix = load_from_redis(f'{user_folder}:bin-dense-matrix')
             bin_information = load_from_redis(f'{user_folder}:bin-information')
             selected_nodes.append(selected_bin)
