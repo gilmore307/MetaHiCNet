@@ -720,18 +720,8 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
 # Function to visualize bin relationships
 def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, selected_bin):
     data_dict = {}
-    # Error handling for selected_bin
-    if selected_bin not in bin_information['Bin index'].values:
-        logger.error(f'Selected bin {selected_bin} not found in bin_information.')
-        return [], create_bar_chart(data_dict)
     
-    # Find the index of the selected bin
     selected_bin_index = bin_information[bin_information['Bin index'] == selected_bin].index[0]
-    
-    if selected_bin_index >= bin_dense_matrix.shape[0]:
-        logger.error(f'Selected bin index {selected_bin_index} exceeds matrix dimensions.')
-        return [], create_bar_chart(data_dict)
-
     selected_annotation = bin_information.loc[selected_bin_index, taxonomy_level]
 
     # Get all indices that have contact with the selected bin
@@ -740,6 +730,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
     # If no contacts found, raise a warning
     if len(contacts_indices) == 0:
         logger.warning(f'No contacts found for the selected bin: {selected_bin}')
+        print(1)
         return [], create_bar_chart(data_dict)
     else:
         original_contacts_annotation = bin_information.loc[contacts_indices, taxonomy_level]
@@ -836,7 +827,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
         data_dict[f'Hi-C Contacts with {selected_annotation}'] = annotation_data
 
     bar_fig = create_bar_chart(data_dict)
-
+    print(2)
     return cyto_elements, bar_fig
 
 # Create a logger and add the custom Dash logger handler
@@ -1551,7 +1542,7 @@ def register_visualization_callbacks(app):
     
         # If data-loaded is triggered
         elif 'data-loaded' in triggered_props:
-            time.sleep(2)
+            #time.sleep(2)
             visualization_type = visualization_type
             selected_bin = selected_bin
     
@@ -1589,7 +1580,6 @@ def register_visualization_callbacks(app):
                 selected_bin = None  # Ensure only one selection
     
         else:
-            # No meaningful trigger, prevent update
             raise PreventUpdate
     
         # Build the current visualization mode
@@ -1645,6 +1635,10 @@ def register_visualization_callbacks(app):
     
         ctx = callback_context
         triggered_props = [t['prop_id'].split('.')[0] for t in ctx.triggered]
+        if 'data-loaded' in triggered_props:
+            cyto_elements = []
+            return cyto_elements, no_update, no_update, no_update, no_update, no_update, no_update, no_update, 1
+        
         logger.info(f"Updating visualization. Triggered by: {triggered_props}")
         logger.info(f"Visualization type: {visualization_type}")
             
@@ -1653,7 +1647,7 @@ def register_visualization_callbacks(app):
     
         selected_nodes = []
         selected_edges = []
-        stylesheet = []
+        stylesheet = no_update
         layout = no_update
         legend = None
     
