@@ -375,47 +375,66 @@ def create_legend_html(id_colors):
                            'padding': '10px', 'border': '1px solid #ccc', 'borderRadius': '5px'})
 
 def create_bar_chart(data_dict, taxonomy_level=[]):
+    # Default dropdown and figure for empty or invalid input
+    dropdown = dcc.Dropdown(
+        id='bar-chart-dropdown',
+        style={'width': '100%', 'margin-top': '5px', 'margin-bottom': '5px',}
+    )
+    
+    figure = dcc.Graph(
+        id='bar-chart', 
+        figure=go.Figure(),
+        style={'width': '19vw', 'height': '50vh', 'padding': '10px',
+               'margin-top': '5px', 'margin-bottom': '5px',
+               'border': '1px solid #ccc', 'borderRadius': '5px'}
+    )
+
+    if not data_dict:
+        logger.warning("data_dict is empty, returning empty dropdown and figure.")
+        return [dropdown, figure]
+    
     traces = []
     options = []
-
+    
     # Iterate over the input data dictionary to create traces and dropdown options
     for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
         if data_frame.empty or 'value' not in data_frame.columns:
-            logger.warning(f"No data or 'value' column missing for {trace_name}, skipping trace.")
+            logger.warning(f"No data for {trace_name}, skipping trace.")
             continue
 
         # Sort data based on the trace name and provided taxonomy levels
         if trace_name == "Fraction of classified bins by ranks":
             taxonomy_order = {taxonomy: idx for idx, taxonomy in enumerate(taxonomy_level)}
-
-            # Add taxonomy rank for sorting
             data_frame['taxonomy_rank'] = data_frame['name'].apply(lambda x: taxonomy_order.get(x, float('inf')))
             bar_data = data_frame.sort_values(by=['taxonomy_rank', 'value'], ascending=[True, False])
         else:
             bar_data = data_frame.sort_values(by='value', ascending=False)
-        
-        # Extract colors and hover text
-        bar_colors = bar_data['color']
-        hover_text = bar_data.get('hover', None)
-
-        # Create a bar trace
-        bar_trace = go.Bar(
-            x=bar_data['name'],
-            y=bar_data['value'],
-            name=trace_name,
-            marker_color=bar_colors,
-            visible=(idx == 0),  # Show only the first trace by default
-            hovertext=hover_text if hover_text is not None else None,
-            hoverinfo='text' if hover_text is not None else None
-        )
-        traces.append(bar_trace)
-
-        # Add dropdown options for this trace
-        options.append({'label': trace_name, 'value': trace_name})
+    
+            # Create a bar trace
+            bar_trace = go.Bar(
+                x=bar_data['name'],
+                y=bar_data['value'],
+                name=trace_name,
+                marker_color=bar_data['color'],
+                visible=(idx == 0),  # Show only the first trace by default
+                hovertext=bar_data.get('hover', None),
+                hoverinfo='text' if 'hover' in bar_data.columns else None
+            )
+            traces.append(bar_trace)
+    
+            # Add dropdown options for this trace
+            options.append({'label': trace_name, 'value': trace_name})
 
     if not traces:
         logger.warning("No valid traces created, returning empty figure.")
-        return dcc.Dropdown(id='bar-chart-dropdown'), go.Figure()
+        return [dropdown, figure]
+    
+    dropdown = dcc.Dropdown(
+        id='bar-chart-dropdown',
+        options=options,
+        value=options[0]['value'],
+        style={'width': '100%', 'margin-top': '5px', 'margin-bottom': '5px',}
+    )
 
     # Create the bar chart layout
     bar_layout = go.Layout(
@@ -432,13 +451,6 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
         ),
         margin=dict(t=0, b=0, l=0, r=0),
         legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="center", x=0.5),
-    )
-
-    dropdown = dcc.Dropdown(
-        id='bar-chart-dropdown',
-        options=options,
-        value=options[0]['value'],
-        style={'width': '100%', 'margin-top': '5px', 'margin-bottom': '5px',}
     )
     
     figure = dcc.Graph(
@@ -702,17 +714,18 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
 
 # Function to visualize bin relationships
 def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin):
+    data_dict = {}
     # Error handling for selected_bin
     if selected_bin not in bin_information['Bin index'].values:
         logger.error(f'Selected bin {selected_bin} not found in bin_information.')
-        return [], go.Figure()
+        return [], create_bar_chart(data_dict)
     
     # Find the index of the selected bin
     selected_bin_index = bin_information[bin_information['Bin index'] == selected_bin].index[0]
     
     if selected_bin_index >= bin_dense_matrix.shape[0]:
         logger.error(f'Selected bin index {selected_bin_index} exceeds matrix dimensions.')
-        return [], go.Figure()
+        return [], create_bar_chart(data_dict)
 
     selected_annotation = bin_information.loc[selected_bin_index, 'Annotation']
 
@@ -722,7 +735,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
     # If no contacts found, raise a warning
     if len(contacts_indices) == 0:
         logger.warning(f'No contacts found for the selected bin: {selected_bin}')
-        return [], go.Figure()
+        return [], create_bar_chart(data_dict)
     else:
         original_contacts_annotation = bin_information.loc[contacts_indices, 'Annotation']
         contacts_bins = bin_information.loc[contacts_indices, 'Bin index']
@@ -752,6 +765,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
 
     # Collect all contact values between selected_annotation and other annotations
     contact_values = []
+    
     for annotation in contacts_annotation.unique():
         annotation_bins = bin_information[bin_information['Annotation'] == annotation].index
         annotation_bins = annotation_bins[annotation_bins < bin_dense_matrix.shape[1]]
@@ -761,8 +775,11 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
             contact_values.append(contact_value)
             if G.has_node(annotation):
                 G.add_edge(selected_annotation, annotation, weight=1)
-    
-    scaled_weights = generate_gradient_values(contact_values, 1, 2) if contact_values else [1] * len(contacts_annotation.unique())
+        elif annotation == selected_annotation:
+            contact_values.append(0)
+                
+    filtered_contact_values = list(filter(None, contact_values))
+    scaled_weights = generate_gradient_values(filtered_contact_values, 1, 2) if contact_values else [1] * len(contacts_annotation.unique())
     for i, (u, v) in enumerate(G.edges()):
         G[u][v]['weight'] = scaled_weights[i]
         
@@ -801,24 +818,23 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
             'value': bin_contact_values, 
             'color': [G.nodes[bin]['color'] for bin in contacts_bins],
             'hover': [f"({bin_information.loc[bin_information['Bin index'] == bin, 'Annotation'].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
-        })
+        }).query('value != 0')
+        if not bin_data.empty:
+            data_dict['Across Bin Hi-C Contacts'] = bin_data
     except:
-        bin_data = pd.DataFrame()
+        pass
     
-    # Attempt to create annotation_data DataFrame
     try:
+        unique_annotations = contacts_annotation.unique()
         annotation_data = pd.DataFrame({
-            'name': contacts_annotation.unique(),
+            'name': unique_annotations,
             'value': contact_values,
-            'color': [G.nodes[annotation]['border_color'] for annotation in contacts_annotation.unique()]
-        })
+            'color': [G.nodes[annotation]['border_color'] for annotation in unique_annotations]
+        }).query('value != 0')
+        if not annotation_data.empty:
+            data_dict['Across Taxa Hi-C Contacts'] = annotation_data
     except:
-        annotation_data = pd.DataFrame()  # or assign None if that fits better with your app
-
-    data_dict = {
-        'Across Bin Hi-C Contacts': bin_data,
-        'Across Taxa Hi-C Contacts': annotation_data
-    }
+        pass
 
     bar_fig = create_bar_chart(data_dict)
 

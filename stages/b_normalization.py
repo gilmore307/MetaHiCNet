@@ -436,7 +436,7 @@ def create_normalization_layout():
 
         ], id='normalization-parameters', className="my-3"),
         
-        html.Label("Don't enable these two options if the Binning Information File and Taxonomy Information File were not uploaded!",
+        html.Label("Don't enable the following two options if the Binning Information File and Taxonomy Information File were not uploaded!",
                    style={'color': 'orange', 'font-weight': 'bold'}),
         html.Div([
             dcc.Checklist(
