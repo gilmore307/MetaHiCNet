@@ -464,24 +464,17 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
     return [dropdown, figure]
 
 def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_columns):
+    data_dict = {}
     taxonomy_columns = taxonomy_columns.tolist() if isinstance(taxonomy_columns, np.ndarray) else taxonomy_columns
-    logger.debug("Starting taxonomy_visualization function.")
 
     # Check input validity
     if taxonomy_columns is None or len(taxonomy_columns) == 0:
         logger.error("taxonomy_columns is empty or not provided.")
-        raise ValueError("taxonomy_columns must be provided.")
-
-    logger.debug(f"taxonomy_columns: {taxonomy_columns}")
-    logger.debug(f"bin_information columns: {bin_information.columns}")
-    logger.debug(f"Number of unique_annotations: {len(unique_annotations)}")
+        return go.Figure(), create_bar_chart(data_dict)
 
     # Dynamically map taxonomy levels
     level_mapping = {"Microbial Community": 1, "Category": 2}  # Assign Community and Category fixed levels
     level_mapping.update({level: idx + 3 for idx, level in enumerate(taxonomy_columns)})  # Taxonomy levels start at 3
-    logger.debug(f"Level mapping: {level_mapping}")
-
-    logger.debug(f"Level mapping: {level_mapping}")
 
     records = []
     existing_annotations = set()
@@ -546,11 +539,8 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
             # Set current annotation as parent for the next level
             parent = annotation
 
-    logger.debug(f"Number of records created: {len(records)}")
     
     hierarchy_df = pd.DataFrame(records)
-    logger.debug(f"Hierarchy DataFrame head:\n{hierarchy_df.head()}")
-
     hierarchy_df['scaled_coverage'] = generate_gradient_values(hierarchy_df['total coverage'], 10, 30)
     hierarchy_df.loc[hierarchy_df['type'] == 'virus', 'scaled_coverage'] *= 20
 
@@ -560,7 +550,6 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
         return ', '.join(bin_list)
 
     hierarchy_df['limited_bins'] = hierarchy_df['bin'].apply(lambda bins: format_bins(bins))
-    logger.debug("Processed bin formatting.")
 
     # Create Treemap
     fig = px.treemap(
@@ -586,7 +575,6 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
         autosize=True,
         margin=dict(t=30, b=0, l=0, r=0)
     )
-    logger.debug("Treemap created.")
 
     # Generate classification bar chart
     classification_data = []
@@ -603,24 +591,28 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
         })
 
     classification_data_df = pd.DataFrame(classification_data)
-    logger.debug(f"Classification data:\n{classification_data_df}")
+    
 
     data_dict = {
-        'Fraction of classified bins by ranks': classification_data_df
+        'Fraction of Classified Bins by Taxonmic Ranks': classification_data_df
     }
+    
+    if classification_data:
+        classification_data_df = pd.DataFrame(classification_data)
+        data_dict['Fraction of Classified Bins by Taxonmic Ranks'] = classification_data_df
 
     bar_fig = create_bar_chart(data_dict, taxonomy_columns)
-    logger.debug("Bar chart created.")
 
     return fig, bar_fig
 
 #Function to visualize annotation relationship
-def annotation_visualization(bin_information, unique_annotations, contact_matrix, selected_node=None):
+def annotation_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_level, selected_node=None):
+    data_dict = {}
     G = nx.Graph()
     
     if selected_node and len(selected_node) == 2:
         logger.warning(f"Selected node '{selected_node}' is not classified.")
-        raise ValueError(f"The selected node '{selected_node}' is not classified.")
+        return [], create_bar_chart(data_dict), {}
     
     # Filter out nodes with names of length 2
     filtered_unique_annotations = [annotation for annotation in unique_annotations if len(annotation) != 2]
@@ -692,6 +684,9 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         # Filter out rows where 'name' length is 2
         df_contacts = df_contacts[df_contacts['name'].str.len() != 2]
         
+        if not df_contacts.empty:
+            data_dict['Across Taxonomy Hi-C Contacts'] = df_contacts
+        
         # For 'The coverage of different taxa' DataFrame
         df_coverage = pd.DataFrame({'name': unique_annotations, 
                                      'value': total_bin_coverage_sum, 
@@ -700,17 +695,27 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         
         # Filter out rows where 'name' length is 2
         df_coverage = df_coverage[df_coverage['name'].str.len() != 2]
-
-        data_dict = {
-            'Across Taxonomy Hi-C Contacts': df_contacts,
-            'The coverage of different taxa': df_coverage
-        }
+        
+        if not df_coverage.empty:
+            data_dict[f'The Coverage of Different {taxonomy_level}s'] = df_coverage
     
         bar_fig = create_bar_chart(data_dict)
         return cyto_elements, bar_fig, cyto_style
-
-    # If a node is selected, don't return the histogram
-    return cyto_elements, None, cyto_style
+    
+    else:
+        selected_node_contacts = []
+        for annotation in connected_nodes:
+            if annotation != selected_node:
+                weight = contact_matrix.at[selected_node, annotation]
+                if weight > 0:
+                    selected_node_contacts.append({'name': annotation, 'value': weight, 
+                                                   'color': node_colors.get(annotation, 'rgba(0,128,0,0.8)')})
+        
+        if selected_node_contacts:
+            df_selected_contacts = pd.DataFrame(selected_node_contacts)
+            data_dict[f'Contacts with {selected_node}'] = df_selected_contacts
+            
+        return cyto_elements, create_bar_chart(data_dict) , cyto_style
 
 # Function to visualize bin relationships
 def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, selected_bin):
@@ -812,29 +817,23 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, sel
     # Prepare data for histogram
     bin_contact_values = bin_dense_matrix[selected_bin_index, contacts_indices]
     
-    try:
-        bin_data = pd.DataFrame({
-            'name': contacts_bins, 
-            'value': bin_contact_values, 
-            'color': [G.nodes[bin]['color'] for bin in contacts_bins],
-            'hover': [f"({bin_information.loc[bin_information['Bin index'] == bin, 'Annotation'].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
-        }).query('value != 0')
-        if not bin_data.empty:
-            data_dict['Across Bin Hi-C Contacts'] = bin_data
-    except:
-        pass
-    
-    try:
-        unique_annotations = contacts_annotation.unique()
-        annotation_data = pd.DataFrame({
-            'name': unique_annotations,
-            'value': contact_values,
-            'color': [G.nodes[annotation]['border_color'] for annotation in unique_annotations]
-        }).query('value != 0')
-        if not annotation_data.empty:
-            data_dict['Across Taxa Hi-C Contacts'] = annotation_data
-    except:
-        pass
+    bin_data = pd.DataFrame({
+        'name': contacts_bins, 
+        'value': bin_contact_values, 
+        'color': [G.nodes[bin]['color'] for bin in contacts_bins],
+        'hover': [f"({bin_information.loc[bin_information['Bin index'] == bin, 'Annotation'].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
+    }).query('value != 0')
+    if not bin_data.empty:
+        data_dict[f'Hi-C Contacts with {selected_bin}'] = bin_data
+
+    unique_annotations = contacts_annotation.unique()
+    annotation_data = pd.DataFrame({
+        'name': unique_annotations,
+        'value': contact_values,
+        'color': [G.nodes[annotation]['border_color'] for annotation in unique_annotations]
+    }).query('value != 0')
+    if not annotation_data.empty:
+        data_dict[f'Hi-C Contacts with {selected_annotation}'] = annotation_data
 
     bar_fig = create_bar_chart(data_dict)
 
@@ -1681,19 +1680,7 @@ def register_visualization_callbacks(app):
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             
-            empty_dropdown = dcc.Dropdown(
-                id='bar-chart-dropdown',
-                options=[],  # No options
-                value=None,
-                style={'width': '100%', 'margin-bottom': '10px'}
-            )
-            empty_figure = dcc.Graph(
-                id='bar-chart',
-                figure=go.Figure(),  # Empty figure
-                config={'displayModeBar': False}
-            )
-            bar_fig = [empty_dropdown, empty_figure]
-            
+            bar_fig = create_bar_chart({})
             treemap_fig = go.Figure()
             treemap_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
             return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, 1
@@ -1730,11 +1717,11 @@ def register_visualization_callbacks(app):
                         selected_edges.append((selected_annotation, connected_annotation))
     
                 cyto_elements, bar_fig, layout = annotation_visualization(
-                    bin_information, unique_annotations, contact_matrix, selected_node=selected_annotation
+                    bin_information, unique_annotations, contact_matrix, taxonomy_level, selected_node=selected_annotation
                 )
             else:
                 cyto_elements, bar_fig, layout = annotation_visualization(
-                    bin_information, unique_annotations, contact_matrix
+                    bin_information, unique_annotations, contact_matrix, taxonomy_level
                 )
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
