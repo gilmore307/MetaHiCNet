@@ -730,7 +730,6 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
     # If no contacts found, raise a warning
     if len(contacts_indices) == 0:
         logger.warning(f'No contacts found for the selected bin: {selected_bin}')
-        print(1)
         return [], create_bar_chart(data_dict)
     else:
         original_contacts_annotation = bin_information.loc[contacts_indices, taxonomy_level]
@@ -1542,7 +1541,7 @@ def register_visualization_callbacks(app):
     
         # If data-loaded is triggered
         elif 'data-loaded' in triggered_props:
-            #time.sleep(2)
+            time.sleep(2)
             visualization_type = visualization_type
             selected_bin = selected_bin
     
