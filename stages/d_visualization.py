@@ -115,91 +115,6 @@ def add_selection_styles(selected_nodes=None, selected_edges=None):
 
     return cyto_stylesheet
 
-def create_bar_chart(data_dict, taxonomy_level = []):
-    traces = []
-    buttons = []
-
-    for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
-        if data_frame.empty or 'value' not in data_frame.columns:
-            logger.warning(f"No data or 'value' column missing for {trace_name}, skipping trace.")
-            continue
-
-        # Sort data differently based on trace_name
-        if trace_name == "Fraction of classified bins by ranks":
-            # Create a dictionary to rank taxonomy levels based on their order in taxonomy_columns
-            taxonomy_order = {taxonomy: idx for idx, taxonomy in enumerate(taxonomy_level)}
-
-            # Rank the 'name' column by its position in taxonomy_columns
-            data_frame['taxonomy_rank'] = data_frame['name'].apply(lambda x: taxonomy_order.get(x, float('inf')))
-
-            # Sort by the taxonomy rank first, then by 'value'
-            bar_data = data_frame.sort_values(by=['taxonomy_rank', 'value'], ascending=[True, False])
-        else:
-            # Default sorting by 'value' for other traces
-            bar_data = data_frame.sort_values(by='value', ascending=False)
-            
-        bar_colors = bar_data['color']
-        hover_text = bar_data.get('hover', None)
-
-        bar_trace = go.Bar(
-            x=bar_data['name'],
-            y=bar_data['value'],
-            name=trace_name,
-            marker_color=bar_colors,
-            visible=(idx == 0),  # Default visibility
-            hovertext=hover_text if hover_text is not None else None,
-            hoverinfo='text' if hover_text is not None else None
-        )
-        traces.append(bar_trace)
-
-        # Configure dropdown button
-        buttons.append(
-            dict(
-                label=trace_name,
-                method="update",
-                args=[
-                    {"visible": [i == idx for i in range(len(data_dict))]},
-                    {"yaxis.autorange": True}
-                ]
-            )
-        )
-
-    if not traces:
-        logger.warning("No valid traces created, returning empty figure.")
-        return go.Figure()
-
-    bar_layout = go.Layout(
-        xaxis=dict(
-            title="",
-            tickangle=-45,
-            tickfont=dict(size=12),
-            rangeslider=dict(visible=True, thickness=0.05),
-        ),
-        yaxis=dict(
-            title="Value",
-            tickfont=dict(size=15),
-            autorange=True,
-        ),
-        margin=dict(t=0, b=0, l=0, r=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="center", x=0.5),
-        updatemenus=[
-            dict(
-                type="dropdown",
-                direction="down",
-                buttons=buttons,
-                showactive=True,
-                x=0.4,
-                xanchor="center",
-                y=1,
-                yanchor="bottom",
-                font=dict(size=16),
-                pad=dict(t=10)
-            )
-        ]
-    )
-
-    return go.Figure(data=traces, layout=bar_layout)
-
 # Function to add opacity to a hex color
 def add_opacity_to_color(color, opacity):
     if color.startswith('#') and len(color) == 7:
@@ -233,34 +148,6 @@ def get_id_colors(cyto_elements):
             continue
 
     return id_colors
-
-def create_legend_html(id_colors):
-    legend_items = []
-    for node_id, color in id_colors.items():
-        legend_items.append(
-            html.Div(
-                style={
-                    'display': 'flex',
-                    'alignItems': 'center',
-                    'marginBottom': '5px'
-                },
-                children=[
-                    html.Div(
-                        style={
-                            'width': '20px',
-                            'height': '20px',
-                            'backgroundColor': color,
-                            'marginRight': '10px',
-                            'border': '1px solid #000'
-                        }
-                    ),
-                    html.Span(node_id)
-                ]
-            )
-        )
-    return html.Div(legend_items, 
-                    style={ 'width': '19vw', 'height': '25vh', 'overflowY': 'scroll',
-                           'padding': '10px', 'border': '1px solid #ccc', 'borderRadius': '5px'})
 
 # Function to style annotation contact table using Blugrn color scheme
 def styling_annotation_table(row_data, bin_information, unique_annotations):
@@ -457,6 +344,112 @@ def arrange_nodes(bins, distance, center_position):
             max_inner_radius = r
 
     return {**inner_positions}
+
+def create_legend_html(id_colors):
+    legend_items = []
+    for node_id, color in id_colors.items():
+        legend_items.append(
+            html.Div(
+                style={
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'marginBottom': '5px'
+                },
+                children=[
+                    html.Div(
+                        style={
+                            'width': '20px',
+                            'height': '20px',
+                            'backgroundColor': color,
+                            'marginRight': '10px',
+                            'border': '1px solid #000'
+                        }
+                    ),
+                    html.Span(node_id)
+                ]
+            )
+        )
+    return html.Div(legend_items, 
+                    style={'width': '19vw', 'height': '25vh', 'overflowY': 'scroll',
+                           'margin-top': '5px', 'margin-bottom': '5px',
+                           'padding': '10px', 'border': '1px solid #ccc', 'borderRadius': '5px'})
+
+def create_bar_chart(data_dict, taxonomy_level=[]):
+    traces = []
+    options = []
+
+    # Iterate over the input data dictionary to create traces and dropdown options
+    for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
+        if data_frame.empty or 'value' not in data_frame.columns:
+            logger.warning(f"No data or 'value' column missing for {trace_name}, skipping trace.")
+            continue
+
+        # Sort data based on the trace name and provided taxonomy levels
+        if trace_name == "Fraction of classified bins by ranks":
+            taxonomy_order = {taxonomy: idx for idx, taxonomy in enumerate(taxonomy_level)}
+
+            # Add taxonomy rank for sorting
+            data_frame['taxonomy_rank'] = data_frame['name'].apply(lambda x: taxonomy_order.get(x, float('inf')))
+            bar_data = data_frame.sort_values(by=['taxonomy_rank', 'value'], ascending=[True, False])
+        else:
+            bar_data = data_frame.sort_values(by='value', ascending=False)
+        
+        # Extract colors and hover text
+        bar_colors = bar_data['color']
+        hover_text = bar_data.get('hover', None)
+
+        # Create a bar trace
+        bar_trace = go.Bar(
+            x=bar_data['name'],
+            y=bar_data['value'],
+            name=trace_name,
+            marker_color=bar_colors,
+            visible=(idx == 0),  # Show only the first trace by default
+            hovertext=hover_text if hover_text is not None else None,
+            hoverinfo='text' if hover_text is not None else None
+        )
+        traces.append(bar_trace)
+
+        # Add dropdown options for this trace
+        options.append({'label': trace_name, 'value': trace_name})
+
+    if not traces:
+        logger.warning("No valid traces created, returning empty figure.")
+        return dcc.Dropdown(id='bar-chart-dropdown'), go.Figure()
+
+    # Create the bar chart layout
+    bar_layout = go.Layout(
+        xaxis=dict(
+            title="",
+            tickangle=-45,
+            tickfont=dict(size=12),
+            rangeslider=dict(visible=True, thickness=0.05),
+        ),
+        yaxis=dict(
+            title="Value",
+            tickfont=dict(size=15),
+            autorange=True,
+        ),
+        margin=dict(t=0, b=0, l=0, r=0),
+        legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="center", x=0.5),
+    )
+
+    dropdown = dcc.Dropdown(
+        id='bar-chart-dropdown',
+        options=options,
+        value=options[0]['value'],
+        style={'width': '100%', 'margin-top': '5px', 'margin-bottom': '5px',}
+    )
+    
+    figure = dcc.Graph(
+        id='bar-chart', 
+        figure=go.Figure(data=traces, layout=bar_layout),
+        style={'width': '19vw', 'height': '50vh', 'padding': '10px',
+               'margin-top': '5px', 'margin-bottom': '5px',
+               'border': '1px solid #ccc', 'borderRadius': '5px'}
+    )
+    
+    return [dropdown, figure]
 
 def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_columns):
     taxonomy_columns = taxonomy_columns.tolist() if isinstance(taxonomy_columns, np.ndarray) else taxonomy_columns
@@ -1188,35 +1181,29 @@ def create_visualization_layout():
                     html.Div(
                         id="right-column",
                         children=[
-                            html.Div([
-                                dcc.Dropdown(
-                                    id='taxonomy-level-selector',
-                                    options=[],
-                                    value=None,
-                                    placeholder="Select Taxonomy Level",
-                                    style={ 'width': '19vw', 'display': 'inline-block', 'margin-top': '4px'}
-                                ),
-                                
-                                html.Div(id='legend-div', 
-                                         style={ 'width': '19vw', 'height': '25vh',
-                                                'display': 'inline-block', 'margin-top': '4px'})
-                            ], style={'display': 'inline-block', 'vertical-align': 'top', 'height': '30vh', 'width': '19vw'}),
+                            html.Div(
+                                id="legand-container",
+                                children=[
+                                    dcc.Dropdown(
+                                        id='taxonomy-level-selector',
+                                        options=[],
+                                        value=None,
+                                        placeholder="Select Taxonomy Level",
+                                        style={'width': '100%', 'margin-top': '5px', 'margin-bottom': '5px'}
+                                    ),
+                                    
+                                    html.Div(id='legend-div')
+                                ], 
+                                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '30vh', 'width': '19vw'}
+                            ),
 
                             html.Div(
                                 id="bar-chart-container",
-                                children=[
-                                    dcc.Graph(id='bar-chart', 
-                                              config={'displayModeBar': False}, 
-                                              figure=go.Figure(), 
-                                              style={'height': '55vh', 'width': '19vw', 'display': 'inline-block'}                                 
-                                    ),
-                                ],
-                                style={
-                                    'border': '2px solid #ccc',
-                                }
+                                children=[],
+                                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '55vh', 'width': '19vw'}
                             ),
                         ],
-                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '55vh', 'width': '19vw'}
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '19vw'}
                     ),
 
                     dcc.Loading(
@@ -1637,7 +1624,7 @@ def register_visualization_callbacks(app):
     @app.callback(
         [Output('cyto-graph', 'elements'),
          Output('cyto-graph', 'style'),
-         Output('bar-chart', 'figure'),
+         Output('bar-chart-container', 'children'),
          Output('treemap-graph', 'figure'),
          Output('treemap-graph', 'style'),
          Output('cyto-graph', 'stylesheet'),
@@ -1677,7 +1664,20 @@ def register_visualization_callbacks(app):
         if 'data-loaded' in triggered_props:
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            bar_fig = go.Figure()
+            
+            empty_dropdown = dcc.Dropdown(
+                id='bar-chart-dropdown',
+                options=[],  # No options
+                value=None,
+                style={'width': '100%', 'margin-bottom': '10px'}
+            )
+            empty_figure = dcc.Graph(
+                id='bar-chart',
+                figure=go.Figure(),  # Empty figure
+                config={'displayModeBar': False}
+            )
+            bar_fig = [empty_dropdown, empty_figure]
+            
             treemap_fig = go.Figure()
             treemap_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
             return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, 1
@@ -1762,13 +1762,28 @@ def register_visualization_callbacks(app):
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
     
         return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, 1
+    
+    @app.callback(
+        Output('bar-chart', 'figure', allow_duplicate=True),
+        Input('bar-chart-dropdown', 'value'),
+        State('bar-chart', 'figure')
+    )
+    def update_bar_chart(selected_trace, current_figure):
+        if not selected_trace:
+            raise PreventUpdate
+    
+        # Update visibility for the selected trace
+        for trace in current_figure['data']:
+            trace['visible'] = trace['name'] == selected_trace
+    
+        return current_figure
 
     @app.callback(
         Output('visualization-status', 'data', allow_duplicate=True),
         Input('switch-visualization-network', 'n_clicks'),
         prevent_initial_call=True
     )
-    def switch_to_network(n_clicks):
+    def switch_to_result(n_clicks):
         if n_clicks:
             return 'results'
         
