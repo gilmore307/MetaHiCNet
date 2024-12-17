@@ -423,8 +423,6 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
             'wordWrap': 'break-word',
             'margin-top': '5px',
             'margin-bottom': '5px',
-            'borderRadius': '5px',
-            'border': '1px solid #ccc',
             'minHeight': '38px',
             'display': 'flex',
             'alignItems': 'center',
@@ -454,8 +452,7 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
         id='bar-chart', 
         figure=go.Figure(data=[bar_trace], layout=bar_layout),
         style={'width': '19vw', 'padding': '10px',
-               'margin-top': '5px', 'margin-bottom': '5px',
-               'border': '1px solid #ccc', 'borderRadius': '5px'}
+               'margin-top': '5px', 'margin-bottom': '5px'}
     )
     
     return [textbox, figure]
@@ -1191,7 +1188,8 @@ def create_visualization_layout():
                             html.Div(
                                 id="bar-chart-container",
                                 children=[],
-                                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '55vh', 'width': '19vw'}
+                                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '55vh', 'width': '19vw', 
+                                       'border': '1px solid #ccc', 'borderRadius': '5px'}
                             ),
                         ],
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '19vw'}
