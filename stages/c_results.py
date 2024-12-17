@@ -59,8 +59,7 @@ def generate_plots(normalized_plot_data):
             normalized_plot_data,
             x='Product Sites',
             y='Contacts',
-            title='Normalized: Product of sites vs. Contacts',
-            labels={'Product Sites': 'Product of Sites (log scale)', 'Contacts': 'Contacts'},
+            labels={'Product Sites': 'Product of Sites (log scale)', 'Contacts': 'Raw Hi-C Contacts'},
             hover_data={}
         ),
         style={'width': '32%', 'display': 'inline-block'}
@@ -72,8 +71,7 @@ def generate_plots(normalized_plot_data):
             normalized_plot_data,
             x='Product Length',
             y='Contacts',
-            title='Normalized: Product of lengths vs. Contacts',
-            labels={'Product Length': 'Product of Length (log scale)', 'Contacts': 'Contacts'},
+            labels={'Product Length': 'Product of Length (log scale)', 'Contacts': 'Raw Hi-C Contacts'},
             hover_data={}
         ),
         style={'width': '32%', 'display': 'inline-block'}
@@ -85,8 +83,7 @@ def generate_plots(normalized_plot_data):
             normalized_plot_data,
             x='Product Coverage',
             y='Contacts',
-            title='Normalized: Product of coverage vs. Contacts',
-            labels={'Product Coverage': 'Product of Coverage (log scale)', 'Contacts': 'Contacts'},
+            labels={'Product Coverage': 'Product of Coverage (log scale)', 'Contacts': 'Raw Hi-C Contacts'},
             hover_data={}
         ),
         style={'width': '32%', 'display': 'inline-block'}
@@ -123,7 +120,7 @@ def results_layout(user_folder):
     
                 html.H2("Hi-C Contact Normalization Results", className="main-title text-center my-4"),
     
-                html.H4("Section 1: Download User Folder", 
+                html.H5("Section 1: Download User Folder", 
                         className="main-title my-4", 
                         style={'marginTop': '600px', 'textAlign': 'left'}),
                 dcc.Download(id="download"),
@@ -138,8 +135,15 @@ def results_layout(user_folder):
                     body=True,
                     className="my-3"
                 ),
+                
+                html.H5(
+                    "Section 2: Relationship between raw interaction counts and the product of the number of restriction sites, length, and coverage between contig pairs.", 
+                    className="main-title my-4", 
+                    style={'marginTop': '600px', 'textAlign': 'left'}
+                ),
+                html.Div(id="plots"),
     
-                html.H4("Section 2: Pearson Correlation Coefficients (Absolute Value) Between Normalized Valid Contacts and the Product of Each of the Three Factors of Explicit Biases", 
+                html.H5("Section 3: Pearson Correlation Coefficients (Absolute Value) Between Normalized Hi-C Contacts and the Product of Each of the Three Factors of Explicit Biases", 
                         className="main-title my-4", 
                         style={'marginTop': '600px', 'textAlign': 'left'}),
                 html.Div([
@@ -157,13 +161,6 @@ def results_layout(user_folder):
                         style={"height": "12vh", "width": "43vw", "margin": "auto"},
                     ),
                 ]),
-    
-                html.H4(
-                    "Section 3: Relationship between raw interaction counts and the product of the number of restriction sites, length, and coverage between contig pairs.", 
-                    className="main-title my-4", 
-                    style={'marginTop': '600px', 'textAlign': 'left'}
-                ),
-                html.Div(id="plots"),
             ]
         ),
     ])
@@ -181,9 +178,11 @@ def register_results_callbacks(app):
             
         contig_info_path = os.path.join('output', user_folder, 'contig_info_final.csv')
         normalized_matrix_path = os.path.join('output', user_folder, 'normalized_contig_matrix.npz')
+        unnormalized_matrix_path = os.path.join('output', user_folder, 'unnormalized_contig_matrix.npz')
         
         contig_info = pd.read_csv(contig_info_path)
         norm_sparse_matrix = load_npz(normalized_matrix_path).tocoo()
+        unnorm_sparse_matrix = load_npz(unnormalized_matrix_path).tocoo()
         
         # Extract relevant columns
         restriction_sites = contig_info['The number of restriction sites']
@@ -191,10 +190,11 @@ def register_results_callbacks(app):
         contig_coverage = contig_info['Contig coverage']
     
         norm_data, norm_row, norm_col = norm_sparse_matrix.data, norm_sparse_matrix.row, norm_sparse_matrix.col
+        unnorm_data, unnorm_row, unnorm_col = unnorm_sparse_matrix.data, unnorm_sparse_matrix.row, unnorm_sparse_matrix.col
     
         normalized_product_values = compute_product_values(norm_data, norm_row, norm_col, restriction_sites, contig_length, contig_coverage)
     
-        normalized_plot_data = compute_plot_data(norm_data, norm_row, norm_col, restriction_sites, contig_length, contig_coverage)
+        unnormalized_plot_data = compute_plot_data(unnorm_data, unnorm_row, unnorm_col, restriction_sites, contig_length, contig_coverage)
     
         factors = ["Product Sites", "Product Length", "Product Coverage"]
         normalized_correlations = calculate_pearson(normalized_product_values, factors)
@@ -207,7 +207,7 @@ def register_results_callbacks(app):
         })
         correlation_results = correlation_results.round(5)
     
-        plots = generate_plots(normalized_plot_data)
+        plots = generate_plots(unnormalized_plot_data)
         
         return correlation_results.to_dict("records"), plots
     

@@ -58,10 +58,25 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
 
     def denoise(matrix, threshold):
         matrix = matrix.tocoo()
-        matrix.data = matrix.data * 100
+        
+        # Mask values based on the threshold
         threshold_value = np.percentile(matrix.data, threshold)
         mask = matrix.data > threshold_value
-        return coo_matrix((matrix.data[mask].astype(int), (matrix.row[mask], matrix.col[mask])), shape=matrix.shape)
+        
+        # Apply denoise: keeping values above threshold
+        filtered_data = matrix.data[mask]
+        filtered_rows = matrix.row[mask]
+        filtered_cols = matrix.col[mask]
+        
+        # Normalize by dividing by the smallest non-zero value
+        min_non_zero = np.min(filtered_data[filtered_data > 0])
+        normalized_data = filtered_data / min_non_zero
+        
+        # Apply ceiling function and convert to integers
+        normalized_data = np.ceil(normalized_data).astype(int)
+        
+        # Return the new sparse matrix with the normalized values
+        return coo_matrix((normalized_data, (filtered_rows, filtered_cols)), shape=matrix.shape)
 
     def _bisto_seq(m, max_iter, tol):
         # Make a copy of the original matrix 'm' for later use
@@ -168,8 +183,8 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
         
         # Return the balanced matrix and the scale vector 'x'
         X = spdiags(x, 0, n, n, 'csr')  # Create a diagonal matrix with x
-        balanced_matrix = X.T.dot(_orig.dot(X)) * 10000
-        return balanced_matrix 
+        matrix = X.T.dot(_orig.dot(X))
+        return matrix 
 
     try:
         if method == 'Raw':
@@ -554,12 +569,14 @@ def register_normalization_callbacks(app):
         bin_contact_matrix_path = os.path.join(user_output_path, 'normalized_bin_matrix.npz')
         contig_info_path = os.path.join(user_output_path, 'contig_info_final.csv')
         normalized_matrix_path = os.path.join(user_output_path, 'normalized_contig_matrix.npz')
+        unnormalized_matrix_path = os.path.join(user_output_path, 'unnormalized_contig_matrix.npz')
     
         # Save each file
         bin_info.to_csv(bin_info_final_path, index=False)
         save_npz(bin_contact_matrix_path, bin_contact_matrix)
         contig_info.to_csv(contig_info_path, index=False)
         save_npz(normalized_matrix_path, normalized_matrix)
+        save_npz(unnormalized_matrix_path, contact_matrix)
 
         # Compress saved files into normalized_information.7z
         normalized_archive_path = os.path.join(user_output_path, 'normalized_information.7z')
@@ -568,6 +585,7 @@ def register_normalization_callbacks(app):
             archive.write(bin_contact_matrix_path, 'normalized_bin_matrix.npz')
             archive.write(contig_info_path, 'contig_info_final.csv')
             archive.write(normalized_matrix_path, 'normalized_contig_matrix.npz')
+            archive.write(unnormalized_matrix_path, 'unnormalized_contig_matrix.npz')
     
         logger.info("File saving completed successfully.")
     

@@ -102,8 +102,8 @@ app.layout = dbc.Container([
     dcc.Location(id='url', refresh=True),
     html.Div(id="dummy-output", style={"display": "none"}),
     html.Div(id="main-content", children=[]),
-    html.P("Copyright © 2024 MetaHiCNet. All rights reserved.", 
-           style={'textAlign': 'center','padding': '20px','backgroundColor': 'lightgray'})
+    html.P("All resources and tools on this website are freely accessible to the public. For questions, please contact us at yuxuan.du@utsa.edu.", 
+           style={'textAlign': 'center','padding': '20px','backgroundColor': 'lightgray', 'marginTop': '20px'})
 ], fluid=True)
 
 @app.callback(

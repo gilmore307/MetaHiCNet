@@ -373,13 +373,9 @@ def create_legend_html(id_colors):
                            'margin-top': '5px', 'margin-bottom': '5px',
                            'padding': '10px', 'border': '1px solid #ccc', 'borderRadius': '5px'})
 
+
 def create_bar_chart(data_dict, taxonomy_level=[]):
-    # Default dropdown and figure for empty or invalid input
-    dropdown = dcc.Dropdown(
-        id='bar-chart-dropdown',
-        style={'width': '100%', 'margin-top': '5px', 'margin-bottom': '5px',}
-    )
-    
+    # Default figure for empty or invalid input
     figure = dcc.Graph(
         id='bar-chart', 
         figure=go.Figure(),
@@ -388,51 +384,50 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
                'border': '1px solid #ccc', 'borderRadius': '5px'}
     )
 
+    # Check if data_dict is not empty
     if not data_dict:
-        logger.warning("data_dict is empty, returning empty dropdown and figure.")
-        return [dropdown, figure]
+        logger.warning("data_dict is empty, returning empty figure.")
+        return figure
     
-    traces = []
-    options = []
+    trace_name, data_frame = next(iter(data_dict.items()))
     
-    # Iterate over the input data dictionary to create traces and dropdown options
-    for idx, (trace_name, data_frame) in enumerate(data_dict.items()):
-        if data_frame.empty or 'value' not in data_frame.columns:
-            logger.warning(f"No data for {trace_name}, skipping trace.")
-            continue
+    if data_frame.empty or 'value' not in data_frame.columns:
+        logger.warning(f"No data for {trace_name}, skipping trace.")
+        return figure
 
-        # Sort data based on the trace name and provided taxonomy levels
-        if trace_name == "Fraction of classified bins by ranks":
-            taxonomy_order = {taxonomy: idx for idx, taxonomy in enumerate(taxonomy_level)}
-            data_frame['taxonomy_rank'] = data_frame['name'].apply(lambda x: taxonomy_order.get(x, float('inf')))
-            bar_data = data_frame.sort_values(by=['taxonomy_rank', 'value'], ascending=[True, False])
-        else:
-            bar_data = data_frame.sort_values(by='value', ascending=False)
-    
-            # Create a bar trace
-            bar_trace = go.Bar(
-                x=bar_data['name'],
-                y=bar_data['value'],
-                name=trace_name,
-                marker_color=bar_data['color'],
-                visible=(idx == 0),  # Show only the first trace by default
-                hovertext=bar_data.get('hover', None),
-                hoverinfo='text' if 'hover' in bar_data.columns else None
-            )
-            traces.append(bar_trace)
-    
-            # Add dropdown options for this trace
-            options.append({'label': trace_name, 'value': trace_name})
+    # Sort the data based on the taxonomy_level if applicable
+    if trace_name == "Fraction of Classified Bins by Taxonmic Ranks" and taxonomy_level:
+        taxonomy_order = {taxonomy: idx for idx, taxonomy in enumerate(taxonomy_level)}
+        data_frame['taxonomy_rank'] = data_frame['name'].apply(lambda x: taxonomy_order.get(x, float('inf')))
+        bar_data = data_frame.sort_values(by=['taxonomy_rank', 'value'], ascending=[True, False])
+    else:
+        bar_data = data_frame.sort_values(by='value', ascending=False)
 
-    if not traces:
-        logger.warning("No valid traces created, returning empty figure.")
-        return [dropdown, figure]
+    # Create a bar trace
+    bar_trace = go.Bar(
+        x=bar_data['name'],
+        y=bar_data['value'],
+        name=trace_name,
+        marker_color=bar_data['color'],
+        hovertext=bar_data.get('hover', None),
+        hoverinfo='text' if 'hover' in bar_data.columns else None
+    )
     
-    dropdown = dcc.Dropdown(
-        id='bar-chart-dropdown',
-        options=options,
-        value=options[0]['value'],
-        style={'width': '100%', 'margin-top': '5px', 'margin-bottom': '5px',}
+    # Create the title as a textbox with text wrapping
+    textbox = html.Div(
+        children=trace_name,
+        style={
+            'textAlign': 'center',
+            'fontSize': '16px',
+            'wordWrap': 'break-word',
+            'marginBottom': '5px',
+            'borderRadius': '5px',
+            'border': '1px solid #ccc',
+            'minHeight': '38px',
+            'display': 'flex',
+            'alignItems': 'center',
+            'justifyContent': 'center'
+        }
     )
 
     # Create the bar chart layout
@@ -451,16 +446,17 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
         margin=dict(t=0, b=0, l=0, r=0),
         legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="center", x=0.5),
     )
-    
+
+    # Create the final figure with the bar trace
     figure = dcc.Graph(
         id='bar-chart', 
-        figure=go.Figure(data=traces, layout=bar_layout),
-        style={'width': '19vw', 'height': '50vh', 'padding': '10px',
+        figure=go.Figure(data=[bar_trace], layout=bar_layout),
+        style={'width': '19vw', 'height': '55vh', 'padding': '10px',
                'margin-top': '5px', 'margin-bottom': '5px',
                'border': '1px solid #ccc', 'borderRadius': '5px'}
     )
     
-    return [dropdown, figure]
+    return [textbox, figure]
 
 def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_columns):
     data_dict = {}
@@ -669,10 +665,6 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
     
     if not selected_node:
         inter_annotation_contact_sum = contact_matrix.sum(axis=1) - np.diag(contact_matrix.values)
-        total_bin_coverage_sum = bin_information.groupby(taxonomy_level).apply(
-            lambda group: group['Contig coverage'].mul(group['Contig length']).sum() / 
-                          group['The number of restriction sites'].sum()
-        ).reindex(unique_annotations).fillna(0).values
         
         # For 'Across Taxonomy Hi-C Contacts' DataFrame
         df_contacts = pd.DataFrame({'name': unique_annotations, 
@@ -685,18 +677,6 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         
         if not df_contacts.empty:
             data_dict['Across Taxonomy Hi-C Contacts'] = df_contacts
-        
-        # For 'The coverage of different taxa' DataFrame
-        df_coverage = pd.DataFrame({'name': unique_annotations, 
-                                     'value': total_bin_coverage_sum, 
-                                     'color': [node_colors.get(annotation, 'rgba(0,128,0,0.8)') for annotation in unique_annotations]
-                                    }).query('value != 0')
-        
-        # Filter out rows where 'name' length is 2
-        df_coverage = df_coverage[df_coverage['name'].str.len() != 2]
-        
-        if not df_coverage.empty:
-            data_dict[f'The Coverage of Different {taxonomy_level}s'] = df_coverage
     
         bar_fig = create_bar_chart(data_dict)
         return cyto_elements, bar_fig, cyto_style
@@ -712,7 +692,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         
         if selected_node_contacts:
             df_selected_contacts = pd.DataFrame(selected_node_contacts)
-            data_dict[f'Contacts with {selected_node}'] = df_selected_contacts
+            data_dict[f'Contacts with {selected_node} and other nodes in the network'] = df_selected_contacts
             
         return cyto_elements, create_bar_chart(data_dict) , cyto_style
 
@@ -813,16 +793,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
         'hover': [f"({bin_information.loc[bin_information['Bin index'] == bin, taxonomy_level].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
     }).query('value != 0')
     if not bin_data.empty:
-        data_dict[f'Hi-C Contacts with {selected_bin}'] = bin_data
-
-    unique_annotations = contacts_annotation.unique()
-    annotation_data = pd.DataFrame({
-        'name': unique_annotations,
-        'value': contact_values,
-        'color': [G.nodes[annotation]['border_color'] for annotation in unique_annotations]
-    }).query('value != 0')
-    if not annotation_data.empty:
-        data_dict[f'Hi-C Contacts with {selected_annotation}'] = annotation_data
+        data_dict[f'Hi-C Contacts between {selected_bin} and other nodes in the network'] = bin_data
 
     bar_fig = create_bar_chart(data_dict)
     return cyto_elements, bar_fig
@@ -1747,20 +1718,6 @@ def register_visualization_callbacks(app):
     )
     def refresh_visualization(taxonomy_level):
         return []
-    
-    @app.callback(
-        Output('bar-chart', 'figure', allow_duplicate=True),
-        Input('bar-chart-dropdown', 'value'),
-        State('bar-chart', 'figure')
-    )
-    def update_bar_chart(selected_trace, current_figure):
-        if not selected_trace:
-            raise PreventUpdate
-    
-        for trace in current_figure['data']:
-            trace['visible'] = trace['name'] == selected_trace
-    
-        return current_figure
 
     @app.callback(
         Output('visualization-status', 'data', allow_duplicate=True),
