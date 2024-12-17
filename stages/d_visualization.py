@@ -364,7 +364,8 @@ def create_legend_html(id_colors):
                             'border': '1px solid #000'
                         }
                     ),
-                    html.Span(node_id)
+                    html.Span(node_id,
+                              style={'fontStyle': 'italic'})
                 ]
             )
         )
@@ -420,7 +421,8 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
             'textAlign': 'center',
             'fontSize': '16px',
             'wordWrap': 'break-word',
-            'marginBottom': '5px',
+            'margin-top': '5px',
+            'margin-bottom': '5px',
             'borderRadius': '5px',
             'border': '1px solid #ccc',
             'minHeight': '38px',
@@ -451,7 +453,7 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
     figure = dcc.Graph(
         id='bar-chart', 
         figure=go.Figure(data=[bar_trace], layout=bar_layout),
-        style={'width': '19vw', 'height': '55vh', 'padding': '10px',
+        style={'width': '19vw', 'padding': '10px',
                'margin-top': '5px', 'margin-bottom': '5px',
                'border': '1px solid #ccc', 'borderRadius': '5px'}
     )
@@ -896,13 +898,9 @@ hover_info = {
             "1. **Chart Types**: The bar chart can display the following types of charts:  \n"
             "   - **Fraction of Classified Bins by Taxonomic Ranks**: Shows the percentage of bins classified at each taxonomic level (e.g., phylum, genus).  \n"
             "   - **Across Taxonomy Hi-C Contacts**: Summarizes Hi-C contact strengths for each taxonomic annotation.  \n"
-            "   - **The Coverage of Different Taxonomic Levels**: Displays the aggregate coverage of bins at different taxonomic levels (e.g., genus, species).  \n"
             "   - **Hi-C Contacts with Selected Bin**: Highlights the contact strengths between the selected bin and other bins.  \n"
-            "   - **Hi-C Contacts with Selected Taxa**: Shows the Hi-C interaction strengths between the taxa of the selected bin (at the selected taxonomy level) and other taxa.  \n\n"
             
             "2. **Scroll Bar**: A horizontal scroll bar allows you to navigate through bars when there are too many to display at once.  \n\n"
-            
-            "3. **Chart Selector**: Use the dropdown selector above the bar chart to switch between different charts.  \n\n"
         ),
 
     'info-table-container': 
