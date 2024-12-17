@@ -189,46 +189,56 @@ def create_upload_layout_method1():
                 'raw-contig-info', 
                 'Upload Contig Information File (.csv)', 
                 'assets/examples/contig_information.csv',
-                "This file includes the following columns: 'Contig index', 'The number of restriction sites', 'Contig length', 'Contig coverage', and 'Within-contig Hi-C contacts'.  \n\n"
-                "'Within-contig Hi-C contacts' is an optional column used to ensure that the contig sequence in the Contig Information aligns with the contig sequence in the Contact Matrix; leave it blank if not applicable.  \n\n"
-                "'Contig coverage' is an optional column that can be automatically calculated by dividing 'Within-contig Hi-C contacts' by the 'Contig length' if not provided."
+                """
+                The contig information file includes the following columns:
+                - **‘Contig index’**, **‘Number of restriction sites’**, and **‘Contig length’** (required).
+                - **‘Contig coverage’** (optional): If not provided, it will be estimated by dividing the diagonal value in the raw Hi-C contact matrix by the ‘Contig length’.
+        
+                This file can be directly generated from common Meta Hi-C analysis pipelines, such as MetaCC and HiCBin.
+                """
             )),
             dbc.Col(create_upload_component(
                 'raw-contig-matrix', 
-                'Upload Raw Contact Matrix File (.txt, .csv or .npz)', 
+                'Upload Raw Hi-C Contact Matrix File (.txt, .csv or .npz)', 
                 'assets/examples/raw_contact_matrix.npz',
-                "The contact matrix can be provided in one of the following formats:  .txt, .csv or .npz  \n\n"
-                "The .txt and .csv format file should contain 3 columns: 'Contig_name1', 'Contig_name2', 'Contacts'.  \n\n"
-                "The .npz Format file should be a sparse or dense matrix which can be obtained from recent metaHi-C pipelines such as MetaCC or HiCBin.  \n"
-                "The matrix could be in COO, CSC or CSR format.  \n"
-                "The row and column indices of the Contact Matrix must match the row indices of the Contig Information File."
+                """
+                The contact matrix can be provided in one of the following formats: .txt, .csv, or .npz.
+                
+                - **In .txt or .csv format**: The file should contain the columns **‘Contig_name1’**, **‘Contig_name2’**, and **‘Contacts’**.
+                - **In .npz format**: The file should be either a NumPy dense matrix or a SciPy sparse matrix.
+                
+                This file can be directly generated from common Meta Hi-C analysis pipelines, such as MetaCC and HiCBin.
+                
+                **Note**: The row and column indices of the Hi-C Contact Matrix must match the row indices of the Contig Information File.
+                """
             ))
         ]),
         dbc.Row([
             dbc.Col(create_upload_component(
                 'raw-binning-info', 
-                'Upload Binning Information File (.csv)', 
+                'Upload Binning Information File (.csv) (Optional)', 
                 'assets/examples/binning_information.csv',
-                "This file includes the following columns: 'Contig index', 'Bin index', and 'Category'.  \n\n"
-                "'Bin index' is an optional column; if left blank (contigs are not binned), the value from the 'Contig index' column will be used as the bin index.  \n\n"
-                "Please indicate the category of bin in the 'Category' column if it is a 'virus' or 'plasmid'.  \n"
-                "Feel free to leave the colunn blank if it is 'chromosome' or 'unclassified' (cannot be assigned to any known reference or taxonomy)."
+                """
+                The binning information file is optional. You can skip it if your goal is solely to normalize the Hi-C contact matrix.
+        
+                It contains the following columns:
+                - **‘Contig index’** and **‘Bin index’** (specifying the bin to which each contig belongs).
+        
+                This file can be directly obtained from the binning results of Meta Hi-C analysis pipelines or any other binners users select.
+                """
             )),
             dbc.Col(create_upload_component(
                 'raw-bin-taxonomy', 
-                'Upload Taxonomy Information File (.csv)', 
+                'Upload Taxonomy Information File (.csv) (Optional)', 
                 'assets/examples/taxonomy_information.csv',
-                "This file includes the following columns: 'Bin index', 'Customized annotation' and taxonomy columns.  \n\n"
-                "Users have the flexibility to define their taxonomy levels based on their specific needs.  \n"
-                "Users can include any number of taxonomy columns, up to a maximum of 8 levels (e.g., Realm, Phylum, Order, Genus, etc.).  \n"
-                "Taxonomy column names can be customized. For example, Domain or Superkingdom could be used instead of Realm.  \n\n"
-                "If the Customized annotation column is filled, its values will be used to populate any missing entries across the specified taxonomy levels.  \n"
-                "The 'Customized annotation' should only contain letters (a-z, A-Z), numbers (0-9), or the underscore (_) character.  \n"
-                "This feature ensures that unclassified bins or missing taxonomy details are assigned meaningful labels.  \n"
-                "This feature is particularly useful for annotating bins or contigs that do not align with traditional taxonomy systems,  \n"
-                "such as plasmid GenBank Accession Numbers (NZ_CP123456) or viruse Zoonotic Virus Classification (SARS-CoV). \n"
-                "It allows users to provide a specific annotation for such bins or contigs.  \n\n"
-                "If all the taxonomy columns are blank, the bin will be marked as 'unclassified'."
+                """
+                The taxonomy information file is optional. You can skip it if your goal is solely to normalize the Hi-C contact matrix.
+        
+                It contains the following columns:
+                - **‘Bin index’** 
+                - **‘Category’**: The taxonomic category of each bin, which can be one of the following: **‘chromosome’**, **‘virus’**, or **‘plasmid’**. If a bin cannot be assigned to a specific category, it should be marked as **‘Unclassified’** or left blank.
+                - Any number of additional **Taxonimc Columns** providing further taxonomic information for each bin or contig (e.g., family, genus, species).
+                """
             ))
         ])
     ])
@@ -240,7 +250,8 @@ def create_upload_layout_method2():
                 'unnormalized-data-folder', 
                 'Upload Unnormalized Data Folder (.7z)', 
                 'assets/examples/unnormalized_information.7z',
-                "The folder must include the following files: 'contig_info_final.csv' and 'unnormalized_contig_matrix.npz'."
+                "This is a compresssed folder containing the following files: 'contig_info_final.csv' and 'unnormalized_contig_matrix.npz'.  \n"
+                "Download this file in Hi-C Contact Normalization Results page."
             ))
         ])
     ])
@@ -252,7 +263,8 @@ def create_upload_layout_method3():
                 'normalized-data-folder', 
                 'Upload Visualization Data Folder (.7z)', 
                 'assets/examples/normalized_information.7z',
-                "This folder must include the following files: 'bin_info_final.csv', 'contig_info_final.csv', 'normalized_contig_matrix.npz.npz', 'normalized_bin_matrix.npz'."
+                "This is a compresssed folder containing the following files: 'bin_info_final.csv', 'contig_info_final.csv', 'unnormalized_contig_matrix.npz.npz', 'normalized_contig_matrix.npz.npz', 'normalized_bin_matrix.npz'.  \n"
+                "Download this file in Hi-C Contact Normalization Results page."
             ))
         ])
     ])

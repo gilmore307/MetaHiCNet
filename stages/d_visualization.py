@@ -1053,21 +1053,19 @@ def create_visualization_layout():
                     html.Button("Reset Selection", id="reset-btn", style={**common_text_style}),
                 ], 
                 style={
-                    'display': 'flex',
-                    'justify-content': 'space-between',
-                    'align-items': 'center',
-                    'position': 'fixed',
-                    'top': '0',
-                    'left': '0',
-                    'width': '100%',
+                    'position': 'sticky',
+                    'top': '0px',
                     'z-index': '1000',
                     'background-color': 'lightgrey',
                     'padding': '10px',
-                    'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'
+                    'box-shadow': '0 2px 4px rgba(0,0,0,0.1)',
+                    'width': '100%',
+                    'display': 'flex',
+                    'justify-content': 'space-between',
+                    'align-items': 'center',
+                    'flex-wrap': 'wrap'
                 }
             ),
-            
-            html.Div(style={'height': '70px'}),  # Placeholder for header height
             
             html.Div(
                 id="visualization-container",

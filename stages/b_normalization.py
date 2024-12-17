@@ -454,7 +454,7 @@ def create_normalization_layout():
 
         ], id='normalization-parameters', className="my-3"),
         
-        html.Label("Don't enable the following two options if the Binning Information File and Taxonomy Information File were not uploaded!",
+        html.Label("Don't enable the following two options if the Binning Information File and Taxonomy Information File were not uploaded in Preparation stage!",
                    style={'color': 'orange', 'font-weight': 'bold'}),
         html.Div([
             dcc.Checklist(
@@ -469,6 +469,17 @@ def create_normalization_layout():
                 value=['remove_host'],
             ),
         ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}),
+        
+        html.Div([
+            html.H4("References:", style={'margin-top': '30px', 'font-weight': 'bold'}),
+            html.Ul([
+                html.Li("[1] Baudry, L., Foutel-Rodier, T., et al. (2019). MetaTOR: a computational pipeline to recover high-quality metagenomic bins from mammalian gut proximity-ligation (meta3C) libraries. Frontiers in genetics, 10, 753."),
+                html.Li("[2] DeMaere, M. Z., & Darling, A. E. (2019). bin3C: exploiting Hi-C sequencing data to accurately resolve metagenome-assembled genomes. Genome biology, 20, 46."),
+                html.Li("[3] Du, Y., & Sun, F. (2023). MetaCC allows scalable and integrative analyses of both long-read and short-read metagenomic Hi-C data. Nature Communications, 14, 6231."),
+                html.Li("[4] Du, Y., Laperriere, S. M, et al. (2022). Normalizing metagenomic Hi-C data and detecting spurious contacts using zero-inflated negative binomial regression. Journal of Computational Biology, 29 (2), 106-120.")
+            ], style={'font-size': 'small', 'line-height': '1.5'})
+        ], style={'margin-top': '40px', 'font-style': 'italic'})
+    
     ])
 
     return layout

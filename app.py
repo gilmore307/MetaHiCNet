@@ -88,8 +88,34 @@ def create_flowchart(current_stage, method='method1'):
     return html.Div(buttons, style={'display': 'flex', 'align-items': 'center', 'justify-content': 'center'})
 
 # Part 3: Define the layout of the app
+
+    
+    
+    
+    
 app.layout = dbc.Container([
     # Stores for app state management
+    dbc.NavbarSimple(
+        children=[
+            dbc.NavItem(dbc.NavLink("Home", href="/home", id="home-link")),
+            dbc.NavItem(dbc.NavLink("Help", id="open-help-modal", href="#")),
+            dbc.NavItem(dbc.NavLink("GitHub", href="https://github.com/gilmore307/MetaHiCNet", target="_blank")),
+            dbc.NavItem(dbc.NavLink("Contact", href="https://github.com/gilmore307/MetaHiCNet/issues", target="_blank")),
+        ],
+        brand="MetaHiCNet",
+        brand_href="/"
+    ),
+    html.Div([
+        html.H1("MetaHiCNet", className="display-3 text-center", style={'color': 'black'}),
+        html.P("A platform for normalizing and visualizing microbial Hi-C interaction networks.", className="lead text-center", style={'color': 'black'})
+    ], style={
+        'marginTop': '20px',
+        'marginBottom': '20px',
+        'padding': '40px',
+        'background': 'linear-gradient(to right, rgba(0, 0, 255, 0.4), rgba(0, 255, 0, 0.4), rgba(255, 0, 0, 0.4))',
+        'color': 'black',
+        'borderRadius': '10px',
+    }),
     dcc.Store(id='current-method', data='method1', storage_type='session'),
     dcc.Store(id='current-stage', data='Preparation', storage_type='session'),
     dcc.Store(id='preparation-status-method1', data=False, storage_type='session'),
@@ -102,9 +128,33 @@ app.layout = dbc.Container([
     dcc.Location(id='url', refresh=True),
     html.Div(id="dummy-output", style={"display": "none"}),
     html.Div(id="main-content", children=[]),
-    html.P("All resources and tools on this website are freely accessible to the public. For questions, please contact us at yuxuan.du@utsa.edu.", 
-           style={'textAlign': 'center','padding': '20px','backgroundColor': 'lightgray', 'marginTop': '20px'})
+    html.Div([
+        html.Hr(style={'borderTop': '2px solid #ccc', 'marginBottom': '20px'}),  # Add a line above the footer
+        html.P("MetaHiCNet is an open-source tool designed to assist in Hi-C data analysis. All resources and tools on this website are freely accessible to the public.", className="text-center", style={'lineHeight': '0.5'}),
+        html.P("For questions, please contact us at yuxuan.du@utsa.edu.", className="text-center", style={'lineHeight': '0.5'}),
+    ], style={'marginTop': '20px'}),
+    dbc.Modal(
+        [
+            dbc.ModalHeader("Help"),
+            dbc.ModalBody(),
+            dbc.ModalFooter(
+                dbc.Button("Close", id="close-help-modal", className="ml-auto")
+            ),
+        ],
+        id="help-modal",
+        is_open=False,
+        size="xl"
+    ),
 ], fluid=True)
+        
+@app.callback(
+    Output('url', 'href'),
+    Input('home-link', 'n_clicks'),
+    prevent_initial_call=True
+)
+def refresh_home(n_clicks):
+    if n_clicks:
+        return "/home"
 
 @app.callback(
     [Output('user-folder', 'data'),
@@ -249,11 +299,7 @@ def update_main_content(current_stage, visualization_status, user_folder, select
     else:
         # Default content for other stages
         return [
-            html.H1("MetaHiCNet", className="main-title text-center my-4"),
-            html.H5(
-                "A Platform for Normalizing and Visualizing Microbial Hi-C Interaction Networks",
-                className="subtitle text-center text-muted",
-            ),
+
             
             dcc.Tabs(id='tabs-method', value=selected_method, children=[
                 dcc.Tab(label="Upload and prepare raw Hi-C interaction data (First-Time Users)", value='method1', id='tab-method1'),
@@ -270,10 +316,10 @@ def update_main_content(current_stage, visualization_status, user_folder, select
                 children=[
                     html.Div(id='dynamic-content', className="my-4"),
                     html.Div(id='blank-element', style={'display': 'none'}),
-                    dbc.Col([
-                        dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '300px'}),
-                        dbc.Button('Load Example Files', id='load-button', style={'width': '300px'})
-                    ])
+                    dbc.Row([
+                        dbc.Col(dbc.Button("Prepare Data", id="execute-button", color="success", style={'width': '300px'})),
+                        dbc.Col(dbc.Button('Load Example Files', id='load-button', style={'width': '300px'}), className="d-flex justify-content-end")
+                    ], className="d-flex justify-content-between")
                 ]
             ),
             
@@ -325,6 +371,17 @@ def update_layout(selected_method, current_stage, user_folder):
 
     # Return flowchart, content, and updated current-method
     return flowchart, content, selected_method
+
+@app.callback(
+    Output("help-modal", "is_open"),
+    [Input("open-help-modal", "n_clicks"), Input("close-help-modal", "n_clicks")],
+    [dash.dependencies.State("help-modal", "is_open")]
+)
+def toggle_modal(open_clicks, close_clicks, is_open):
+    # If the Help link is clicked, open the modal
+    if open_clicks or close_clicks:
+        return not is_open
+    return is_open
 
 @app.callback(
     Output('log-box', 'value'),
