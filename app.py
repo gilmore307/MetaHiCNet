@@ -172,11 +172,11 @@ app.layout = dbc.Container([
 def home(home_clicks, run_clicks):
     ctx = callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
     if triggered_id == 'home':
-        print(1)
         return True
+    
     if triggered_id == 'run':
-        print(2)
         return False
     
 @app.callback(
