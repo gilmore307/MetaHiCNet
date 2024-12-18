@@ -692,7 +692,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         
         if selected_node_contacts:
             df_selected_contacts = pd.DataFrame(selected_node_contacts)
-            data_dict[f'Contacts with {selected_node} and other nodes in the network'] = df_selected_contacts
+            data_dict[f'Hi-C Contacts between {selected_node} and other nodes in the network'] = df_selected_contacts
             
         return cyto_elements, create_bar_chart(data_dict) , cyto_style
 
