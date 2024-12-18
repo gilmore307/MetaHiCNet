@@ -22,6 +22,7 @@ from stages.helper import (
     save_to_redis,
     load_from_redis
 )
+from stages.description import hover_info
 
 # Function to generate gradient values in a range [A, B]
 def generate_gradient_values(input_array, range_A, range_B):
@@ -837,139 +838,6 @@ base_stylesheet = [
         }
     }
 ]
-
-hover_info = {
-    'switch-visualization-network':
-        (
-            "Switch to Normalization Results  \n\n"
-            
-            "Click this button to switch from the current visualization to the normalization results view."
-        ),
-        
-    'reset-btn': 
-        (
-            "Reset Selection  \n\n"
-            
-            "Click this button to clear all selections and reset the visualization to Cross-Taxa Hi-C Interaction."
-        ),
-        
-    "tooltip-toggle-container":
-        (
-            "Enable or Disable Tooltips  \n\n"
-            
-            "Check this box to enable tooltips that provide contextual information about the components of this app."
-        ),
-        
-    'dropdowns':
-        (
-            "Visualization and Selection Dropdowns: Use these dropdown menus to explore different visualization modes or select annotations and bins for detailed analysis.  \n\n"
-            
-            "The options selected here control the content displayed in the visualizations and tables.  \n\n"
-            
-            "The dropdown offers three visualization options:  \n"
-            "1. **Taxonomic Framework**: Displays a hierarchical treemap showing how annotations are grouped and scaled by a selected metric, such as coverage or classification.  \n"
-            "2. **Cross-Taxa Hi-C Interaction**: Focuses on interactions between annotations at a taxonomic level, shown as a Cytoscape graph and bar charts summarizing interaction metrics.  \n"
-            "3. **Cross-Bin Hi-C Interactions**: Explores relationships between individual bins and their connections within the dataset, emphasizing specific bins of interest."
-        ),
-    
-    "legand-container":
-        (
-            "Color Legend and Taxonomy Level Selector:  \n\n"
-            
-            "1. **Color Legend**: Colors are consistently applied across the Cytoscape graph, bar chart, and tables to represent categories or annotations at the selected taxonomy level. Use the legend to identify categories by their assigned colors.  \n"
-            "   - Taxa or bins in the same category share a color system:  \n"
-            "       - **Viruses** are reddish colors.  \n"
-            "       - **Plasmids** are greenish colors.  \n"
-            "       - **Chromosomes** are bluish colors.  \n\n"
-            
-            "2. **Taxonomy Selector**: The taxonomy selector affects:  \n"
-            "   - **Taxonomy Visualization**: Adjusts how nodes are annotated and grouped in the hierarchy, such as by phylum or genus.  \n"
-            "   - **Bin Visualization**: Influences how nodes (bins) are distributed in the network, grouping them according to the selected taxonomy level.  \n"
-            "   - **Contact Table**: Changes the level of aggregation of the contact table by defining rows and columns based on the selected taxonomy level."
-        ),
-            
-    'bar-chart-container':
-        (
-            "Bar Chart:  \n\n"
-            
-            "1. **Chart Types**: The bar chart can display the following types of charts:  \n"
-            "   - **Fraction of Classified Bins by Taxonomic Ranks**: Shows the percentage of bins classified at each taxonomic level (e.g., phylum, genus).  \n"
-            "   - **Across Taxonomy Hi-C Contacts**: Summarizes Hi-C contact strengths for each taxonomic annotation.  \n"
-            "   - **Hi-C Contacts with Selected Bin**: Highlights the contact strengths between the selected bin and other bins.  \n"
-            
-            "2. **Scroll Bar**: A horizontal scroll bar allows you to navigate through bars when there are too many to display at once.  \n\n"
-        ),
-
-    'info-table-container': 
-        (
-            "Information Table:  \n\n"
-            
-            "1. **Filter, Sort, and Search**: Use column headers to sort rows or apply filters to narrow down results. You can also use the search box in the headers to find specific bins or annotations quickly.  \n\n"
-            
-            "2. **Bin Selection**: Click a row to select a bin, updating the Cytoscape graph, bar chart, and other visualizations.  \n\n"
-            
-            "3. **Automatic Filtering**: The table updates dynamically based on selections.  \n"
-            "   - **Taxa Selected**: Shows bins within the selected taxa.  \n"
-            "   - **Bin Selected**: Shows bins interacting with the selected bin.  \n\n"
-
-            
-            "4. **Filter Checkbox**: Enabling 'Only show elements present in the diagram' checkbox displays only bins or annotations visible in the Cytoscape graph.  \n\n"
-            
-            "5. **Color Coding**:  \n"
-            "   - **Index Column**: Matches the node colors in the Cytoscape graph.  \n"
-            "   - **Taxonomy Column**: Color-coded by the selected taxonomy category.  \n"
-            "   - **Numeric Columns**: Higher values are represented with deeper colors."
-        ),
-            
-    'treemap-graph-container': 
-        (
-            "Treemap Graph:  \n\n"
-            
-            "1. **Hierarchy Representation**: Taxa of finer levels (e.g., species) are nested within rectangles of their broader levels (e.g., genus, domain).  \n\n"
-                    
-            "2. **Color Coding**: Rectangles are color-coded by taxonomic level.  \n"
-            "   - **Darker Colors**: Represent  finer taxonomic levels, such as species or genus.  \n"
-            "   - **Lighter Colors**: Represent broader taxonomic levels, such as domain or phylum.  \n\n"
-            
-            "3. **Size Representation**: The size of each rectangle reflects the total coverage within that taxa.  \n\n"
-                        
-            "4. **Click**:  \n"
-            "   - Click on a rectangle to explore it further in related visualizations.  \n"
-            "   - Click on the header of the treemap to return to broader taxonomic levels."
-        ),
-        
-    'cyto-graph-container': 
-        (   
-            "Cytoscape Graph: This is a network graph visualizing relationships between annotations or bins based on Hi-C interactions.  \n\n"
-            
-            "1. **Node Distribution**: The graph dynamically adjusts positions to emphasize these relationships.  \n"
-            "   - Nodes are distributed using a force-directed layout. Nodes closer to each other indicate stronger Hi-C interactions.  \n"
-            "   - Selected nodes or bins are fixed at the center of the graph for focused analysis.  \n"
-            "   - Nodes representing bins are distributed spatially within their annotation groups.  \n\n"
-            
-            "2. **Interactive Node Selection**:  \n"
-            "   - Click on a node to select it. The selection updates related visualizations, such as the information table, bar chart, and contact table.  \n"
-            "   - Selected nodes are visually highlighted with a border, and their connections are emphasized."
-        ),
-    
-    'contact-table-container': 
-        (
-            "Contact Table: This table displays pairwise Hi-C contact values between taxa, providing a detailed view of their interactions.  \n\n"
-            
-            "1. **Hi-C Contact Values**: Each cell represents the interaction strength between the taxa in the corresponding row and column.  \n\n"
-            
-            "2. **Row Annotation Selection**: Click on a row to select its corresponding annotation or bin.  \n\n"
-            
-            "3. **Sorting**:  \n"
-            "   - Click the header of numeric columns to sort rows by the values in ascending or descending order. This helps identify bins or annotations with the strongest or weakest interactions.  \n"
-            "   - Click the header of the 'Index' column to reset the sorting and return to the initial state.  \n\n"
-            
-            "4. **Color Coding**:  \n"
-            "   - Higher contact values are highlighted with deeper colors, making it easy to identify strong interactions at a glance.  \n"
-            "   - The row annotation is color-coded consistently with its type, matching the color scheme used in other visualizations."
-        )
-}
-
 
 def create_visualization_layout():
     logger.info("Generating layout.")
