@@ -1,4 +1,4 @@
-from dash import dcc, html
+from dash import dcc, html, dash_table
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output, State
 from scipy.sparse import coo_matrix, spdiags, isspmatrix_csr
@@ -384,27 +384,61 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
     return bin_info, bin_contact_matrix
 
 def create_normalization_layout():
+    methods = [
+        {
+            "Method": "Raw",
+            "What is this method?": "Filters out low-contact values to reduce noise in the Hi-C contact matrix.",
+            "How does it work?": "Removes values below a certain threshold percentile to denoise the data.",
+            "When should I use it?": "Use Raw when your data has already been normalized or when no further normalization is needed."
+        },
+        {
+            "Method": "normCC [1]",
+            "What is this method?": "Applies a negative binomial (NB) distribution model to adjust for biases due to contig coverage, length, and restriction sites.",
+            "How does it work?": "Predicts expected Hi-C contacts and scales the raw value to eliminate biases.",
+            "When should I use it?": "Use normCC when contigs have high overlap and contamination."
+        },
+        {
+            "Method": "HiCzin [2]",
+            "What is this method?": "Applies log transformation and Zero-Inflated Negative Binomial model to normalize Hi-C contact matrices with many zeros.",
+            "How does it work?": "Models interactions using logarithmic scaling and adjusts for biases like coverage, length, and restriction sites.",
+            "When should I use it?": "Use HiCzin when dealing with sparse matrices containing many zero or near-zero values."
+        },
+        {
+            "Method": "bin3C [3]",
+            "What is this method?": "Applies bistochastic normalization to balance the rows and columns of the Hi-C contact matrix.",
+            "How does it work?": "Rescales the matrix iteratively using Kantorovich-Rubinstein regularization until balance is achieved.",
+            "When should I use it?": "Use bin3C when balancing the matrix is critical for downstream interpretation like clustering or binning."
+        },
+        {
+            "Method": "MetaTOR [4]",
+            "What is this method?": "Applies square root normalization to stabilize the variance of Hi-C contact matrices.",
+            "How does it work?": "Scales raw contact values based on the diagonal elements (self-interactions) to reduce variance.",
+            "When should I use it?": "Use MetaTOR when you need to stabilize variance across the Hi-C matrix for consistency in interaction contacts."
+        }
+    ]
+    methods = pd.DataFrame(methods)
+    
     normalization_methods = [
         {'label': 'Raw - Removing contacts below a certain threshold for noise reduction.', 'value': 'Raw'},
-        {'label': 'normCC - GLM-based normalization to adjust for varying coverage and signal.', 'value': 'normCC'},
-        {'label': 'HiCzin - Logarithmic scaling method for normalizing Hi-C contact frequencies.', 'value': 'HiCzin'},
-        {'label': 'bin3C - Kantorovich-Rubinstein regularization for balancing matrix rows and columns.', 'value': 'bin3C'},
+        {'label': 'normCC - Apply negative binomial (NB) distribution model to adjust for biases.', 'value': 'normCC'},
+        {'label': 'HiCzin - Applies log transformation and Zero-Inflated Negative Binomial model to normalize Hi-C contact matrices', 'value': 'HiCzin'},
+        {'label': 'bin3C - Using Kantorovich-Rubinstein regularization for balancing matrix rows and columns.', 'value': 'bin3C'},
         {'label': 'MetaTOR - Square root normalization to stabilize variance.', 'value': 'MetaTOR'}
     ]
 
     layout = html.Div([
+        html.H2("Normalization", className="mt-4"),
         html.Div([
             html.Label("Select Normalization Method:"),
             dcc.Dropdown(
                 id='normalization-method',
                 options=normalization_methods,
-                value='Raw',  # Default value
+                value='Raw',
                 style={'width': '100%'}
             )
         ], className="my-3"),
         
         html.Div([
-            # Threshold input
             html.Div([
                 html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
                 dcc.Input(
@@ -415,18 +449,6 @@ def create_normalization_layout():
                     style={'width': '100%'}
                 )
             ], id='thres-container', className="my-3"),
-
-            # Epsilon input
-            html.Div([
-                html.Label("Epsilon (default: 1): A small value added to avoid zero values in calculations."),
-                dcc.Input(
-                    id='epsilon-input',
-                    type='number',
-                    value=1,
-                    placeholder="Epsilon value",
-                    style={'width': '100%'}
-                )
-            ], id='epsilon-container', className="my-3"),
 
             # Max iterations input
             html.Div([
@@ -454,32 +476,67 @@ def create_normalization_layout():
 
         ], id='normalization-parameters', className="my-3"),
         
-        html.Label("Don't enable the following two options if the Binning Information File and Taxonomy Information File were not uploaded in Preparation stage!",
-                   style={'color': 'orange', 'font-weight': 'bold'}),
-        html.Div([
-            dcc.Checklist(
-                id='remove-unclassified-contigs',
-                options=[{'label': '  Remove Unclassified Contigs', 'value': 'remove_unclassified'}],
-                value=['remove_unclassified'],
-                style={'margin-right': '20px'}
-            ),
-            dcc.Checklist(
-                id='remove-host-host',
-                options=[{'label': '  Remove Host-Host Interactions', 'value': 'remove_host'}],
-                value=['remove_host'],
-            ),
-        ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px'}),
+        html.H4("Comparison of Hi-C Normalization Methods", className="mt-2"),
+
+        dash_table.DataTable(
+            id='methods-table',
+            columns=[
+                {"name": "Method", "id": "Method"},
+                {"name": "What is this method?", "id": "What is this method?"},
+                {"name": "How does it work?", "id": "How does it work?"},
+                {"name": "When should I use it?", "id": "When should I use it?"}
+            ],
+            data=methods.to_dict('records'),
+            style_table={'overflowY': 'auto'},
+            style_header={'backgroundColor': 'rgb(210, 210, 210)', 'fontWeight': 'bold'},
+            style_cell={'textAlign': 'left', 'padding': '10px', 'fontFamily': 'Arial'},
+            style_data={'whiteSpace': 'normal', 'height': 'auto'},
+        ),
         
         html.Div([
-            html.H4("References:", style={'margin-top': '30px', 'font-weight': 'bold'}),
+            html.H5("References:", style={'font-weight': 'bold'}),
             html.Ul([
-                html.Li("[1] Baudry, L., Foutel-Rodier, T., et al. (2019). MetaTOR: a computational pipeline to recover high-quality metagenomic bins from mammalian gut proximity-ligation (meta3C) libraries. Frontiers in genetics, 10, 753."),
-                html.Li("[2] DeMaere, M. Z., & Darling, A. E. (2019). bin3C: exploiting Hi-C sequencing data to accurately resolve metagenome-assembled genomes. Genome biology, 20, 46."),
-                html.Li("[3] Du, Y., & Sun, F. (2023). MetaCC allows scalable and integrative analyses of both long-read and short-read metagenomic Hi-C data. Nature Communications, 14, 6231."),
-                html.Li("[4] Du, Y., Laperriere, S. M, et al. (2022). Normalizing metagenomic Hi-C data and detecting spurious contacts using zero-inflated negative binomial regression. Journal of Computational Biology, 29 (2), 106-120.")
-            ], style={'font-size': 'small', 'line-height': '1.5'})
-        ], style={'margin-top': '40px', 'font-style': 'italic'})
-    
+                html.Li("[1] Du, Y., & Sun, F. (2023). MetaCC allows scalable and integrative analyses of both long-read and short-read metagenomic Hi-C data. Nature Communications, 14, 6231."),
+                html.Li("[2] Du, Y., Laperriere, S. M, et al. (2022). Normalizing metagenomic Hi-C data and detecting spurious contacts using zero-inflated negative binomial regression. Journal of Computational Biology, 29 (2), 106-120."),
+                html.Li("[3] DeMaere, M. Z., & Darling, A. E. (2019). bin3C: exploiting Hi-C sequencing data to accurately resolve metagenome-assembled genomes. Genome biology, 20, 46."),
+                html.Li("[4] Baudry, L., Foutel-Rodier, T., et al. (2019). MetaTOR: a computational pipeline to recover high-quality metagenomic bins from mammalian gut proximity-ligation (meta3C) libraries. Frontiers in genetics, 10, 753.")
+            ], style={'font-size': 'small', 'line-height': '1.5'}),
+        ], style={'font-style': 'italic', 'marginTop': '20px'}),
+
+        html.Hr(),
+        html.H2("Additional Options", className="mt-4", style={'marginTop': '40px'}),
+        
+        html.P([
+            html.Strong("Important Note:"), " Please do not enable the the following options if you have not provided the Binning Information File and Taxonomy Information File during the data upload process. These files are required to process these options correctly."
+        ], className="mt-3"),  
+        
+        html.Div([
+            html.Div([
+                dcc.Checklist(
+                    id='remove-unclassified-contigs',
+                    options=[{'label': '  Remove Unclassified Contigs', 'value': 'remove_unclassified'}],
+                    value=['remove_unclassified'],
+                    style={'margin-bottom': '10px'}
+                ),
+                html.P([
+                    "Check this box to exclude contigs or bins that are not classified in any taxonomic levels. "
+                    "Enabling this option helps reduce the size of your dataset and speeds up processing."
+                ], className="mb-3")
+            ], style={'margin-bottom': '20px'}),  # First row spacing
+        
+            html.Div([
+                dcc.Checklist(
+                    id='remove-host-host',
+                    options=[{'label': '  Remove Host-Host Interactions', 'value': 'remove_host'}],
+                    value=['remove_host'],
+                    style={'margin-bottom': '10px'}
+                ),
+                html.P([
+                    "Check this box to remove all interactions between contigs or bins labeled as chromosomes. "
+                    "Enabling this option can significantly reduce the amount of Hi-C contacts and accelerate processing."
+                ], className="mb-3")
+            ], style={'margin-bottom': '20px'})  # Second row spacing
+        ], style={'display': 'block', 'margin-bottom': '10px'})
     ])
 
     return layout
@@ -487,7 +544,6 @@ def create_normalization_layout():
 def register_normalization_callbacks(app):
     @app.callback(
         [Output('thres-container', 'style'),
-         Output('epsilon-container', 'style'),
          Output('max-iter-container', 'style'),
          Output('tol-container', 'style')],
         Input('normalization-method', 'value')
@@ -496,18 +552,16 @@ def register_normalization_callbacks(app):
     def update_parameters(normalization_method):
         # Determine styles based on the selected normalization method
         thres_style = {'display': 'block'} if normalization_method in ['Raw', 'normCC', 'HiCzin', 'bin3C', 'MetaTOR'] else {'display': 'none'}
-        epsilon_style = {'display': 'block'} if normalization_method in ['HiCzin', 'bin3C', 'MetaTOR'] else {'display': 'none'}
         max_iter_style = {'display': 'block'} if normalization_method == 'bin3C' else {'display': 'none'}
         tol_style = {'display': 'block'} if normalization_method == 'bin3C' else {'display': 'none'}
         
-        return thres_style, epsilon_style, max_iter_style, tol_style
+        return thres_style, max_iter_style, tol_style
 
     @app.callback(
         [Output('normalization-status', 'data'),
          Output('blank-element', 'children', allow_duplicate=True)],
         [Input('execute-button', 'n_clicks')],
         [State('normalization-method', 'value'),
-         State('epsilon-input', 'value'),
          State('thres-input', 'value'),
          State('max-iter-input', 'value'),
          State('tol-input', 'value'),
@@ -519,7 +573,7 @@ def register_normalization_callbacks(app):
         prevent_initial_call=True
     )
 
-    def execute_normalization(n_clicks, normalization_method, epsilon, threshold, max_iter, tolerance,
+    def execute_normalization(n_clicks, normalization_method, threshold, max_iter, tolerance,
                               remove_unclassified_contigs, remove_host_host, user_folder, selected_method, current_stage):
         # Only trigger if in the 'Normalization' stage for the selected methods
         if not n_clicks or selected_method not in ['method1', 'method2'] or current_stage != 'Normalization':
@@ -528,7 +582,6 @@ def register_normalization_callbacks(app):
         logger.info(f"Running normalization for {selected_method} using {normalization_method}...")
     
         # Set default values if states are missing
-        epsilon = epsilon if epsilon is not None else 1
         threshold = threshold if threshold is not None else 5
         max_iter = max_iter if max_iter is not None else 1000
         tolerance = tolerance if tolerance is not None else 1e-6
@@ -548,7 +601,7 @@ def register_normalization_callbacks(app):
             "method": normalization_method,
             "contig_df": contig_info,
             "contact_matrix": contact_matrix,
-            "epsilon": epsilon,
+            "epsilon": 1,
             "threshold": threshold,
             "max_iter": max_iter,
             "tolerance": tolerance
