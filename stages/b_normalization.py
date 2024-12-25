@@ -387,47 +387,48 @@ def create_normalization_layout():
     methods = [
         {
             "Method": "Raw",
-            "What is this method?": "Filters out low-contact values to reduce noise in the Hi-C contact matrix.",
-            "How does it work?": "Removes values below a certain threshold percentile to denoise the data.",
-            "When should I use it?": "Use Raw when your data has already been normalized or when no further normalization is needed."
+            "Model/Algorithm": "Threshold-based denoising",
+            "What is this method?": "Does not remove effects of any factors from input Hi-C contact matrix; suitable if matrix is already normalized or normalization is unnecessary.",
+            "How does it work?": "Removes values below a specified threshold percentile to denoise the data."
         },
         {
             "Method": "normCC [1]",
-            "What is this method?": "Applies a negative binomial (NB) distribution model to adjust for biases due to contig coverage, length, and restriction sites.",
-            "How does it work?": "Predicts expected Hi-C contacts and scales the raw value to eliminate biases.",
-            "When should I use it?": "Use normCC when contigs have high overlap and contamination."
+            "Model/Algorithm": "Negative Binomial Regression",
+            "What is this method?": "Normalization module in MetaCC framework eliminating systematic biases like contig length, restriction sites, and coverage.",
+            "How does it work?": "Employs negative binomial regression to adjust for systematic biases; spurious normalized contacts are removed based on a threshold."
         },
         {
             "Method": "HiCzin [2]",
-            "What is this method?": "Applies log transformation and Zero-Inflated Negative Binomial model to normalize Hi-C contact matrices with many zeros.",
-            "How does it work?": "Models interactions using logarithmic scaling and adjusts for biases like coverage, length, and restriction sites.",
-            "When should I use it?": "Use HiCzin when dealing with sparse matrices containing many zero or near-zero values."
+            "Model/Algorithm": "Zero-Inflated Negative Binomial Regression",
+            "What is this method?": "Specifically designed for metagenomic Hi-C data, addressing explicit and implicit biases using a zero-inflated model.",
+            "How does it work?": "Combines negative binomial regression for explicit biases and a zero-inflated component for unobserved interactions; spurious contacts are removed based on a threshold."
         },
         {
             "Method": "bin3C [3]",
-            "What is this method?": "Applies bistochastic normalization to balance the rows and columns of the Hi-C contact matrix.",
-            "How does it work?": "Rescales the matrix iteratively using Kantorovich-Rubinstein regularization until balance is achieved.",
-            "When should I use it?": "Use bin3C when balancing the matrix is critical for downstream interpretation like clustering or binning."
+            "Model/Algorithm": "Cut-Site Normalization & Knight-Ruiz Algorithm",
+            "What is this method?": "Pipeline for genome binning; ensures uniform signals in Hi-C contact maps by removing experimental biases.",
+            "How does it work?": "Normalizes data via cut-site normalization and Knight-Ruiz algorithm for bistochastic matrix balancing; spurious contacts are removed based on a threshold."
         },
         {
             "Method": "MetaTOR [4]",
-            "What is this method?": "Applies square root normalization to stabilize the variance of Hi-C contact matrices.",
-            "How does it work?": "Scales raw contact values based on the diagonal elements (self-interactions) to reduce variance.",
-            "When should I use it?": "Use MetaTOR when you need to stabilize variance across the Hi-C matrix for consistency in interaction contacts."
+            "Model/Algorithm": "Coverage-based Normalization",
+            "What is this method?": "Computational pipeline for metagenomic binning; corrects biases introduced by contig coverage variations.",
+            "How does it work?": "Normalizes interaction counts by dividing edge weights by geometric mean of contig coverage; spurious contacts are removed based on a threshold."
         }
     ]
+
     methods = pd.DataFrame(methods)
     
     normalization_methods = [
-        {'label': 'Raw - Removing contacts below a certain threshold for noise reduction.', 'value': 'Raw'},
-        {'label': 'normCC - Apply negative binomial (NB) distribution model to adjust for biases.', 'value': 'normCC'},
-        {'label': 'HiCzin - Applies log transformation and Zero-Inflated Negative Binomial model to normalize Hi-C contact matrices', 'value': 'HiCzin'},
-        {'label': 'bin3C - Using Kantorovich-Rubinstein regularization for balancing matrix rows and columns.', 'value': 'bin3C'},
-        {'label': 'MetaTOR - Square root normalization to stabilize variance.', 'value': 'MetaTOR'}
+        {'label': 'Raw - Threshold-based denoising', 'value': 'Raw'},
+        {'label': 'normCC - Negative Binomial Regression', 'value': 'normCC'},
+        {'label': 'HiCzin - Zero-Inflated Negative Binomial Regression', 'value': 'HiCzin'},
+        {'label': 'bin3C - Cut-Site Normalization & Knight-Ruiz Algorithm', 'value': 'bin3C'},
+        {'label': 'MetaTOR - Coverage-based Normalization', 'value': 'MetaTOR'}
     ]
 
     layout = html.Div([
-        html.H2("Normalization", className="mt-4"),
+        html.H2("Normalization Setups", className="mt-4"),
         html.Div([
             html.Label("Select Normalization Method:"),
             dcc.Dropdown(
@@ -482,9 +483,9 @@ def create_normalization_layout():
             id='methods-table',
             columns=[
                 {"name": "Method", "id": "Method"},
+                {"name": "Model/Algorithm", "id": "Model/Algorithm"},
                 {"name": "What is this method?", "id": "What is this method?"},
-                {"name": "How does it work?", "id": "How does it work?"},
-                {"name": "When should I use it?", "id": "When should I use it?"}
+                {"name": "How does it work?", "id": "How does it work?"}
             ],
             data=methods.to_dict('records'),
             style_table={'overflowY': 'auto'},

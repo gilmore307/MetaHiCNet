@@ -111,97 +111,82 @@ modal_body = dbc.ModalBody(
             
             # Section 2: Normalization
             html.H2("Section 2: Normalization", className="mt-5 mb-3"),
-            html.P("MetaHiCNet offers several normalization methods for Hi-C contact matrices. Choose the method based on your dataset’s characteristics and analysis needs.", className="mb-4"),
+            html.P("MetaHiCNet provides existing normalization methods for Hi-C contact matrices. Select the method based on your dataset’s characteristics and analysis needs.", className="mb-4"),
 
             # Raw Method
             html.H4("1. Raw", className="mt-3"),
             html.P([
-                html.Strong("What is this method?"), " The Raw method filters out low-contact values to reduce noise in the Hi-C contact matrix."
+                html.Strong("What is this method?"), " The Raw method does not remove the effects of any factors from the input Hi-C contact matrix. Select the Raw method if your input Hi-C contact matrix has already been normalized or if normalization is unnecessary for your analysis."
             ]),
             html.P([
-                html.Strong("How does it work?"), " It removes values below a certain threshold percentile to denoise the data."
-            ]),
-            html.P([
-                html.Strong("When should I use it?"), " Use Raw option when your data has already been normalized or you dont need to normalize your data."
+                html.Strong("How does it work?"), " It only denoises the data by removing values below a specified threshold percentile."
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
                 html.Ul([
-                    html.Li("Threshold: Set between 0-10 (default 5); higher values remove more noise.")
+                    html.Li("Threshold: A value between 0–100% (default: 5%). Higher values remove more contacts.")
                 ])
             ]),
 
             # normCC Method
             html.H4("2. normCC", className="mt-3"),
             html.P([
-                html.Strong("What is this method?"), " The normCC method applies a negative binomial (NB) distribution model to adjust for biases due to contig coverage, length, and restriction sites."
+                html.Strong("What is this method?"), " NormCC is a normalization module within the MetaCC framework that eliminates systematic biases from metagenomic Hi-C data, such as biases caused by contig length, restriction sites, and coverage."
             ]),
             html.P([
-                html.Strong("How does it work?"), " It predicts expected Hi-C contacts and scales the raw value to eliminate biases."
-            ]),
-            html.P([
-                html.Strong("When should I use it?"), " Use normCC when contigs have high overlap and contamination."
+                html.Strong("How does it work?"), " NormCC employs a negative binomial regression model to adjust Hi-C contact data for systematic biases. Unlike other methods, it does not require pre-computed contig abundances to normalize the data. After bias correction, normalized contacts falling below a specified threshold percentile are classified as spurious and removed."
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
                 html.Ul([
-                    html.Li("Threshold: Set between 0-10 (default 5); controls denoising.")
+                    html.Li("Threshold: A value between 0–100% (default: 5%). Higher values remove more contacts.")
                 ])
             ]),
 
             # HiCzin Method
             html.H4("3. HiCzin", className="mt-3"),
             html.P([
-                html.Strong("What is this method?"), " The HiCzin method applies log transformation and Zero-Inflated Negative Binomial model to normalize Hi-C contact matrices with many zeros."
+                html.Strong("What is this method?"), " HiCzin is a normalization method designed specifically for metagenomic Hi-C data. It addresses both explicit biases (e.g., contig length, restriction site counts, and coverage) and implicit biases (e.g., unobserved interactions) using a zero-inflated negative binomial regression framework. "
             ]),
             html.P([
-                html.Strong("How does it work?"), " It models interactions using logarithmic scaling and adjusts for biases like coverage, length, and restriction sites."
-            ]),
-            html.P([
-                html.Strong("When should I use it?"), " Use HiCzin when dealing with sparse matrices containing many zero or near-zero values."
+                html.Strong("How does it work?"), " HiCzin combines two components: a) Negative Binomial Regression: Models the raw metaHi-C count data while accounting for explicit biases; b) Zero-Inflated Component: Captures unobserved interactions caused by experimental noise. After bias elimination, normalized contacts falling below a specified threshold percentile are classified as spurious and removed. "
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
                 html.Ul([
-                    html.Li("Threshold: Set between 0-10 (default 5); removes low-contact values.")
+                    html.Li("Threshold: A value between 0–100% (default: 5%). Higher values remove more contacts.")
                 ])
             ]),
 
             # bin3C Method
             html.H4("4. bin3C", className="mt-3"),
             html.P([
-                html.Strong("What is this method?"), " The bin3C method applies bistochastic normalization to balance the rows and columns of the Hi-C contact matrix."
+                html.Strong("What is this method?"), " Bin3C is a pipeline designed for genome binning using metagenomic Hi-C data. It includes a normalization module that removes experimental biases to ensure uniform signals across the Hi-C contact map, which is critical for accurate binning."
             ]),
             html.P([
-                html.Strong("How does it work?"), " It iteratively rescales the matrix using the Kantorovich-Rubinstein regularization algorithm until balance is achieved."
-            ]),
-            html.P([
-                html.Strong("When should I use it?"), " Use bin3C when balancing the matrix is critical for downstream interpretation like clustering or binning."
+                html.Strong("How does it work?"), " The normalization process involves two stages: a) Cut-Site Normalization: Raw Hi-C interaction counts between contigs are then adjusted by dividing each count by the product of the cut site counts for the interacting contigs. This step addresses biases introduced by variation in restriction site density; b) Bistochastic Matrix Balancing: The Knight-Ruiz algorithm is applied to the adjusted Hi-C contact map. This algorithm transforms the matrix into a form where rows and columns have uniform totals, correcting residual biases and ensuring consistent interaction signals across the dataset. After bias elimination, normalized contacts falling below a specified threshold percentile are classified as spurious and removed."
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
                 html.Ul([
-                    html.Li("Threshold: Set between 0-10 (default 5); removes low-contact values."),
-                    html.Li("Max Iterations: Default 1000; increase for slow-converging datasets."),
-                    html.Li("Tolerance: Default 1e-6; lower for higher precision.")
+                    html.Li("Threshold: A value between 0–100% (default: 5%). Higher values remove more contacts."),
+                    html.Li("Max Iterations: Default 1000; specifies the maximum number of iterations for the Knight-Ruiz algorithm."),
+                    html.Li("Tolerance: Default 1e-6; defines the convergence threshold for the Knight-Ruiz algorithm.")
                 ])
             ]),
 
             # MetaTOR Method
             html.H4("5. MetaTOR", className="mt-3"),
             html.P([
-                html.Strong("What is this method?"), " The MetaTOR method applies square root normalization to stabilize variance of Hi-C contact matrix."
+                html.Strong("What is this method?"), " MetaTOR is a computational pipeline designed for metagenomic binning using Hi-C data. The normalization module in MetaTOR processes Hi-C interaction data to correct for biases introduced by variations in contig coverage, facilitating accurate genome binning."
             ]),
             html.P([
-                html.Strong("How does it work?"), " The method works by scaling the raw contact values based on the diagonal elements of the contact matrix, which represent self-interactions."
-            ]),
-            html.P([
-                html.Strong("When should I use it?"), " Use MetaTOR when you need to stabilize variance across the Hi-C matrix for consistency in interaction contacts."
+                html.Strong("How does it work?"), " Interaction counts between contigs are normalized by dividing the edge weight (contact score) by the geometric mean of the coverage of the two contigs. This ensures that interaction frequencies are not skewed by differences in sequencing depth across contigs."
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
                 html.Ul([
-                    html.Li("Threshold: Set between 0-10 (default 5); removes low-contact values.")
+                    html.Li("Threshold: A value between 0–100% (default: 5%). Higher values remove more contacts.")
                 ])
             ]),
             

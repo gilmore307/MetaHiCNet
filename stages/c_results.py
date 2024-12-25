@@ -200,7 +200,7 @@ def register_results_callbacks(app):
         normalized_correlations = calculate_pearson(normalized_product_values, factors)
     
         correlation_results = pd.DataFrame({
-            "Metric": ["Normalized"],
+            "Metric": ["Normalized Hi-C Contacts"],
             "Site": [normalized_correlations["Product Sites"]],
             "Length": [normalized_correlations["Product Length"]],
             "Coverage": [normalized_correlations["Product Coverage"]],

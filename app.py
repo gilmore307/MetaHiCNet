@@ -100,7 +100,7 @@ app.layout = dbc.Container([
             dbc.NavItem(dbc.NavLink("Run", id="run", href="#")),
             dbc.NavItem(dbc.NavLink("Help", id="open-help-modal", href="#")),
             dbc.NavItem(dbc.NavLink("GitHub", href="https://github.com/gilmore307/MetaHiCNet", target="_blank")),
-            dbc.NavItem(dbc.NavLink("Comments", href="https://github.com/gilmore307/MetaHiCNet/issues", target="_blank")),
+            dbc.NavItem(dbc.NavLink("Issues", href="https://github.com/gilmore307/MetaHiCNet/issues", target="_blank")),
         ],
         brand="MetaHiCNet",
         brand_href="/"
@@ -315,55 +315,48 @@ def show_quick_load_button(method, stage):
 )
 def update_main_content(current_stage, visualization_status, home_status, user_folder, selected_method):
     if home_status:
-        # Define the nodes based on the letters in "MetaHiCNet"
-        nodes = ['M', 'e', 't', 'a', 'H', 'i', 'C', 'N', 'e', 't']
         
-        # Define edges between consecutive nodes
-        edges = []
-        for i in range(len(nodes) - 1):
-            edges.append({'data': {'source': nodes[i], 'target': nodes[i + 1]}})
-        
-        # Create nodes with gradient color
-        num_nodes = len(nodes)
-        colors = np.linspace(0, 1, num_nodes)  # Gradient range from blue to red
-
         # Cytoscape elements
-        cyto_elements = []
-        for i, node in enumerate(nodes):
-            color_value = colors[i]
-            color = f'rgba({int(255 * (1 - color_value))}, {int(255 * color_value)}, {int(255 * color_value)}, 0.4)'
-
-            # Add node with its color
-            cyto_elements.append({
-                'data': {'id': node, 'label': node, 'color': color}
-            })
-
-        # Add edges
-        cyto_elements += edges
+        cyto_elements = [{'data': {'id': 'p_Uroviricota _v', 'label': 'p_Uroviricota _v', 'label_size': 20, 'size': 1, 'color': '#FFFFFF', 'parent': None, 'visible': 'element'}, 'position': {'x': 0.0, 'y': 0.0}, 'style': {'text-margin-y': -5, 'font-style': 'italic'}}, 
+                         {'data': {'id': 'p_FirmicuteA', 'label': 'p_FirmicuteA', 'label_size': 20, 'size': 1, 'color': '#FFFFFF', 'parent': None, 'visible': 'element'}, 'position': {'x': -142.68077707129393, 'y': 108.19757521913004}, 'style': {'text-margin-y': -5, 'font-style': 'italic'}}, 
+                         {'data': {'id': 'p_Verrucomicrobiota', 'label': 'p_Verrucomicrobiota', 'label_size': 20, 'size': 1, 'color': '#FFFFFF', 'parent': None, 'visible': 'element'}, 'position': {'x': 184.91941602274005, 'y': -140.40450944684432}, 'style': {'text-margin-y': -5, 'font-style': 'italic'}}, 
+                         {'data': {'id': 'vMAG_34', 'label': 'vMAG_34', 'label_size': 15, 'size': 15, 'color': '#AE445A', 'parent': 'p_Uroviricota _v', 'visible': 'element'}, 'position': {'x': 0, 'y': 0}, 'style': {'text-margin-y': -5, 'font-style': 'normal'}}, 
+                         {'data': {'id': 'vMAG_2', 'label': 'vMAG_2', 'label_size': 15, 'size': 10, 'color': '#F49AC2', 'parent': 'p_Uroviricota _v', 'visible': 'element'}, 'position': {'x': -29.494755123132794, 'y': 27.019611770460955}, 'style': {'text-margin-y': -5, 'font-style': 'normal'}}, 
+                         {'data': {'id': 'MAG_600', 'label': 'MAG_600', 'label_size': 15, 'size': 10, 'color': '#89CFF0', 'parent': 'p_FirmicuteA', 'visible': 'element'}, 'position': {'x': -172.17553219442672, 'y': 135.217186989591}, 'style': {'text-margin-y': -5, 'font-style': 'normal'}}, 
+                         {'data': {'id': 'MAG_927', 'label': 'MAG_927', 'label_size': 15, 'size': 10, 'color': '#89CFF0', 'parent': 'p_FirmicuteA', 'visible': 'element'}, 'position': {'x': -137.73523124749306, 'y': 51.84563136175555}, 'style': {'text-margin-y': -5, 'font-style': 'normal'}}, 
+                         {'data': {'id': 'MAG_754', 'label': 'MAG_754', 'label_size': 15, 'size': 10, 'color': '#89CFF0', 'parent': 'p_FirmicuteA', 'visible': 'element'}, 'position': {'x': -100.52689625070484, 'y': 163.17984810561202}, 'style': {'text-margin-y': -5, 'font-style': 'normal'}}, 
+                         {'data': {'id': 'MAG_166', 'label': 'MAG_166', 'label_size': 15, 'size': 10, 'color': '#89CFF0', 'parent': 'p_FirmicuteA', 'visible': 'element'}, 'position': {'x': -221.45785589652826, 'y': 94.26301918878511}, 'style': {'text-margin-y': -5, 'font-style': 'normal'}}, 
+                         {'data': {'id': 'MAG_639', 'label': 'MAG_639', 'label_size': 15, 'size': 10, 'color': '#008B8B', 'parent': 'p_Verrucomicrobiota', 'visible': 'element'}, 'position': {'x': 155.42466089960726, 'y': -113.38489767638336}, 'style': {'text-margin-y': -5, 'font-style': 'normal'}}, 
+                         {'data': {'source': 'vMAG_34', 'target': 'vMAG_2', 'width': 1, 'color': '#bbb', 'visible': 'element', 'selectable': False}}, 
+                         {'data': {'source': 'vMAG_34', 'target': 'MAG_600', 'width': 1, 'color': '#bbb', 'visible': 'element', 'selectable': False}}, 
+                         {'data': {'source': 'vMAG_34', 'target': 'MAG_927', 'width': 1, 'color': '#bbb', 'visible': 'element', 'selectable': False}}, 
+                         {'data': {'source': 'vMAG_34', 'target': 'MAG_754', 'width': 1, 'color': '#bbb', 'visible': 'element', 'selectable': False}}, 
+                         {'data': {'source': 'vMAG_34', 'target': 'MAG_166', 'width': 1, 'color': '#bbb', 'visible': 'element', 'selectable': False}}, 
+                         {'data': {'source': 'vMAG_34', 'target': 'MAG_639', 'width': 1, 'color': '#bbb', 'visible': 'element', 'selectable': False}}]
 
         # Cytoscape Stylesheet for nodes and edges
         cyto_stylesheet = [
             {
                 'selector': 'node',
                 'style': {
-                    'content': 'data(label)',
-                    'background-color': 'data(color)',  # Fetch dynamic color
-                    'text-valign': 'center',
-                    'text-halign': 'center',
-                    'width': '40px',
-                    'height': '40px',
-                    'font-size': '16px',
-                    'color': '#ffffff'  # Node label text color
+                    'width': 'data(size)',
+                    'height': 'data(size)',
+                    'background-color': 'data(color)',
+                    'label': 'data(label)',
+                    'font-size': 'data(label_size)',
+                    'border-color': 'data(border_color)',
+                    'border-width': 'data(border_width)',
+                    'parent': 'data(parent)',
+                    'display': 'data(visible)'
                 }
             },
             {
                 'selector': 'edge',
                 'style': {
-                    'width': 3,
-                    'line-color': '#aaa',
-                    'target-arrow-shape': 'triangle',
-                    'target-arrow-color': '#aaa',
-                    'curve-style': 'bezier'
+                    'width': 'data(width)',
+                    'line-color': 'data(color)',
+                    'opacity': 0.6,
+                    'display': 'data(visible)'
                 }
             }
         ]
@@ -401,7 +394,7 @@ def update_main_content(current_stage, visualization_status, home_status, user_f
                 id='cytoscape-playground',
                 elements=cyto_elements,
                 style={'width': '100%', 'height': '400px'},
-                layout={'name': 'circle'},
+                layout={'name': 'preset'},
                 stylesheet=cyto_stylesheet
             ),
         ])
