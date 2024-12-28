@@ -83,8 +83,6 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
                         'selectable': False
                     }
                 })
-    print(elements)
-
     return elements
 
 def add_selection_styles(selected_nodes=None, selected_edges=None):
