@@ -977,6 +977,7 @@ def create_visualization_layout():
                                                 defaultColDef={},
                                                 style={'display': 'none'},
                                                 dashGridOptions={
+                                                    'suppressMenuHide': True,
                                                     "pagination": True,
                                                     'paginationPageSize': 20,
                                                     'rowSelection': 'single',

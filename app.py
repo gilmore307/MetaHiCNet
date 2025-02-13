@@ -1,4 +1,3 @@
-import numpy as np
 import uuid
 import dash
 from dash import dcc, html, no_update
