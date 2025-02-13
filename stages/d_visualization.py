@@ -966,7 +966,7 @@ def create_visualization_layout():
                                         children=[
                                             dcc.Checklist(
                                                 id='visibility-filter',
-                                                options=[{'label': '  Only show elements present in the diagram', 'value': 'filter'}],
+                                                options=[{'label': '  Only show elements present in the network', 'value': 'filter'}],
                                                 value=['filter'],
                                                 style={'display': 'inline-block', 'width': '25vw'}
                                             ),
