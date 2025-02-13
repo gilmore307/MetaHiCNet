@@ -93,6 +93,7 @@ def create_flowchart(current_stage, method='method1'):
 
 # Part 3: Define the layout of the app
 app.layout = dbc.Container([
+    html.Title('MetaHiCNet'),
     # Stores for app state management
     dbc.NavbarSimple(
         children=[
