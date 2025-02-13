@@ -34,6 +34,7 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
     prevent_initial_callbacks='initial_duplicate'
 )
+app.title = "MetaHiCNet"
 app.enable_dev_tools(debug=False)
 server = app.server
 
@@ -93,7 +94,6 @@ def create_flowchart(current_stage, method='method1'):
 
 # Part 3: Define the layout of the app
 app.layout = dbc.Container([
-    html.Title('MetaHiCNet'),
     # Stores for app state management
     dbc.NavbarSimple(
         children=[
