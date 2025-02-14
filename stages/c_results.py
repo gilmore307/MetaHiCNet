@@ -137,7 +137,7 @@ def results_layout(user_folder):
                 ),
                 
                 html.H5(
-                    "Section 2: Relationship between raw interaction counts and the product of the number of restriction sites, length, and coverage between contig pairs.", 
+                    "Section 2: Relationship between Raw Interaction Counts and The Product of the Number of Restriction Sites, Length, and Coverage between Contig Pairs.", 
                     className="main-title my-4", 
                     style={'marginTop': '600px', 'textAlign': 'left'}
                 ),

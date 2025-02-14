@@ -896,10 +896,10 @@ def create_visualization_layout():
                                 options=[
                                     {'label': 'Taxonomic Framework', 'value': 'taxonomy'},
                                     {'label': 'Cross-Taxa Hi-C Interaction', 'value': 'basic'},
-                                    {'label': 'Cross-Bin Hi-C Interactions', 'value': 'bin'},
+                                    {'label': 'Cross-Bin Hi-C Interaction', 'value': 'bin'},
                                 ],
                                 value='basic',
-                                style={'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+                                style={'width': '300px', 'display': 'inline-block', 'margin-top': '4px'}
                             ),
                             dcc.Dropdown(
                                 id='annotation-selector',
@@ -1440,10 +1440,10 @@ def register_visualization_callbacks(app):
             raise PreventUpdate
     
         if visualization_type == 'bin':
-            bin_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            bin_selector_style = {'width': '300px', 'display': 'inline-block', 'margin-top': '4px'}
             annotation_selector_style = {'display': 'none'}
         elif visualization_type == 'basic':
-            annotation_selector_style = {'width': '250px', 'display': 'inline-block', 'margin-top': '4px'}
+            annotation_selector_style = {'width': '300px', 'display': 'inline-block', 'margin-top': '4px'}
             bin_selector_style = {'display': 'none'}
         else:
             annotation_selector_style = {'display': 'none'}
