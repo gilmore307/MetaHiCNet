@@ -1471,11 +1471,7 @@ def register_visualization_callbacks(app):
     def update_visualization(current_visualization_mode, visualization_type, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
-    
-        ctx = callback_context
-        triggered_props = [t['prop_id'].split('.')[0] for t in ctx.triggered]
-        
-        logger.info(f"Updating visualization. Triggered by: {triggered_props}")
+            
         logger.info(f"Visualization type: {visualization_type}")
             
         unique_annotations = load_from_redis(f'{user_folder}:unique-annotations')
