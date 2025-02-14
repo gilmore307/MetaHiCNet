@@ -905,7 +905,7 @@ def create_visualization_layout():
                                 id='annotation-selector',
                                 options=[],
                                 value=None,
-                                placeholder="Select an annotation",
+                                placeholder="Overall network",
                                 style={'display': 'none'}
                             ),
                             dcc.Dropdown(

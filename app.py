@@ -29,7 +29,10 @@ from stages.description import modal_body
 # Part 1: Initialize the Dash app
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    external_stylesheets=[
+        dbc.themes.BOOTSTRAP,
+        "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+    ],
     suppress_callback_exceptions=True,
     prevent_initial_callbacks='initial_duplicate'
 )
@@ -96,11 +99,11 @@ app.layout = dbc.Container([
     # Stores for app state management
     dbc.NavbarSimple(
         children=[
-            dbc.NavItem(dbc.NavLink("Home", id="home", href="#")),
-            dbc.NavItem(dbc.NavLink("Run", id="run", href="#")),
-            dbc.NavItem(dbc.NavLink("Help", id="open-help-modal", href="#")),
-            dbc.NavItem(dbc.NavLink("GitHub", href="https://github.com/gilmore307/MetaHiCNet", target="_blank")),
-            dbc.NavItem(dbc.NavLink("Issues", href="https://github.com/gilmore307/MetaHiCNet/issues", target="_blank")),
+            dbc.NavItem(dbc.NavLink([html.I(className="fa fa-home"), " Home"], id="home", href="#")),
+            dbc.NavItem(dbc.NavLink([html.I(className="fa fa-cogs"), " Run"], id="run", href="#")),
+            dbc.NavItem(dbc.NavLink([html.I(className="fa fa-question-circle"), " Help"], id="open-help-modal", href="#")),
+            dbc.NavItem(dbc.NavLink([html.I(className="fab fa-github"), " GitHub"], href="https://github.com/gilmore307/MetaHiCNet", target="_blank")),
+            dbc.NavItem(dbc.NavLink([html.I(className="fa fa-exclamation-circle"), " Issues"], href="https://github.com/gilmore307/MetaHiCNet/issues", target="_blank")),
         ],
         brand="MetaHiCNet",
         brand_href="/"
