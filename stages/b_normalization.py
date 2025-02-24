@@ -441,19 +441,19 @@ def create_normalization_layout():
         
         html.Div([
             html.Div([
-                html.Label("Threshold Percentage for Denoising (default: 5): Contacts below this percentile will be removed to reduce noise."),
+                html.Label("Threshold Percentage for Denoising (default: 5%)"),
                 dcc.Input(
                     id='thres-input',
                     type='number',
                     value=5,
-                    placeholder="Threshold percentage (0-100)",
+                    placeholder="Threshold percentage (0-100)%",
                     style={'width': '100%'}
                 )
             ], id='thres-container', className="my-3"),
 
             # Max iterations input
             html.Div([
-                html.Label("Maximum Iterations (default: 1000): Controls the number of iterations for the Sinkhorn-Knopp algorithm."),
+                html.Label("Maximum Iterations (default: 1000)"),
                 dcc.Input(
                     id='max-iter-input',
                     type='number',
@@ -465,7 +465,7 @@ def create_normalization_layout():
 
             # Tolerance input
             html.Div([
-                html.Label("Tolerance for Convergence (default: 1e-6): Defines the precision for convergence. Lower values increase precision."),
+                html.Label("Tolerance for Convergence (default: 1e-6)"),
                 dcc.Input(
                     id='tol-input',
                     type='number',
