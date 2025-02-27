@@ -239,24 +239,60 @@ modal_body = dbc.ModalBody(
 
             # Switch Visualization Network
             html.H4("Switch Visualization Network", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Switch Visualization Network.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ),    
             html.P([
                 "Click this button to switch from the current visualization to the normalization results view."
             ], className="mb-3"),
 
             # Reset Button
             html.H4("Reset Selection", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Reset Selection.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "Click this button to clear all selections and reset the visualization to Cross-Taxa Hi-C Interaction."
             ], className="mb-3"),
 
             # Tooltip Toggle Container
             html.H4("Enable or Disable Tooltips", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Enable or Disable Tooltips.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "Check this box to enable tooltips that provide contextual information about the components of this app."
             ], className="mb-3"),
 
             # Dropdowns
             html.H4("Visualization and Selection Dropdowns", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Visualization and Selection Dropdowns.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "Use these dropdown menus to explore different visualization modes or select annotations and bins for detailed analysis.",
                 html.Br(),
@@ -272,6 +308,15 @@ modal_body = dbc.ModalBody(
 
             # Legend Container
             html.H4("Color Legend and Taxonomy Level Selector", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Color Legend and Taxonomy Level Selector.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "1. ", html.Strong("Color Legend:"), " Colors are consistently applied across the Cytoscape graph, bar chart, and tables to represent categories or annotations at the selected taxonomy level. Use the legend to identify categories by their assigned colors.",
                 html.Ul([
@@ -289,6 +334,15 @@ modal_body = dbc.ModalBody(
 
             # Bar Chart Container
             html.H4("Bar Chart", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Bar Chart.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="30%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "1. ", html.Strong("Chart Types:"), " The bar chart can display the following types of charts: ",
                 html.Ul([
@@ -301,6 +355,15 @@ modal_body = dbc.ModalBody(
 
             # Information Table Container
             html.H4("Information Table", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Information Table.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "1. ", html.Strong("Filter, Sort, and Search:"), " Use column headers to sort rows or apply filters to narrow down results. You can also use the search box in the headers to find specific bins or annotations quickly.",
                 html.Br(),
@@ -323,6 +386,15 @@ modal_body = dbc.ModalBody(
 
             # Treemap Graph Container
             html.H4("Treemap Graph", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Treemap Graph.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "1. ", html.Strong("Hierarchy Representation:"), " Taxa of finer levels (e.g., species) are nested within rectangles of their broader levels (e.g., genus, domain).",
                 html.Br(),
@@ -342,6 +414,15 @@ modal_body = dbc.ModalBody(
 
             # Cytoscape Graph Container
             html.H4("Cytoscape Graph", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Cytoscape Graph.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "This is a network graph visualizing relationships between annotations or bins based on Hi-C interactions.",
                 html.Br(),
@@ -360,6 +441,15 @@ modal_body = dbc.ModalBody(
 
             # Contact Table Container
             html.H4("Contact Table", className="mt-3"),
+            html.Div(
+                html.Video(
+                    src=r"assets\help\Contact Table.mp4",  # Path to the MP4 file
+                    controls=True,  # Enable video controls (play, pause, etc.)
+                    width="80%",  # Optional: Set width of the video
+                    height="auto",  # Optional: Set height of the video
+                ),
+                className="d-flex justify-content-center"
+            ), 
             html.P([
                 "This table displays pairwise Hi-C contact values between taxa, providing a detailed view of their interactions.",
                 html.Br(),
