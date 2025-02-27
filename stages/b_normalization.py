@@ -308,8 +308,9 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
         'Contig index': lambda x: ', '.join(x),
         'The number of restriction sites': 'sum',
         'Contig length': 'sum',
-        'Contig coverage': lambda x: (x * contig_info.loc[x.index, 'Contig length']).sum() / 
-                                     contig_info.loc[x.index, 'The number of restriction sites'].sum()
+        'Contig coverage': lambda x: (
+            (contig_info.loc[x.index, 'Contig length'] * x).sum() / contig_info.loc[x.index, 'Contig length'].sum()
+        )
     }
     unknown_columns = [col for col in contig_info.columns if col not in known_agg]
     
@@ -420,11 +421,11 @@ def create_normalization_layout():
     methods = pd.DataFrame(methods)
     
     normalization_methods = [
-        {'label': 'Raw - Threshold-based denoising', 'value': 'Raw'},
-        {'label': 'normCC - Negative Binomial Regression', 'value': 'normCC'},
-        {'label': 'HiCzin - Zero-Inflated Negative Binomial Regression', 'value': 'HiCzin'},
-        {'label': 'bin3C - Cut-Site Normalization & Knight-Ruiz Algorithm', 'value': 'bin3C'},
-        {'label': 'MetaTOR - Coverage-based Normalization', 'value': 'MetaTOR'}
+        {'label': 'Raw', 'value': 'Raw'},
+        {'label': 'normCC', 'value': 'normCC'},
+        {'label': 'HiCzin', 'value': 'HiCzin'},
+        {'label': 'bin3C', 'value': 'bin3C'},
+        {'label': 'MetaTOR', 'value': 'MetaTOR'}
     ]
 
     layout = html.Div([
