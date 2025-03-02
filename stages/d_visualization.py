@@ -286,7 +286,7 @@ def styling_information_table(information_data, id_colors, unique_annotations, t
         styles.append(annotation_style)
     
     # Style ID column
-    id_column = 'Bin index'
+    id_column = 'Bin ID'
     
     # Function to compute color, create styles, and append them to the styles list
     def style_id_column(item, item_type, styles):
@@ -482,7 +482,7 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
         "type": "Microbial Community",
         "total coverage": 0,
         "border_color": "black",
-        "bin": bin_information['Bin index'].unique()
+        "bin": bin_information['Bin ID'].unique()
     })
     existing_annotations.add("Microbial Community")
 
@@ -519,7 +519,7 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
                     "type": row['Category'],
                     "total coverage": row['Contig coverage'],
                     "border_color": type_colors.get(row['Category'], "gray"),
-                    "bin": [row['Bin index']]
+                    "bin": [row['Bin ID']]
                 })
                 existing_annotations.add(annotation)
             else:
@@ -527,7 +527,7 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
                 for rec in records:
                     if rec['annotation'] == annotation:
                         rec['total coverage'] += row['Contig coverage']
-                        rec['bin'].append(row['Bin index'])
+                        rec['bin'].append(row['Bin ID'])
                         break
 
             # Set current annotation as parent for the next level
@@ -699,7 +699,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
 def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, selected_bin):
     data_dict = {}
     
-    selected_bin_index = bin_information[bin_information['Bin index'] == selected_bin].index[0]
+    selected_bin_index = bin_information[bin_information['Bin ID'] == selected_bin].index[0]
     selected_annotation = bin_information.loc[selected_bin_index, taxonomy_level]
 
     # Get all indices that have contact with the selected bin
@@ -711,7 +711,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
         return [], create_bar_chart(data_dict)
     else:
         original_contacts_annotation = bin_information.loc[contacts_indices, taxonomy_level]
-        contacts_bins = bin_information.loc[contacts_indices, 'Bin index']
+        contacts_bins = bin_information.loc[contacts_indices, 'Bin ID']
 
     G = nx.Graph()
 
@@ -789,7 +789,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
         'name': contacts_bins, 
         'value': bin_contact_values, 
         'color': [G.nodes[bin]['color'] for bin in contacts_bins],
-        'hover': [f"({bin_information.loc[bin_information['Bin index'] == bin, taxonomy_level].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
+        'hover': [f"({bin_information.loc[bin_information['Bin ID'] == bin, taxonomy_level].values[0]}, {value})" for bin, value in zip(contacts_bins, bin_contact_values)]
     }).query('value != 0')
     if not bin_data.empty:
         data_dict[f'Hi-C Contacts between {selected_bin} and other nodes in the network'] = bin_data
@@ -1111,9 +1111,9 @@ def register_visualization_callbacks(app):
     
         bin_column_defs = [
             {
-                "headerName": "Index",
+                "headerName": "ID",
                 "children": [
-                    {"headerName": "Index", "field": "Bin index", "pinned": 'left', "width": 120}
+                    {"headerName": "ID", "field": "Bin ID", "pinned": 'left', "width": 120}
                 ]
             },
             {
@@ -1121,7 +1121,7 @@ def register_visualization_callbacks(app):
                 "children": taxonomy_columns
             },
             {
-                "headerName": "Contact Information",
+                "headerName": "Metadata",
                 "children": [
                     {"headerName": "The number of restriction sites", "field": "The number of restriction sites", "width": 150, "wrapHeaderText": True},
                     {"headerName": "Bin Size/ Contig length", "field": "Contig length", "width": 150, "wrapHeaderText": True},
@@ -1133,7 +1133,7 @@ def register_visualization_callbacks(app):
         ]
     
         bin_options = []
-        bins = bin_information['Bin index']
+        bins = bin_information['Bin ID']
         bin_options = [{'label': bin, 'value': bin} for bin in bins]
     
         return taxonomy_options, default_taxonomy_level, bin_column_defs, bin_options
@@ -1164,6 +1164,7 @@ def register_visualization_callbacks(app):
         unique_annotations = bin_information[taxonomy_level].unique()
         
         contact_matrix = pd.DataFrame(0.0, index=unique_annotations, columns=unique_annotations)
+
         bin_indexes_dict = get_indexes(unique_annotations, bin_information, taxonomy_level)
 
         non_self_pairs = list(combinations(unique_annotations, 2))
@@ -1179,13 +1180,13 @@ def register_visualization_callbacks(app):
             contact_matrix.at[annotation_j, annotation_i] = value
     
         column_defs = [
-            {"headerName": "Index", "field": "index", "pinned": "left", "width": 120,
+            {"headerName": "ID", "field": "index", "pinned": "left", "width": 120,
              "sortable": True, "suppressMovable": True, "unSortIcon": True, "sortingOrder": [None]}
         ] + [
             {"headerName": col, "field": col, "width": 120, "wrapHeaderText": True, "autoHeaderHeight": True, "suppressMovable": True}
             for col in contact_matrix.columns
         ]
-    
+            
         row_data = contact_matrix.reset_index().to_dict('records')
     
         style_conditions = styling_annotation_table(row_data, bin_information, unique_annotations)
@@ -1275,15 +1276,15 @@ def register_visualization_callbacks(app):
         
                 # Set visibility based on the current visualization mode
                 elif selected_bin:
-                    selected_bin_index = bin_information[bin_information['Bin index'] == selected_bin].index[0]
+                    selected_bin_index = bin_information[bin_information['Bin ID'] == selected_bin].index[0]
             
                     connected_bins = set()
                     for j in range(dense_matrix.shape[0]):
                         if dense_matrix[selected_bin_index, j] != 0:
-                            connected_bins.add(bin_information.at[j, 'Bin index'])
+                            connected_bins.add(bin_information.at[j, 'Bin ID'])
             
                     for row in row_data:
-                        if row['Bin index'] not in connected_bins and row['Bin index'] != selected_bin:
+                        if row['Bin ID'] not in connected_bins and row['Bin ID'] != selected_bin:
                             row['Visibility'] = 0
                             
                 else:
@@ -1396,7 +1397,7 @@ def register_visualization_callbacks(app):
         elif 'cyto-graph' in triggered_props:
             if selected_node_data:
                 selected_node_id = selected_node_data[0]['id']
-                if selected_node_id in bin_information['Bin index'].values:
+                if selected_node_id in bin_information['Bin ID'].values:
                     visualization_type = 'bin'
                     selected_bin = selected_node_id
                     selected_annotation = None  # Ensure only one selection
@@ -1411,15 +1412,15 @@ def register_visualization_callbacks(app):
         elif 'bin-info-table' in triggered_props:
             if bin_info_selected_rows:
                 selected_row = bin_info_selected_rows[0]
-                if 'Bin index' in selected_row:
+                if 'Bin ID' in selected_row:
                     visualization_type = 'bin'
-                    selected_bin = selected_row['Bin index']
+                    selected_bin = selected_row['Bin ID']
                     selected_annotation = None  # Ensure only one selection
     
         elif 'contact-table' in triggered_props:
             if contact_table_selected_rows:
                 selected_row = contact_table_selected_rows[0]
-                selected_annotation = selected_row['index']
+                selected_annotation = selected_row['ID']
                 visualization_type = 'basic'
                 selected_bin = None  # Ensure only one selection
     
@@ -1554,7 +1555,7 @@ def register_visualization_callbacks(app):
                 color_annotation_map = {}
                 unique_colors = {color: node_id for node_id, color in id_color_map.items() if color != '#FFFFFF'}.items()
                 for color, node_id in unique_colors:
-                    row = bin_information.loc[bin_information['Bin index'] == node_id]
+                    row = bin_information.loc[bin_information['Bin ID'] == node_id]
                     if not row.empty:
                         annotation = row[taxonomy_level].iloc[0]
                         color_annotation_map[annotation] = color

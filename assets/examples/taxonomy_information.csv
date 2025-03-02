@@ -1,4 +1,4 @@
-Bin index,Category,Phylum,Class,Order,Family,Genus,Species
+ID,Category,Phylum,Class,Order,Family,Genus,Species
 MAG_10,chromosome,FirmicuteA,Clostridia,Oscillospirales,Oscillospiraceae,Alloscillospira,Unclassified
 MAG_100,chromosome,FirmicuteA,Clostridia,Oscillospirales,Oscillospiraceae,CAG-170,CAG-170 sp900553545
 MAG_1002,chromosome,FirmicuteA,Clostridia,Oscillospirales,Oscillospiraceae,Faecousia,Unclassified

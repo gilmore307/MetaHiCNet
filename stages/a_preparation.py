@@ -134,17 +134,17 @@ def process_data(contig_data, binning_data, taxonomy_data, contig_matrix, taxono
             raise ValueError("contig_matrix must be a COO sparse matrix.")
 
         # Merge contig, binning, and taxonomy data
-        combined_data = pd.merge(contig_data, binning_data, on='Contig index', how="left")
-        combined_data['Bin index'] = combined_data.apply(
-            lambda row: row['Contig index'] if pd.isna(row['Bin index']) else row['Bin index'], axis=1)
+        combined_data = pd.merge(contig_data, binning_data, on='Contig ID', how="left")
+        combined_data['Bin ID'] = combined_data.apply(
+            lambda row: row['Contig ID'] if pd.isna(row['Bin ID']) else row['Bin ID'], axis=1)
         
-        combined_data = pd.merge(combined_data, taxonomy_data, on='Bin index', how="left")
+        combined_data = pd.merge(combined_data, taxonomy_data, on='Bin ID', how="left")
 
         # Apply taxonomy adjustments
         combined_data = combined_data.apply(lambda row: adjust_taxonomy(row, taxonomy_columns), axis=1)
 
         # Fill missing bins with Contig index
-        combined_data['Bin index'] = combined_data['Bin index'].fillna(combined_data['Contig index'])
+        combined_data['Bin ID'] = combined_data['Bin ID'].fillna(combined_data['Contig ID'])
 
         # Return the processed combined data directly
         logger.info("Data processed successfully.")
@@ -191,7 +191,7 @@ def create_upload_layout_method1():
                 'assets/examples/contig_information.csv',
                 """
                 The contig information file includes the following columns:
-                - **‘Contig index’**, **‘Number of restriction sites’**, and **‘Contig length’** (required).
+                - **‘Contig ID**, **‘Number of restriction sites’**, and **‘Contig length’** (required).
                 - **‘Contig coverage’** (optional): If not provided, it will be estimated by dividing the diagonal value in the raw Hi-C contact matrix by the ‘Contig length’.
         
                 This file can be directly generated from common Meta Hi-C analysis pipelines, such as MetaCC and HiCBin.
@@ -204,7 +204,7 @@ def create_upload_layout_method1():
                 """
                 The contact matrix can be provided in one of the following formats: .txt, .csv, or .npz.
                 
-                - **In .txt or .csv format**: The file should contain the columns **‘Contig_name1’**, **‘Contig_name2’**, and **‘Contacts’**.
+                - **In .txt or .csv format**: The file should contain the columns **‘Contig ID1’**, **‘Contig ID2’**, and **‘Contacts’**.
                 - **In .npz format**: The file should be either a NumPy dense matrix or a SciPy sparse matrix.
                 
                 This file can be directly generated from common Meta Hi-C analysis pipelines, such as MetaCC and HiCBin.
@@ -222,7 +222,7 @@ def create_upload_layout_method1():
                 The binning information file is optional. You can skip it if your goal is solely to normalize the Hi-C contact matrix.
         
                 It contains the following columns:
-                - **‘Contig index’** and **‘Bin index’** (specifying the bin to which each contig belongs).
+                - **‘Contig ID’** and **‘Bin ID’** (specifying the bin to which each contig belongs).
         
                 This file can be directly obtained from the binning results of Meta Hi-C analysis pipelines or any other binners users select.
                 """
@@ -235,9 +235,9 @@ def create_upload_layout_method1():
                 The taxonomy information file is optional. You can skip it if your goal is solely to normalize the Hi-C contact matrix.
         
                 It contains the following columns:
-                - **‘Bin index’** 
+                - **‘ID’** 
                 - **‘Category’**: The taxonomic category of each bin, which can be one of the following: **‘chromosome’**, **‘virus’**, or **‘plasmid’**. If a bin cannot be assigned to a specific category, it should be marked as **‘Unclassified’** or left blank.
-                - Any number of additional **Taxonimc Columns** providing further taxonomic information for each bin or contig (e.g., family, genus, species).
+                - Any number of additional **Taxonimc Classification Columns** providing further taxonomic information for each bin or contig (e.g., family, genus, species).
                 """
             ))
         ])
@@ -446,7 +446,7 @@ def register_preparation_callbacks(app):
             raise PreventUpdate
     
         triggered_input = ctx.triggered[0]['prop_id'].split('.')[0]
-    
+
         # Check if the triggered button is the load button (to load files from folder) or execute button (to process uploaded files)
         if selected_method != 'method1' or current_stage != 'Preparation':
             raise PreventUpdate
@@ -507,14 +507,14 @@ def register_preparation_callbacks(app):
                 return False, ""
     
         try:
-            validate_csv(contig_data, ['Contig index', 'The number of restriction sites', 'Contig length'], ['Contig coverage'])
+            validate_csv(contig_data, ['Contig ID', 'The number of restriction sites', 'Contig length'], ['Contig coverage'])
             
             if isinstance(contig_matrix_data, (coo_matrix, csc_matrix, csr_matrix)):
                 validate_contig_matrix(contig_data, contig_matrix_data)
             else:
-                row = contig_matrix_data['row'].values
-                col = contig_matrix_data['column'].values
-                data = contig_matrix_data['data'].values
+                row = contig_matrix_data['Contig ID1'].values
+                col = contig_matrix_data['Contig ID2'].values
+                data = contig_matrix_data['Contacts'].values
     
                 # Calculate the shape based on max row and column index + 1 (since indices are 0-based)
                 num_rows = contig_matrix_data['row'].max() + 1
@@ -533,10 +533,12 @@ def register_preparation_callbacks(app):
                 lambda row: row['Within-contig Hi-C contacts'] / row['Contig length'] 
                 if pd.isna(row['Contig coverage']) else row['Contig coverage'], axis=1)
             
-            taxonomy_columns = np.array([col for col in taxonomy_data.columns if col not in ['Bin index', 'Category']])
+            taxonomy_data.rename(columns={'ID': 'Bin ID'}, inplace=True)
             taxonomy_data.replace("Unclassified", None, inplace=True)
+
+            taxonomy_columns = np.array([col for col in taxonomy_data.columns if col not in ['Bin ID', 'Category']])
             save_to_redis(f'{user_folder}:taxonomy-levels', taxonomy_columns)
-            validate_csv(taxonomy_data, ['Bin index'], ['Category'])
+            validate_csv(taxonomy_data, ['Bin ID'], ['Category'])
     
             # Process data
             combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data, taxonomy_columns)
@@ -628,12 +630,12 @@ def register_preparation_callbacks(app):
             contig_info_path = os.path.join(user_folder_path, 'contig_info_final.csv')    
             contig_information = pd.read_csv(contig_info_path)
             excluded_columns = [
-                'Contig index', 
+                'Contig ID', 
                 'The number of restriction sites', 
                 'Contig length', 
                 'Contig coverage', 
                 'Within-contig Hi-C contacts', 
-                'Bin index', 
+                'Bin ID', 
                 'Category'
             ]
             taxonomy_levels = np.array([col for col in contig_information.columns if col not in excluded_columns])
@@ -723,13 +725,13 @@ def register_preparation_callbacks(app):
             try:
                 bin_information = pd.read_csv(bin_info_path)
                 excluded_columns = [
-                    'Contig index', 
+                    'Contig ID', 
                     'The number of restriction sites', 
                     'Contig length', 
                     'Contig coverage', 
                     'Within-contig Hi-C contacts', 
                     'Connected bins',
-                    'Bin index', 
+                    'Bin ID', 
                     'Category',
                     'Visibility'
                 ]

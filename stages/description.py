@@ -11,77 +11,73 @@ modal_body = dbc.ModalBody(
             html.H4("For New Users:", className="mt-3"),
             html.Div([
                 html.H5("1. Contig Information File", className="mt-3"),
-                html.P([
-                    "This file includes the following columns:",
-                    html.Ul([
-                        html.Li([
-                            html.Strong("‘Contig index’"), ", ",
-                            html.Strong("‘Number of restriction sites’"), ", and ",
-                            html.Strong("‘Contig length’"), " (required)."
-                        ]),
-                        html.Li([
-                            html.Strong("‘Contig coverage’"), " (optional): If not provided, it will be estimated by dividing the diagonal value in the raw Hi-C contact matrix by the ‘Contig length’."
+                html.P("The Contig Information File contains essential attributes for each contig. It is formatted as a tab-delimited text file with the following required and optional columns:"),
+                html.Ul([
+                    html.Li([
+                        html.Strong("Required columns:"),
+                        html.Ul([
+                            html.Li([html.Strong("Contig ID"), " – A unique identifier for each contig."]),
+                            html.Li([html.Strong("Number of restriction sites"), " – The count of restriction enzyme recognition sites on the contig."]),
+                            html.Li([html.Strong("Contig length"), " – The total length of the contig in base pairs."])
                         ])
                     ]),
+                    html.Li([
+                        html.Strong("Optional column:"),
+                        html.Ul([
+                            html.Li([html.Strong("Contig coverage"), " – If unavailable, MetaHiCNet estimates it by dividing the number of proximity ligation events within the contig by the contig length."])
+                        ])
+                    ])
+                ]),
+                html.P([
                     "This file can be directly generated from common Meta Hi-C analysis pipelines, such as ",
                     html.Strong("MetaCC"), " and ", html.Strong("HiCBin"), "."
                 ], className="mb-3"),
 
-                html.H5("2. Hi-C Contact Matrix", className="mt-3"),
-                html.P([
-                    "The file can be provided in one of the following formats:",
-                    html.Ul([
-                        html.Li([
-                            html.Strong(".txt or .csv format"), ": Should contain the columns ",
-                            html.Strong("‘Contig_name1’"), ", ",
-                            html.Strong("‘Contig_name2’"), ", and ",
-                            html.Strong("‘Contacts’"), "."
-                        ]),
-                        html.Li([
-                            html.Strong(".npz format"), ": Should be either a ",
-                            html.Strong("NumPy dense matrix"), " or a ",
-                            html.Strong("SciPy sparse matrix"), "."
+                html.H5("2. Raw Hi-C Contact File", className="mt-3"),
+                html.P("The Raw Hi-C Contact File records pairwise interaction counts between contigs and can be provided in one of the following formats:"),
+                html.Ul([
+                    html.Li([
+                        html.Strong("Tab-delimited text (.txt) or CSV (.csv) format:"),
+                        html.Ul([
+                            html.Li([html.Strong("Contig ID1"), " – The unique identifier of the first contig in the interaction pair (matching the Contig ID from the Contig Information File)."]),
+                            html.Li([html.Strong("Contig ID2"), " – The unique identifier of the second contig in the interaction pair."]),
+                            html.Li([html.Strong("Contacts"), " – The observed Hi-C contact count between the contigs."])
                         ])
                     ]),
-                    "This file can be directly generated from common Meta Hi-C analysis pipelines, such as MetaCC and HiCBin.",
-                    html.Br(),
-                    html.Strong("Note:"), " The row and column indices of the Hi-C Contact Matrix must match the row indices of the Contig Information File. ",
+                    html.Li([
+                        html.Strong("NPZ format:"),
+                        html.Ul([
+                            html.Li("Must be a Python NumPy matrix or a Python SciPy sparse matrix, ensuring compatibility with MetaHiCNet."),
+                            html.Li("The row and column indices must match those in the Contig Information File.")
+                        ])
+                    ])
+                ]),
+                html.P([
+                    "This file can be directly generated from common Meta Hi-C analysis pipelines, such as ",
+                    html.Strong("MetaCC"), " and ", html.Strong("HiCBin"), "."
                 ], className="mb-3"),
 
                 html.H5("3. Binning Information File (Optional)", className="mt-3"),
+                html.P("The Binning Information File allows MetaHiCNet to group contigs into draft genomic bins, such as metagenome-assembled genomes (MAGs) and viral metagenome-assembled genomes (vMAGs), enabling bin-level Hi-C analysis. The file format includes:"),
+                html.Ul([
+                    html.Li([html.Strong("Contig ID"), " – The unique identifier for each contig, matching the Contig ID used in the Contig Information File."]),
+                    html.Li([html.Strong("Bin ID"), " – The assigned bin identifier for the contig."])
+                ]),
                 html.P([
                     "Skip this step if your goal is solely to normalize the Hi-C contact matrix.",
                     html.Br(),
-                    "File format: ",
-                    html.Ul([
-                        html.Li([
-                            html.Strong("‘Contig index’"), " and ",
-                            html.Strong("‘Bin index’"), " (specifying the bin to which each contig belongs)."
-                        ])
-                    ]),
                     "This file can be obtained from the binning results of ", html.Strong("Meta Hi-C analysis pipelines"), " or any other binners you select."
                 ], className="mb-3"),
 
                 html.H5("4. Taxonomy Information File (Optional)", className="mt-3"),
+                html.P("The Taxonomy Information File provides taxonomic annotations for bins or contigs, allowing hierarchical exploration of microbial community structure. The file format consists of:"),
+                html.Ul([
+                    html.Li([html.Strong("ID"), " – The unique identifier, which can be either a bin ID (if contigs are grouped into bins) or a contig ID (if contigs are annotated individually). The bin and contig ID must be consistent with those in the Binning Information File and Contig Information File, respectively."]),
+                    html.Li([html.Strong("Category"), " – Specifies whether the bin or contig represents a chromosome, virus, plasmid, or unclassified entity."]),
+                    html.Li([html.Strong("Taxonomic classification columns"), ": Users may include hierarchical taxonomic ranks (e.g., phylum, class, order, family, genus, species) to provide structured biological context."])
+                ]),
                 html.P([
-                    "Skip this step if your goal is solely to normalize the Hi-C contact matrix.",
-                    html.Br(),
-                    "File format:",
-                    html.Ul([
-                        html.Li([
-                            html.Strong("‘Bin index’")
-                        ]),
-                        html.Li([
-                            html.Strong("‘Category’"), ": The taxonomic category of each bin (",
-                            html.Strong("‘chromosome’"), ", ",
-                            html.Strong("‘virus’"), ", ",
-                            html.Strong("‘plasmid’"), ", or ",
-                            html.Strong("‘Unclassified’"), "). Unclassified bins can also be left blank."
-                        ]),
-                        html.Li([
-                            "Additional ", html.Strong("Taxonomic Columns"), " for taxonomic information (e.g., family, genus, species)."
-                        ])
-                    ])
+                    "Skip this step if your goal is solely to normalize the Hi-C contact matrix."
                 ], className="mb-3"),
             ]),
 
@@ -134,7 +130,7 @@ modal_body = dbc.ModalBody(
                 html.Strong("What is this method?"), " NormCC is a normalization module within the MetaCC framework that eliminates systematic biases from metagenomic Hi-C data, such as biases caused by contig length, restriction sites, and coverage."
             ]),
             html.P([
-                html.Strong("How does it work?"), " NormCC employs a negative binomial regression model to adjust Hi-C contact data for systematic biases. Unlike other methods, it does not require pre-computed contig abundances to normalize the data. After bias correction, normalized contacts falling below a specified threshold percentile are classified as spurious and removed."
+                html.Strong("How does it work?"), " NormCC employs a negative binomial regression model to adjust Hi-C contact data for systematic biases. After bias correction, normalized contacts falling below a specified threshold percentile are classified as spurious and removed."
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
@@ -149,7 +145,7 @@ modal_body = dbc.ModalBody(
                 html.Strong("What is this method?"), " HiCzin is a normalization method designed specifically for metagenomic Hi-C data. It addresses both explicit biases (e.g., contig length, restriction site counts, and coverage) and implicit biases (e.g., unobserved interactions) using a zero-inflated negative binomial regression framework. "
             ]),
             html.P([
-                html.Strong("How does it work?"), " HiCzin combines two components: a) Negative Binomial Regression: Models the raw metaHi-C count data while accounting for explicit biases; b) Zero-Inflated Component: Captures unobserved interactions caused by experimental noise. After bias elimination, normalized contacts falling below a specified threshold percentile are classified as spurious and removed. "
+                html.Strong("How does it work?"), " HiCzin uses a negative binomial regression to model the raw Hi-C contact data while accounting for explicit biases. After bias elimination, normalized contacts falling below a specified threshold percentile are classified as spurious and removed. "
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
@@ -164,7 +160,7 @@ modal_body = dbc.ModalBody(
                 html.Strong("What is this method?"), " Bin3C is a pipeline designed for genome binning using metagenomic Hi-C data. It includes a normalization module that removes experimental biases to ensure uniform signals across the Hi-C contact map, which is critical for accurate binning."
             ]),
             html.P([
-                html.Strong("How does it work?"), " The normalization process involves two stages: a) Cut-Site Normalization: Raw Hi-C interaction counts between contigs are then adjusted by dividing each count by the product of the cut site counts for the interacting contigs. This step addresses biases introduced by variation in restriction site density; b) Bistochastic Matrix Balancing: The Knight-Ruiz algorithm is applied to the adjusted Hi-C contact map. This algorithm transforms the matrix into a form where rows and columns have uniform totals, correcting residual biases and ensuring consistent interaction signals across the dataset. After bias elimination, normalized contacts falling below a specified threshold percentile are classified as spurious and removed."
+                html.Strong("How does it work?"), " The normalization process involves two stages: a) Restriction site normalization: Raw Hi-C interaction counts between contigs are then adjusted by dividing each count by the product of the cut site counts for the interacting contigs. This step addresses biases introduced by variation in restriction site density; b) Bistochastic Matrix Balancing: The Knight-Ruiz algorithm is applied to the adjusted Hi-C contact map. This algorithm transforms the matrix into a form where rows and columns have uniform totals, correcting residual biases and ensuring consistent interaction signals across the dataset. After bias elimination, normalized contacts falling below a specified threshold percentile are classified as spurious and removed."
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
@@ -181,7 +177,7 @@ modal_body = dbc.ModalBody(
                 html.Strong("What is this method?"), " MetaTOR is a computational pipeline designed for metagenomic binning using Hi-C data. The normalization module in MetaTOR processes Hi-C interaction data to correct for biases introduced by variations in contig coverage, facilitating accurate genome binning."
             ]),
             html.P([
-                html.Strong("How does it work?"), " Interaction counts between contigs are normalized by dividing the edge weight (contact score) by the geometric mean of the coverage of the two contigs. This ensures that interaction frequencies are not skewed by differences in sequencing depth across contigs."
+                html.Strong("How does it work?"), " Interaction counts between contigs are normalized by dividing the Hi-C contact count by the geometric mean of the coverage of the two contigs."
             ]),
             html.P([
                 html.Strong("Parameter Settings:"),
@@ -378,7 +374,7 @@ modal_body = dbc.ModalBody(
                 html.Br(),
                 "5. ", html.Strong("Color Coding:"), " ",
                 html.Ul([
-                    html.Li("Index Column: Matches the node colors in the Cytoscape graph."),
+                    html.Li("ID Column: Matches the node colors in the Cytoscape graph."),
                     html.Li("Taxonomy Column: Color-coded by the selected taxonomy category."),
                     html.Li("Numeric Columns: Higher values are represented with deeper colors.")
                 ])
@@ -460,7 +456,7 @@ modal_body = dbc.ModalBody(
                 "3. ", html.Strong("Sorting:"), " ",
                 html.Ul([
                     html.Li("Click the header of numeric columns to sort rows by the values in ascending or descending order. This helps identify bins or annotations with the strongest or weakest interactions."),
-                    html.Li("Click the header of the 'Index' column to reset the sorting and return to the initial state.")
+                    html.Li("Click the header of the 'ID' column to reset the sorting and return to the initial state.")
                 ]),
                 "4. ", html.Strong("Color Coding:"), " ",
                 html.Ul([
@@ -551,7 +547,7 @@ hover_info = {
             "4. **Filter Checkbox**: Enabling 'Only show elements present in the diagram' checkbox displays only bins or annotations visible in the Cytoscape graph.  \n\n"
             
             "5. **Color Coding**:  \n"
-            "   - **Index Column**: Matches the node colors in the Cytoscape graph.  \n"
+            "   - **ID Column**: Matches the node colors in the Cytoscape graph.  \n"
             "   - **Taxonomy Column**: Color-coded by the selected taxonomy category.  \n"
             "   - **Numeric Columns**: Higher values are represented with deeper colors."
         ),
@@ -597,7 +593,7 @@ hover_info = {
             
             "3. **Sorting**:  \n"
             "   - Click the header of numeric columns to sort rows by the values in ascending or descending order. This helps identify bins or annotations with the strongest or weakest interactions.  \n"
-            "   - Click the header of the 'Index' column to reset the sorting and return to the initial state.  \n\n"
+            "   - Click the header of the 'ID' column to reset the sorting and return to the initial state.  \n\n"
             
             "4. **Color Coding**:  \n"
             "   - Higher contact values are highlighted with deeper colors, making it easy to identify strong interactions at a glance.  \n"

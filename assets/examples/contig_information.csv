@@ -1,4 +1,4 @@
-Contig index,The number of restriction sites,Contig length,Contig coverage
+Contig ID,The number of restriction sites,Contig length,Contig coverage
 contig_1000,3155,418844,10.2544
 contig_10007,876,76603,5.26943
 contig_10011,1007,118339,4.68473

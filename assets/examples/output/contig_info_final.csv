@@ -1,4 +1,4 @@
-Contig index,The number of restriction sites,Contig length,Contig coverage,Within-contig Hi-C contacts,Bin index,Category,Phylum,Class,Order,Family,Genus,Species
+Contig ID,The number of restriction sites,Contig length,Contig coverage,Within-contig Hi-C contacts,Bin ID,Category,Phylum,Class,Order,Family,Genus,Species
 contig_1000,3155,418844,10.2544,40.0,MAG_1826,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_Oscillospiraceae,g_Dysosmobacter,s_
 contig_10007,876,76603,5.26943,67.0,MAG_118,chromosome,p_FirmicuteA,c_Clostridia,o_Lachnospirales,f_Lachnospiraceae,g_Blautia_A,s_
 contig_10011,1007,118339,4.68473,7.0,MAG_287,chromosome,p_FirmicuteA,c_Clostridia,o_Oscillospirales,f_CAG-272,g_UMGS1696,s_

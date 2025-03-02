@@ -305,7 +305,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
 
     # Identify columns for aggregation
     known_agg = {
-        'Contig index': lambda x: ', '.join(x),
+        'Contig ID': lambda x: ', '.join(x),
         'The number of restriction sites': 'sum',
         'Contig length': 'sum',
         'Contig coverage': lambda x: (
@@ -319,7 +319,7 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
         known_agg[col] = 'first'
 
     # Aggregate bin data
-    bin_info = contig_info.groupby('Bin index', as_index=False).agg(known_agg)
+    bin_info = contig_info.groupby('Bin ID', as_index=False).agg(known_agg)
     bin_info['Contig coverage'] = bin_info['Contig coverage'].astype(float).map("{:.2f}".format)
 
     # Create a mapping for temporary renaming
@@ -334,10 +334,10 @@ def generating_bin_information(contig_info, contact_matrix, remove_unclassified_
     bin_info = bin_info.sort_values(by='Category', ascending=True)
     bin_info['Category'] = bin_info['Category'].replace(reverse_map)
 
-    unique_bins = bin_info['Bin index']
-    bin_indexes_dict = get_indexes(unique_bins, contig_info, 'Bin index')
-    host_bin = bin_info[bin_info['Category'] == 'chromosome']['Bin index'].tolist()
-    non_host_bin = bin_info[~bin_info['Category'].isin(['chromosome'])]['Bin index'].tolist()
+    unique_bins = bin_info['Bin ID']
+    bin_indexes_dict = get_indexes(unique_bins, contig_info, 'Bin ID')
+    host_bin = bin_info[bin_info['Category'] == 'chromosome']['Bin ID'].tolist()
+    non_host_bin = bin_info[~bin_info['Category'].isin(['chromosome'])]['Bin ID'].tolist()
     
     # Combine pairs of all necessary interactions
     if remove_host_host:
@@ -408,13 +408,13 @@ def create_normalization_layout():
             "Method": "bin3C [3]",
             "Model/Algorithm": "Cut-Site Normalization & Knight-Ruiz Algorithm",
             "What is this method?": "Pipeline for genome binning; ensures uniform signals in Hi-C contact maps by removing experimental biases.",
-            "How does it work?": "Normalizes data via cut-site normalization and Knight-Ruiz algorithm for bistochastic matrix balancing; spurious contacts are removed based on a threshold."
+            "How does it work?": "Normalizes data via restriction site normalization and bistochastic matrix balancing; spurious contacts are removed based on a threshold."
         },
         {
             "Method": "MetaTOR [4]",
             "Model/Algorithm": "Coverage-based Normalization",
             "What is this method?": "Computational pipeline for metagenomic binning; corrects biases introduced by contig coverage variations.",
-            "How does it work?": "Normalizes interaction counts by dividing edge weights by geometric mean of contig coverage; spurious contacts are removed based on a threshold."
+            "How does it work?": "Normalizes interaction counts by dividing Hi-C contact count by geometric mean of contig coverage; spurious contacts are removed based on a threshold."
         }
     ]
 
@@ -493,6 +493,7 @@ def create_normalization_layout():
             style_header={'backgroundColor': 'rgb(210, 210, 210)', 'fontWeight': 'bold'},
             style_cell={'textAlign': 'left', 'padding': '10px', 'fontFamily': 'Arial'},
             style_data={'whiteSpace': 'normal', 'height': 'auto'},
+            style_cell_conditional=[{"if": {"column_id": "Method"}, "width": "120px"}]
         ),
         
         html.Div([
