@@ -388,7 +388,7 @@ def create_normalization_layout():
     methods = [
         {
             "Method": "Raw",
-            "Model/Algorithm": "Threshold-based denoising",
+            "Model/Algorithm": "Threshold-based spurious contact removal",
             "What is this method?": "Does not remove effects of any factors from input Hi-C contact matrix; suitable if matrix is already normalized or normalization is unnecessary.",
             "How does it work?": "Removes values below a specified threshold percentile to denoise the data."
         },
@@ -442,7 +442,7 @@ def create_normalization_layout():
         
         html.Div([
             html.Div([
-                html.Label("Threshold Percentage for Denoising (default: 5%)"),
+                html.Label("Threshold Percentage for Spurious Contact Removal (default: 5%)"),
                 dcc.Input(
                     id='thres-input',
                     type='number',
