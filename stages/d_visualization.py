@@ -1184,7 +1184,7 @@ def register_visualization_callbacks(app):
             {"headerName": "ID", "field": "index", "pinned": "left", "width": 120,
              "sortable": True, "suppressMovable": True, "unSortIcon": True, "sortingOrder": [None]}
         ] + [
-            {"headerName": col, "field": col, "width": 120, "wrapHeaderText": True, "autoHeaderHeight": True, "suppressMovable": True}
+            {"headerName": col, "field": col, "width": 90, "wrapHeaderText": True, "autoHeaderHeight": True, "suppressMovable": True}
             for col in contact_matrix.columns
         ]
             
@@ -1421,7 +1421,7 @@ def register_visualization_callbacks(app):
         elif 'contact-table' in triggered_props:
             if contact_table_selected_rows:
                 selected_row = contact_table_selected_rows[0]
-                selected_annotation = selected_row['ID']
+                selected_annotation = selected_row['index']
                 visualization_type = 'basic'
                 selected_bin = None  # Ensure only one selection
     
