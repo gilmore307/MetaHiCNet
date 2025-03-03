@@ -1074,7 +1074,8 @@ def create_visualization_layout():
                                         rowData=[],
                                         columnDefs=[], 
                                         dashGridOptions = {
-                                            "rowSelection": "single"
+                                            "rowSelection": "single",
+                                            "domLayout": "autoHeight"
                                         }
                                     )
                                 ], 
@@ -1083,7 +1084,7 @@ def create_visualization_layout():
                         ]
                     )
                 ], 
-                style={'display': 'inline-block', 'vertical-align': 'top', 'width': '98vw'}
+                style={'display': 'inline-block', 'vertical-align': 'top','width': '98vw'}
             ),
         ]
     )
