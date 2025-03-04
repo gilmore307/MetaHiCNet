@@ -40,7 +40,7 @@ def preprocess_normalization(user_folder, assets_folder='output'):
         logger.error(f"Error during data preprocessing: {e}")
         return None, None
 
-def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5, max_iter=1000, tolerance=0.000001):
+def run_normalization(method, contig_df, contact_matrix, alpha = 1, epsilon=1, threshold=5, max_iter=1000, tolerance=0.000001):
     # Ensure contact_matrix is in coo format for consistency across methods
     contact_matrix = contact_matrix.tocoo()
     
@@ -209,7 +209,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
             exog = df[['log_site', 'log_len', 'log_coverage']]
             exog = sm.add_constant(exog)
             endog = df['signal']
-            glm_nb = sm.GLM(endog, exog, family=sm.families.NegativeBinomial(alpha=1))
+            glm_nb = sm.GLM(endog, exog, family=sm.families.NegativeBinomial(alpha=alpha))
             res = glm_nb.fit()
 
             expected_signal = np.exp(np.dot(exog, res.params))
@@ -248,7 +248,7 @@ def run_normalization(method, contig_df, contact_matrix, epsilon=1, threshold=5,
             exog = sm.add_constant(exog)
             endog = data_hiczin['sampleCon']
 
-            glm_nb = sm.GLM(endog, exog, family=sm.families.NegativeBinomial(alpha=1))
+            glm_nb = sm.GLM(endog, exog, family=sm.families.NegativeBinomial(alpha=alpha))
             res = glm_nb.fit()
 
             expected_signal = np.exp(np.dot(exog, res.params))
@@ -451,6 +451,18 @@ def create_normalization_layout():
                     style={'width': '100%'}
                 )
             ], id='thres-container', className="my-3"),
+            
+            # alpha input
+            html.Div([
+                html.Label("Overdispersion Parameter for Negative Binomial Regression (default: 1)"),
+                dcc.Input(
+                    id='alpha-input',
+                    type='number',
+                    value=1,
+                    placeholder="Overdispersion parameter for negative binomial regression",
+                    style={'width': '100%'}
+                )
+            ], id='alpha-container', className="my-3"),
 
             # Max iterations input
             html.Div([
@@ -547,6 +559,7 @@ def create_normalization_layout():
 def register_normalization_callbacks(app):
     @app.callback(
         [Output('thres-container', 'style'),
+         Output('alpha-container', 'style'),
          Output('max-iter-container', 'style'),
          Output('tol-container', 'style')],
         Input('normalization-method', 'value')
@@ -555,10 +568,11 @@ def register_normalization_callbacks(app):
     def update_parameters(normalization_method):
         # Determine styles based on the selected normalization method
         thres_style = {'display': 'block'} if normalization_method in ['Raw', 'normCC', 'HiCzin', 'bin3C', 'MetaTOR'] else {'display': 'none'}
+        alpha_style = {'display': 'block'} if normalization_method in ['normCC', 'HiCzin'] else {'display': 'none'}
         max_iter_style = {'display': 'block'} if normalization_method == 'bin3C' else {'display': 'none'}
         tol_style = {'display': 'block'} if normalization_method == 'bin3C' else {'display': 'none'}
         
-        return thres_style, max_iter_style, tol_style
+        return thres_style, alpha_style, max_iter_style, tol_style
 
     @app.callback(
         [Output('normalization-status', 'data'),
@@ -566,6 +580,7 @@ def register_normalization_callbacks(app):
         [Input('execute-button', 'n_clicks')],
         [State('normalization-method', 'value'),
          State('thres-input', 'value'),
+         State('alpha-input', 'value'),
          State('max-iter-input', 'value'),
          State('tol-input', 'value'),
          State('remove-unclassified-contigs', 'value'),
@@ -576,7 +591,7 @@ def register_normalization_callbacks(app):
         prevent_initial_call=True
     )
 
-    def execute_normalization(n_clicks, normalization_method, threshold, max_iter, tolerance,
+    def execute_normalization(n_clicks, normalization_method, threshold, alpha, max_iter, tolerance,
                               remove_unclassified_contigs, remove_host_host, user_folder, selected_method, current_stage):
         # Only trigger if in the 'Normalization' stage for the selected methods
         if not n_clicks or selected_method not in ['method1', 'method2'] or current_stage != 'Normalization':
@@ -604,6 +619,7 @@ def register_normalization_callbacks(app):
             "method": normalization_method,
             "contig_df": contig_info,
             "contact_matrix": contact_matrix,
+            "alpha": alpha,
             "epsilon": 1,
             "threshold": threshold,
             "max_iter": max_iter,
@@ -643,7 +659,6 @@ def register_normalization_callbacks(app):
         save_npz(bin_contact_matrix_path, bin_contact_matrix)
         contig_info.to_csv(contig_info_path, index=False)
         save_npz(normalized_matrix_path, normalized_matrix)
-        save_npz(unnormalized_matrix_path, contact_matrix)
 
         # Compress saved files into normalized_information.7z
         normalized_archive_path = os.path.join(user_output_path, 'normalized_information.7z')
