@@ -79,6 +79,7 @@ def nx_to_cyto_elements(G, pos, invisible_nodes=set(), invisible_edges=set()):
                         'target': edge[1],
                         'width': edge[2].get('width', 1),
                         'color': edge[2].get('color', '#bbb'),
+                        'label': str(edge[2].get('label', '')),
                         'visible': 'none' if (edge[0], edge[1]) in invisible_edges or (edge[1], edge[0]) in invisible_edges else 'element',
                         'selectable': False
                     }
@@ -397,7 +398,7 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
         return figure
 
     # Sort the data based on the taxonomy_level if applicable
-    if trace_name == "Fraction of Classified Bins by Taxonmic Ranks" and taxonomy_level:
+    if trace_name == "Fraction of Classified Bins by Taxonomic Ranks" and taxonomy_level:
         taxonomy_order = {taxonomy: idx for idx, taxonomy in enumerate(taxonomy_level)}
         data_frame['taxonomy_rank'] = data_frame['name'].apply(lambda x: taxonomy_order.get(x, float('inf')))
         bar_data = data_frame.sort_values(by=['taxonomy_rank', 'value'], ascending=[True, False])
@@ -588,19 +589,19 @@ def taxonomy_visualization(bin_information, unique_annotations, contact_matrix, 
     
 
     data_dict = {
-        'Fraction of Classified Bins by Taxonmic Ranks': classification_data_df
+        'Fraction of Classified Bins by Taxonomic Ranks': classification_data_df
     }
     
     if classification_data:
         classification_data_df = pd.DataFrame(classification_data)
-        data_dict['Fraction of Classified Bins by Taxonmic Ranks'] = classification_data_df
+        data_dict['Fraction of Classified Bins by Taxonomic Ranks'] = classification_data_df
 
     bar_fig = create_bar_chart(data_dict, taxonomy_columns)
 
     return fig, bar_fig
 
 #Function to visualize annotation relationship
-def annotation_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_level, selected_node=None):
+def annotation_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_level, edge_label, selected_node=None):
     data_dict = {}
     G = nx.Graph()
     
@@ -641,7 +642,8 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         for j, annotation_j in enumerate(connected_nodes[i + 1:], start=i + 1):
             weight = contact_matrix.at[annotation_i, annotation_j]
             if weight > 0:
-                G.add_edge(annotation_i, annotation_j, weight=weight)
+                G.add_edge(annotation_i, annotation_j, weight=weight, 
+                           label=str(weight) if edge_label else "")
                 invisible_edges.add((annotation_i, annotation_j))
                 edge_weights.append(weight)
 
@@ -696,7 +698,7 @@ def annotation_visualization(bin_information, unique_annotations, contact_matrix
         return cyto_elements, create_bar_chart(data_dict) , cyto_style
 
 # Function to visualize bin relationships
-def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, selected_bin):
+def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, edge_label, selected_bin):
     data_dict = {}
     
     selected_bin_index = bin_information[bin_information['Bin ID'] == selected_bin].index[0]
@@ -769,22 +771,25 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
     pos[selected_bin] = (0, 0)
 
     # Add bin nodes to the graph
+    bin_contact_values = bin_dense_matrix[selected_bin_index, contacts_indices]
+    
     for annotation in contacts_annotation.unique():
         annotation_bins = contacts_bins[original_contacts_annotation == annotation]
         bin_positions = arrange_nodes(annotation_bins, distance=40, center_position=pos[annotation])
-        for bin, (x, y) in bin_positions.items():
+        bin_weight = 1
+        
+        for j, (bin, (x, y)) in enumerate(bin_positions.items()):
+            bin_weight = bin_contact_values[j]  # Get the bin weight from bin_contact_values
             G.add_node(bin, 
                        size=10, 
                        color=G.nodes[annotation]['border_color'],  # Use the color from the annotation
                        parent=annotation)
-            G.add_edge(selected_bin, bin)
+            G.add_edge(selected_bin, bin, weight=bin_weight, label=str(bin_weight) if edge_label else "")  # Label with bin_weight
             pos[bin] = (x, y)
     
     cyto_elements = nx_to_cyto_elements(G, pos)
     
     # Prepare data for histogram
-    bin_contact_values = bin_dense_matrix[selected_bin_index, contacts_indices]
-    
     bin_data = pd.DataFrame({
         'name': contacts_bins, 
         'value': bin_contact_values, 
@@ -833,7 +838,8 @@ base_stylesheet = [
             'width': 'data(width)',
             'line-color': 'data(color)',
             'opacity': 0.6,
-            'display': 'data(visible)'
+            'display': 'data(visible)',
+            'label': 'data(label)'
         }
     }
 ]
@@ -857,7 +863,7 @@ def create_visualization_layout():
                     dcc.Store(id='data-loaded', data=False),
                     dcc.Store(id='current-visualization-mode', data={}),
 
-                    dbc.Button("Switch to Nomalization Results", id="switch-visualization-network", color="primary",
+                    dbc.Button("View Normalization Results", id="switch-visualization-network", color="primary",
                                 style={'height': '38px',
                                        'width': '300px',
                                        'display': 'inline-block',
@@ -870,8 +876,8 @@ def create_visualization_layout():
                         children=[
                             dcc.Checklist(
                                 id='tooltip-toggle',
-                                options=[{'label': '  Enable Help Tooltip', 'value': 'show-tooltip'}],
-                                value=['show-tooltip'],
+                                options=[{'label': '  Enable Help Tooltip', 'value': 'True'}],
+                                value=['True'],
                                 inline=True,
                             ),
                         ],
@@ -899,7 +905,7 @@ def create_visualization_layout():
                                     {'label': 'Cross-Bin Hi-C Interaction', 'value': 'bin'},
                                 ],
                                 value='basic',
-                                style={'width': '300px', 'display': 'inline-block', 'margin-top': '4px'}
+                                style={'width': '260px', 'margin-top': '4px', 'margin-right': '4px'}
                             ),
                             dcc.Dropdown(
                                 id='annotation-selector',
@@ -915,7 +921,8 @@ def create_visualization_layout():
                                 placeholder="Select a bin",
                                 style={'display': 'none'}
                             )
-                        ]
+                        ],
+                        style={'display': 'flex', 'justify-content': 'flex-start', 'gap': '10px'}
                     ),
                     html.Button("Reset Selection", id="reset-btn", style={**common_text_style}),
                 ], 
@@ -966,8 +973,8 @@ def create_visualization_layout():
                                         children=[
                                             dcc.Checklist(
                                                 id='visibility-filter',
-                                                options=[{'label': '  Only show elements present in the network', 'value': 'filter'}],
-                                                value=['filter'],
+                                                options=[{'label': '  Only show elements present in the network', 'value': 'True'}],
+                                                value=['True'],
                                                 style={'display': 'inline-block', 'width': '25vw'}
                                             ),
                                             dag.AgGrid(
@@ -989,7 +996,7 @@ def create_visualization_layout():
                                 ]
                             )
                         ], 
-                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '30vw'}
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '30vw', 'margin-right': '1vw'}
                     ),
                     
                     html.Div(
@@ -1007,7 +1014,7 @@ def create_visualization_layout():
                                                 id='treemap-graph',
                                                 figure=go.Figure(),
                                                 config={'displayModeBar': False},
-                                                style={'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
+                                                style={'height': '85vh', 'width': '47vw', 'display': 'inline-block'}
                                             )
                                         ]
                                     ),
@@ -1029,7 +1036,7 @@ def create_visualization_layout():
                                 ]
                             )
                         ],
-                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '49vw'}
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '48vw'}
                     ),
 
                     html.Div(
@@ -1050,12 +1057,19 @@ def create_visualization_layout():
                                 ], 
                                 style={'display': 'inline-block', 'vertical-align': 'top', 'height': '30vh', 'width': '19vw'}
                             ),
+                            
+                            dcc.Checklist(
+                                id='edge-label',
+                                options=[{'label': ' Display contact value on edge', 'value': 'True'}],
+                                value=['True'],
+                                style={'display': 'inline-block', 'width': '19vw', 'height': '2vh'}
+                            ),
 
                             html.Div(
                                 id="bar-chart-container",
                                 children=[],
-                                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '55vh', 'width': '19vw', 
-                                       'border': '1px solid #ccc', 'borderRadius': '5px'}
+                                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '53vh', 
+                                       'width': '19vw', 'border': '1px solid #ccc', 'borderRadius': '5px'}
                             ),
                         ],
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '19vw'}
@@ -1240,7 +1254,7 @@ def register_visualization_callbacks(app):
             row_data = bin_information.to_dict('records')
 
             filter_model = {}
-            if 'filter' in filter_value:
+            if 'True' in filter_value:
                 filter_model['Visibility'] = {
                     "filterType": "number",
                     "operator": "OR",
@@ -1442,10 +1456,10 @@ def register_visualization_callbacks(app):
             raise PreventUpdate
     
         if visualization_type == 'bin':
-            bin_selector_style = {'width': '300px', 'display': 'inline-block', 'margin-top': '4px'}
+            bin_selector_style = {'width': '260px', 'margin-top': '4px'}
             annotation_selector_style = {'display': 'none'}
         elif visualization_type == 'basic':
-            annotation_selector_style = {'width': '300px', 'display': 'inline-block', 'margin-top': '4px'}
+            annotation_selector_style = {'width': '260px', 'margin-top': '4px'}
             bin_selector_style = {'display': 'none'}
         else:
             annotation_selector_style = {'display': 'none'}
@@ -1463,14 +1477,16 @@ def register_visualization_callbacks(app):
          Output('cyto-graph', 'stylesheet'),
          Output('cyto-graph', 'layout'),
          Output('legend-div', 'children'),
+         Output('edge-label', 'style'),
          Output('logger-button-visualization', 'n_clicks', allow_duplicate=True)],
-        [Input('current-visualization-mode', 'data')],
+        [Input('current-visualization-mode', 'data'),
+         Input('edge-label', 'value')],
         [State('visualization-selector', 'value'),
          State('user-folder', 'data'),
          State('data-loaded', 'data')],
         prevent_initial_call=True
     )
-    def update_visualization(current_visualization_mode, visualization_type, user_folder, data_loaded):
+    def update_visualization(current_visualization_mode, edge_label, visualization_type, user_folder, data_loaded):
         if not data_loaded:
             raise PreventUpdate
             
@@ -1486,6 +1502,7 @@ def register_visualization_callbacks(app):
         stylesheet = no_update
         layout = no_update
         legend = None
+        check_box = {'display': 'none'}
     
         # Extract data from current_visualization_mode
         visualization_type = current_visualization_mode.get('visualization_type', 'taxonomy')
@@ -1498,7 +1515,7 @@ def register_visualization_callbacks(app):
     
             logger.info("Displaying Taxonomy Framework visualization.")
             treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_level_list)
-            treemap_style = {'height': '85vh', 'width': '48vw', 'display': 'inline-block'}
+            treemap_style = {'height': '85vh', 'width': '47vw', 'display': 'inline-block'}
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             
@@ -1523,15 +1540,16 @@ def register_visualization_callbacks(app):
                         selected_edges.append((selected_annotation, connected_annotation))
     
                 cyto_elements, bar_fig, layout = annotation_visualization(
-                    bin_information, unique_annotations, contact_matrix, taxonomy_level, selected_node=selected_annotation
+                    bin_information, unique_annotations, contact_matrix, taxonomy_level, edge_label, selected_node=selected_annotation
                 )
+                check_box = {'display': 'inline-block', 'width': '19vw', 'height': '2vh'}
             else:
                 cyto_elements, bar_fig, layout = annotation_visualization(
-                    bin_information, unique_annotations, contact_matrix, taxonomy_level
+                    bin_information, unique_annotations, contact_matrix, taxonomy_level, ""
                 )
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+            cyto_style = {'height': '80vh', 'width': '47vw', 'display': 'inline-block'}
             
             type_colors = {
                 'chromosome': '#81BFDA',
@@ -1545,10 +1563,11 @@ def register_visualization_callbacks(app):
     
             logger.info(f"Displaying bin Interaction for selected bin: {selected_bin}.")
             selected_nodes.append(selected_bin)
-            cyto_elements, bar_fig = bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, selected_bin)
+            cyto_elements, bar_fig = bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, edge_label, selected_bin)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '80vh', 'width': '48vw', 'display': 'inline-block'}
+            cyto_style = {'height': '80vh', 'width': '47vw', 'display': 'inline-block'}
+            check_box = {'display': 'inline-block', 'width': '19vw', 'height': '2vh'}
             
             id_color_map = get_id_colors(cyto_elements)
             
@@ -1569,7 +1588,7 @@ def register_visualization_callbacks(app):
         # Update selected styles and hover info
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
     
-        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, 1
+        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, check_box, 1
     
     @app.callback(
         Output('cyto-graph', 'elements', allow_duplicate=True),
@@ -1633,7 +1652,7 @@ def register_visualization_callbacks(app):
         [Input('tooltip-toggle', 'value')]
     )
     def update_tooltips(show_tooltip):
-        if 'show-tooltip' in show_tooltip:
+        if 'True' in show_tooltip:
             return (hover_info['switch-visualization-network'], 
                     hover_info['reset-btn'], 
                     hover_info['tooltip-toggle-container'],

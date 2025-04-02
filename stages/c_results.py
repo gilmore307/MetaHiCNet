@@ -110,7 +110,7 @@ def results_layout(user_folder):
             id="loading",
             type="default",
             children=[
-                dbc.Button("Switch to Interaction Network", id="switch-visualization-results", color="primary",
+                dbc.Button("Proceed to Interaction Network", id="switch-visualization-results", color="primary",
                             style={'height': '38px',
                                    'width': '300px',
                                    'display': 'inline-block',

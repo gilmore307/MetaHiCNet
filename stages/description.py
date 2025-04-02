@@ -234,7 +234,7 @@ modal_body = dbc.ModalBody(
             html.P("Use the following visualization options to explore and analyze Hi-C interaction data in different ways.", className="mb-4"),
 
             # Switch Visualization Network
-            html.H4("Switch Visualization Network", className="mt-3"),
+            html.H4("Switch bwteen Interaction Network and Normalization Results", className="mt-3"),
             html.Div(
                 html.Video(
                     src=r"assets\help\Switch Visualization Network.mp4",  # Path to the MP4 file
@@ -245,7 +245,7 @@ modal_body = dbc.ModalBody(
                 className="d-flex justify-content-center"
             ),    
             html.P([
-                "Click this button to switch from the current visualization to the normalization results view."
+                "Click this button to switch between the interaction network and the normalization results view."
             ], className="mb-3"),
 
             # Reset Button
@@ -432,7 +432,22 @@ modal_body = dbc.ModalBody(
                 html.Ul([
                     html.Li("Click on a node to select it. The selection updates related visualizations, such as the information table, bar chart, and contact table."),
                     html.Li("Selected nodes are visually highlighted with a border, and their connections are emphasized.")
+                ]),
+                "3. ", html.Strong("Hi-C Contact Count Display"), " ",
+                html.Ul([
+                    html.Li([
+                        "Check the checkbox ", 
+                        html.Strong("Display contact value on edge"), 
+                        " to display the Hi-C contact between the selected taxa/ bin and other nodes connected to it."
+                    ]),
+                    html.Li([
+                        "This option is available only when a taxa is selected in ", 
+                        html.Strong("Cross-Taxa Hi-C Interaction mode"), 
+                        " or a bin is selected in ", 
+                        html.Strong("Cross-Bin Hi-C Interaction mode"), "."
+                    ])
                 ])
+
             ], className="mb-3"),
 
             # Contact Table Container
@@ -472,7 +487,7 @@ modal_body = dbc.ModalBody(
 hover_info = {
     'switch-visualization-network':
         (
-            "Switch to Normalization Results  \n\n"
+            "View Normalization Results  \n\n"
             
             "Click this button to switch from the current visualization to the normalization results view."
         ),
@@ -529,6 +544,9 @@ hover_info = {
             "   - **Hi-C Contacts with Selected Bin**: Highlights the contact strengths between the selected bin and other bins.  \n"
             
             "2. **Scroll Bar**: A horizontal scroll bar allows you to navigate through bars when there are too many to display at once.  \n\n"
+            
+            "3. **Edge lable Checkbox**: Check the checkbox to display the Hi-C contact between the selected taxa/bin and other nodes connected to it.  \n"
+                "   This option is available only when a taxa is selected in Cross-Taxa Hi-C Interaction mode or a bin is selected in Cross-Bin Hi-C Interaction mode."
         ),
 
     'info-table-container': 
