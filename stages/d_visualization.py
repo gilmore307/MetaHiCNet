@@ -1060,7 +1060,7 @@ def create_visualization_layout():
                             
                             dcc.Checklist(
                                 id='edge-label',
-                                options=[{'label': ' Display contact value on edge', 'value': 'True'}],
+                                options=[{'label': ' Display contact values on edges', 'value': 'True'}],
                                 value=['True'],
                                 style={'display': 'inline-block', 'width': '19vw', 'height': '2vh'}
                             ),
