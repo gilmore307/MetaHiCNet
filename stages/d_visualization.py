@@ -952,7 +952,7 @@ def create_visualization_layout():
                                 id="log-box-visualization",
                                 style={
                                     'height': '30vh',
-                                    'width': '30vw',
+                                    'width': '25vw',
                                     'font-size': '12px',
                                     'fontFamily': 'Arial, sans-serif',
                                     'overflowY': 'scroll', 
@@ -996,7 +996,7 @@ def create_visualization_layout():
                                 ]
                             )
                         ], 
-                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '30vw', 'margin-right': '1vw'}
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '25vw', 'margin-right': '1vw'}
                     ),
                     
                     html.Div(
@@ -1014,7 +1014,7 @@ def create_visualization_layout():
                                                 id='treemap-graph',
                                                 figure=go.Figure(),
                                                 config={'displayModeBar': False},
-                                                style={'height': '85vh', 'width': '47vw', 'display': 'inline-block'}
+                                                style={'height': '85vh', 'width': '52vw', 'display': 'inline-block'}
                                             )
                                         ]
                                     ),
@@ -1036,7 +1036,7 @@ def create_visualization_layout():
                                 ]
                             )
                         ],
-                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '48vw'}
+                        style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '53vw'}
                     ),
 
                     html.Div(
@@ -1515,7 +1515,7 @@ def register_visualization_callbacks(app):
     
             logger.info("Displaying Taxonomy Framework visualization.")
             treemap_fig, bar_fig = taxonomy_visualization(bin_information, unique_annotations, contact_matrix, taxonomy_level_list)
-            treemap_style = {'height': '85vh', 'width': '47vw', 'display': 'inline-block'}
+            treemap_style = {'height': '85vh', 'width': '52vw', 'display': 'inline-block'}
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             
@@ -1549,7 +1549,7 @@ def register_visualization_callbacks(app):
                 )
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '80vh', 'width': '47vw', 'display': 'inline-block'}
+            cyto_style = {'height': '80vh', 'width': '52vw', 'display': 'inline-block'}
             
             type_colors = {
                 'chromosome': '#81BFDA',
@@ -1566,7 +1566,7 @@ def register_visualization_callbacks(app):
             cyto_elements, bar_fig = bin_visualization(bin_information, unique_annotations, bin_dense_matrix, taxonomy_level, edge_label, selected_bin)
             treemap_fig = go.Figure()
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            cyto_style = {'height': '80vh', 'width': '47vw', 'display': 'inline-block'}
+            cyto_style = {'height': '80vh', 'width': '52vw', 'display': 'inline-block'}
             check_box = {'display': 'inline-block', 'width': '19vw', 'height': '2vh'}
             
             id_color_map = get_id_colors(cyto_elements)
