@@ -380,10 +380,7 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
     # Default figure for empty or invalid input
     figure = dcc.Graph(
         id='bar-chart', 
-        figure=go.Figure(),
-        style={'width': '19vw', 'height': '50vh', 'padding': '10px',
-               'margin-top': '5px', 'margin-bottom': '5px',
-               'border': '1px solid #ccc', 'borderRadius': '5px'}
+        figure=go.Figure()
     )
 
     # Check if data_dict is not empty
@@ -452,8 +449,7 @@ def create_bar_chart(data_dict, taxonomy_level=[]):
     figure = dcc.Graph(
         id='bar-chart', 
         figure=go.Figure(data=[bar_trace], layout=bar_layout),
-        style={'width': '19vw', 'padding': '10px',
-               'margin-top': '5px', 'margin-bottom': '5px'}
+        style={'width': '19vw', 'height': '48vh','padding': '10px', 'margin-top': '5px'}
     )
     
     return [textbox, figure]
@@ -1062,14 +1058,13 @@ def create_visualization_layout():
                                 id='edge-label',
                                 options=[{'label': ' Display contact values on edges', 'value': 'True'}],
                                 value=['True'],
-                                style={'display': 'inline-block', 'width': '19vw', 'height': '2vh'}
+                                style={}
                             ),
 
                             html.Div(
                                 id="bar-chart-container",
                                 children=[],
-                                style={'display': 'inline-block', 'vertical-align': 'top', 'height': '53vh', 
-                                       'width': '19vw', 'border': '1px solid #ccc', 'borderRadius': '5px'}
+                                style={}
                             ),
                         ],
                         style={'display': 'inline-block', 'vertical-align': 'top', 'height': '85vh', 'width': '19vw'}
@@ -1472,6 +1467,7 @@ def register_visualization_callbacks(app):
         [Output('cyto-graph', 'elements'),
          Output('cyto-graph', 'style'),
          Output('bar-chart-container', 'children'),
+         Output('bar-chart-container', 'style'),
          Output('treemap-graph', 'figure'),
          Output('treemap-graph', 'style'),
          Output('cyto-graph', 'stylesheet'),
@@ -1503,6 +1499,9 @@ def register_visualization_callbacks(app):
         layout = no_update
         legend = None
         check_box = {'display': 'none'}
+        bar_style={'display': 'inline-block', 'vertical-align': 'top', 
+                   'height': '55vh', 'width': '19vw', 
+                   'border': '1px solid #ccc', 'borderRadius': '5px'}
     
         # Extract data from current_visualization_mode
         visualization_type = current_visualization_mode.get('visualization_type', 'taxonomy')
@@ -1518,7 +1517,7 @@ def register_visualization_callbacks(app):
             treemap_style = {'height': '85vh', 'width': '52vw', 'display': 'inline-block'}
             cyto_elements = []
             cyto_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
-            
+
             type_colors = {
                 'chromosome': '#81BFDA',
                 'virus': '#AE445A',
@@ -1543,6 +1542,9 @@ def register_visualization_callbacks(app):
                     bin_information, unique_annotations, contact_matrix, taxonomy_level, edge_label, selected_node=selected_annotation
                 )
                 check_box = {'display': 'inline-block', 'width': '19vw', 'height': '2vh'}
+                bar_style={'display': 'inline-block', 'vertical-align': 'top', 
+                           'height': '53vh', 'width': '19vw', 
+                           'border': '1px solid #ccc', 'borderRadius': '5px'}
             else:
                 cyto_elements, bar_fig, layout = annotation_visualization(
                     bin_information, unique_annotations, contact_matrix, taxonomy_level, ""
@@ -1568,6 +1570,9 @@ def register_visualization_callbacks(app):
             treemap_style = {'height': '0vh', 'width': '0vw', 'display': 'none'}
             cyto_style = {'height': '80vh', 'width': '52vw', 'display': 'inline-block'}
             check_box = {'display': 'inline-block', 'width': '19vw', 'height': '2vh'}
+            bar_style={'display': 'inline-block', 'vertical-align': 'top', 
+                       'height': '53vh', 'width': '19vw', 
+                       'border': '1px solid #ccc', 'borderRadius': '5px'}
             
             id_color_map = get_id_colors(cyto_elements)
             
@@ -1588,7 +1593,7 @@ def register_visualization_callbacks(app):
         # Update selected styles and hover info
         stylesheet = add_selection_styles(selected_nodes, selected_edges)
     
-        return cyto_elements, cyto_style, bar_fig, treemap_fig, treemap_style, stylesheet, layout, legend, check_box, 1
+        return cyto_elements, cyto_style, bar_fig, bar_style, treemap_fig, treemap_style, stylesheet, layout, legend, check_box, 1
     
     @app.callback(
         Output('cyto-graph', 'elements', allow_duplicate=True),
