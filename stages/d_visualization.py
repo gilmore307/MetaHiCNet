@@ -155,7 +155,11 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
     opacity = 0.6
 
     # Styling for numeric columns
-    numeric_cols = [key for key in row_data[0].keys() if key != "index"]
+    if row_data:
+        numeric_cols = [key for key in row_data[0].keys() if key != "index"]
+    else:
+        numeric_cols = []
+
 
     for col in numeric_cols:
         # Extract numeric data
@@ -775,13 +779,15 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
 
     # Add bin nodes to the graph
     bin_contact_values = bin_dense_matrix[selected_bin_index, contacts_indices]
+    j = 0
     
     for annotation in contacts_annotation.unique():
         annotation_bins = contacts_bins[original_contacts_annotation == annotation]
         bin_positions = arrange_nodes(annotation_bins, distance=40, center_position=pos[annotation])
         bin_weight = 1
         
-        for j, (bin, (x, y)) in enumerate(bin_positions.items()):
+        
+        for bin, (x, y) in bin_positions.items():
             bin_weight = bin_contact_values[j]  # Get the bin weight from bin_contact_values
             G.add_node(bin, 
                        size=10, 
@@ -789,6 +795,7 @@ def bin_visualization(bin_information, unique_annotations, bin_dense_matrix, tax
                        parent=annotation)
             G.add_edge(selected_bin, bin, weight=bin_weight, label=str(bin_weight) if edge_label else "")  # Label with bin_weight
             pos[bin] = (x, y)
+            j += 1
     
     cyto_elements = nx_to_cyto_elements(G, pos)
     
