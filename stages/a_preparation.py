@@ -145,6 +145,9 @@ def process_data(contig_data, binning_data, taxonomy_data, contig_matrix, taxono
 
         # Fill missing bins with Contig index
         combined_data['Bin ID'] = combined_data['Bin ID'].fillna(combined_data['Contig ID'])
+        
+        # Remove duplicated Contig IDs, keep only the first occurrence
+        combined_data = combined_data.drop_duplicates(subset='Contig ID', keep='first')
 
         # Return the processed combined data directly
         logger.info("Data processed successfully.")
@@ -533,12 +536,14 @@ def register_preparation_callbacks(app):
                 lambda row: row['Within-contig Hi-C contacts'] / row['Contig length'] 
                 if pd.isna(row['Contig coverage']) else row['Contig coverage'], axis=1)
             
+            binning_data = binning_data.drop_duplicates(subset='Contig ID', keep='first')
+            taxonomy_data = taxonomy_data.drop_duplicates(subset='ID', keep='first')
+            
             taxonomy_data.rename(columns={'ID': 'Bin ID'}, inplace=True)
             taxonomy_data.replace("Unclassified", None, inplace=True)
 
             taxonomy_columns = np.array([col for col in taxonomy_data.columns if col not in ['Bin ID', 'Category']])
             save_to_redis(f'{user_folder}:taxonomy-levels', taxonomy_columns)
-            validate_csv(taxonomy_data, ['Bin ID'], ['Category'])
     
             # Process data
             combined_data = process_data(contig_data, binning_data, taxonomy_data, contig_matrix_data, taxonomy_columns)

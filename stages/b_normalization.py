@@ -74,6 +74,7 @@ def run_normalization(method, contig_df, contact_matrix, alpha = 1, epsilon=1, t
         
         # Apply ceiling function and convert to integers
         normalized_data = np.ceil(normalized_data).astype(int)
+        normalized_data = np.where(normalized_data < 0, 0, normalized_data)
         
         # Return the new sparse matrix with the normalized values
         return coo_matrix((normalized_data, (filtered_rows, filtered_cols)), shape=matrix.shape)

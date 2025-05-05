@@ -184,7 +184,14 @@ def styling_annotation_table(row_data, bin_information, unique_annotations):
             if i == len(bounds) - 1:
                 max_bound += 1
 
-            bg_color = f"rgba({255 - int((min_bound - col_min) / col_range * 255)}, {255 - int((min_bound - col_min) / col_range * 255)}, 255, {opacity})"
+            try:
+                value = (min_bound - col_min) / col_range
+                color_value = 255 - int(value * 255)
+            except (ValueError, ZeroDivisionError, TypeError):
+                color_value = 255  # fallback
+            
+            bg_color = f"rgba({color_value}, {color_value}, 255, {opacity})"
+            
             styles.append({
                 "condition": f"params.colDef.field == '{col}' && Math.log1p(params.value) >= {min_bound} && Math.log1p(params.value) < {max_bound}",
                 "style": {
