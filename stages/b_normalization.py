@@ -214,11 +214,16 @@ def run_normalization(method, contig_df, contact_matrix, alpha = 1, epsilon=1, t
             res = glm_nb.fit()
 
             expected_signal = np.exp(np.dot(exog, res.params))
+            expected_signal = np.clip(expected_signal, epsilon, None)  # Avoid very small values
+            
             scal = np.max(expected_signal)
-
-            normalized_data = [scal * v / np.sqrt(expected_signal[i] * expected_signal[j])
-                               for i, j, v in zip(contact_matrix.row, contact_matrix.col, contact_matrix.data)]
-
+            contact_matrix.data = contact_matrix.data.astype(np.float64)
+            
+            normalized_data = np.array([
+                scal * v / np.sqrt(expected_signal[i] * expected_signal[j])
+                for i, j, v in zip(contact_matrix.row, contact_matrix.col, contact_matrix.data)
+            ], dtype=np.float64)
+            
             normalized_matrix = coo_matrix((normalized_data, (contact_matrix.row, contact_matrix.col)),
                                            shape=contact_matrix.shape)
             return denoise(normalized_matrix, threshold)
